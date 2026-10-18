@@ -3,7 +3,7 @@ import { Emitter } from "../../lib/emitter";
 import type { AuthSession, AuthStatus } from "../types";
 import { loadGis, peekGis, type GoogleOAuth2 } from "./gis";
 import { requestGoogleToken } from "./tokenRequest";
-import type { TokenStore } from "./tokenStore";
+import type { StoredToken, TokenStore } from "./tokenStore";
 
 /** Tokens closer than this to their expiry are treated as expired. */
 const EXPIRY_MARGIN_MS = 60_000;
@@ -11,7 +11,14 @@ const EXPIRY_MARGIN_MS = 60_000;
 /** Configuration of a {@link GoogleAuthSession}. */
 export interface GoogleAuthSessionOptions {
   readonly clientId: string;
+  /** Space-separated scopes that must be granted. */
   readonly scope: string;
+  /**
+   * Space-separated scopes that are asked for too, but may be declined. A
+   * token counts as expired only if they were never asked for (e.g. tokens
+   * from before they were added), so the user is asked exactly once.
+   */
+  readonly optionalScope?: string;
   /** Email of the account, used as login hint so re-auth skips the account chooser. */
   readonly loginHint: string;
   readonly tokenStore: TokenStore;
@@ -39,10 +46,13 @@ export class GoogleAuthSession implements AuthSession {
   #status: AuthStatus;
   #pending: Promise<void> | undefined;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Optional scopes the user declined; not asked for again in this page. */
+  readonly #declined = new Set<string>();
 
   constructor(options: GoogleAuthSessionOptions) {
     this.#options = options;
     this.#now = options.now ?? Date.now;
+    this.#rememberDeclined(options.tokenStore.load());
     this.#status = this.#hasUsableToken() ? "signed-in" : "expired";
     this.#scheduleExpiry();
   }
@@ -96,9 +106,16 @@ export class GoogleAuthSession implements AuthSession {
     this.#emitter.subscribe(listener);
 
   async #requestToken(): Promise<void> {
+    const { scope, optionalScope = "" } = this.#options;
+    // Asking again for a declined scope would show Google's consent screen
+    // on every refresh.
+    const optional = optionalScope
+      .split(" ")
+      .filter((s) => s && !this.#declined.has(s));
     const request = {
       clientId: this.#options.clientId,
-      scope: this.#options.scope,
+      scope: [scope, ...optional].join(" "),
+      required: scope,
       prompt: "",
       loginHint: this.#options.loginHint,
     } as const;
@@ -110,6 +127,7 @@ export class GoogleAuthSession implements AuthSession {
       this.#now,
     );
     this.#options.tokenStore.save(token);
+    this.#rememberDeclined(token);
     this.#setStatus("signed-in");
     this.#scheduleExpiry();
     // Expiry changes even if the status doesn't.
@@ -130,13 +148,30 @@ export class GoogleAuthSession implements AuthSession {
     );
   }
 
-  /** Unexpired, and granted every required scope (older tokens may lack newer scopes). */
+  /**
+   * Unexpired, granted every required scope, and asked for every optional
+   * one (older tokens may lack newer scopes).
+   */
   #hasUsableToken(): boolean {
     const token = this.#options.tokenStore.load();
     if (!token || token.expiresAt - this.#now() <= EXPIRY_MARGIN_MS)
       return false;
     const granted = new Set(token.scope.split(" "));
-    return this.#options.scope.split(" ").every((scope) => granted.has(scope));
+    const asked = new Set(token.requested?.split(" ") ?? []);
+    const optional = this.#options.optionalScope?.split(" ") ?? [];
+    return (
+      this.#options.scope.split(" ").every((scope) => granted.has(scope)) &&
+      optional.every((scope) => granted.has(scope) || asked.has(scope))
+    );
+  }
+
+  #rememberDeclined(token: StoredToken | undefined) {
+    if (!token?.requested) return;
+    const granted = new Set(token.scope.split(" "));
+    for (const scope of this.#options.optionalScope?.split(" ") ?? []) {
+      if (token.requested.split(" ").includes(scope) && !granted.has(scope))
+        this.#declined.add(scope);
+    }
   }
 
   #gisPeek() {

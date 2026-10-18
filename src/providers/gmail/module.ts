@@ -6,7 +6,7 @@ import { sessionTokenStore } from "../../auth/google/tokenStore";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
-import { GmailHttp } from "./http";
+import { GmailHttp, PEOPLE_API_BASE } from "./http";
 import { GmailProvider } from "./GmailProvider";
 import type { GmailProfile } from "./types";
 
@@ -16,6 +16,13 @@ import type { GmailProfile } from "./types";
  * Tokens with a narrower scope count as expired and ask for a reconnect.
  */
 export const GMAIL_SCOPE = "https://mail.google.com/";
+
+/**
+ * Read-only access to contacts and "other contacts" (people you've written
+ * to), for address suggestions. Optional: users may decline them.
+ */
+export const CONTACTS_SCOPES =
+  "https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
 
 /** Configuration of the Gmail provider module. */
 export interface GmailModuleOptions {
@@ -39,6 +46,7 @@ export function createGmailModule({
     new GoogleAuthSession({
       clientId,
       scope: GMAIL_SCOPE,
+      optionalScope: CONTACTS_SCOPES,
       loginHint: account.email,
       tokenStore: sessionTokenStore(account.id, tokenStorage),
     });
@@ -55,7 +63,8 @@ export function createGmailModule({
       const ready = peekGis();
       const token = await requestGoogleToken(ready ?? (await loadGis()), {
         clientId,
-        scope: GMAIL_SCOPE,
+        scope: `${GMAIL_SCOPE} ${CONTACTS_SCOPES}`,
+        required: GMAIL_SCOPE,
         prompt: "select_account",
       });
 
@@ -77,6 +86,12 @@ export function createGmailModule({
     restore: sessionFor,
 
     createProvider: (_account, auth) =>
-      new GmailProvider(new GmailHttp({ auth })),
+      new GmailProvider(new GmailHttp({ auth }), {
+        people: new GmailHttp({
+          auth,
+          baseUrl: PEOPLE_API_BASE,
+          service: "Google Contacts",
+        }),
+      }),
   };
 }

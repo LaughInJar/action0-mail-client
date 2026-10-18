@@ -5,8 +5,13 @@ import type { StoredToken } from "./tokenStore";
 /** Parameters of one GIS token request. */
 export interface GoogleTokenRequest {
   readonly clientId: string;
-  /** Space-separated scopes; all of them must be granted. */
+  /** Space-separated scopes to ask for. */
   readonly scope: string;
+  /**
+   * The ones that must be granted (space-separated); defaults to all of
+   * {@link scope}. Google lets users untick the others.
+   */
+  readonly required?: string;
   /**
    * `""` shows UI only when needed (the popup closes by itself if the user is
    * signed in to Google and has consented before). `"select_account"` always
@@ -40,7 +45,9 @@ export function requestGoogleToken(
               `Google sign-in failed: ${response.error_description || response.error}`,
             ),
           );
-        } else if (!oauth2.hasGrantedAllScopes(response, request.scope)) {
+        } else if (
+          !grantedAll(oauth2, response, request.required ?? request.scope)
+        ) {
           reject(
             new MailError(
               "auth-required",
@@ -52,6 +59,7 @@ export function requestGoogleToken(
             accessToken: response.access_token,
             expiresAt: now() + Number(response.expires_in) * 1000,
             scope: response.scope,
+            requested: request.scope,
           });
         }
       },
@@ -64,6 +72,15 @@ export function requestGoogleToken(
       ...(request.loginHint ? { login_hint: request.loginHint } : {}),
     });
   });
+}
+
+function grantedAll(
+  oauth2: GoogleOAuth2,
+  response: google.accounts.oauth2.TokenResponse,
+  scopes: string,
+): boolean {
+  const [first = "", ...rest] = scopes.split(" ").filter(Boolean);
+  return oauth2.hasGrantedAllScopes(response, first, ...rest);
 }
 
 function describeClientError(

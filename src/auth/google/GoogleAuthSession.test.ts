@@ -19,6 +19,8 @@ type Outcome =
 /** A scriptable stand-in for `google.accounts.oauth2`. */
 function fakeGis(outcomes: Outcome[]) {
   const requests: Record<string, unknown>[] = [];
+  /** The scope of each token request. */
+  const scopes: string[] = [];
   const revoked: string[] = [];
   let issued = 0;
   const oauth2 = {
@@ -27,6 +29,7 @@ function fakeGis(outcomes: Outcome[]) {
         override: google.accounts.oauth2.OverridableTokenClientConfig = {},
       ) => {
         requests.push({ ...override });
+        scopes.push(config.scope);
         const outcome = outcomes.shift() ?? { kind: "token" };
         queueMicrotask(() => {
           if (outcome.kind === "error") {
@@ -48,21 +51,26 @@ function fakeGis(outcomes: Outcome[]) {
     }),
     hasGrantedAllScopes: (
       response: google.accounts.oauth2.TokenResponse,
-      scope: string,
-    ) => response.scope.split(" ").includes(scope),
+      ...scopes: string[]
+    ) => scopes.every((scope) => response.scope.split(" ").includes(scope)),
     revoke: (token: string, done: () => void) => {
       revoked.push(token);
       done();
     },
   } as unknown as GoogleOAuth2;
-  return { oauth2, requests, revoked };
+  return { oauth2, requests, scopes, revoked };
 }
 
-function setup(outcomes: Outcome[] = [], storage = new MemoryStorage()) {
+function setup(
+  outcomes: Outcome[] = [],
+  storage = new MemoryStorage(),
+  optionalScope?: string,
+) {
   const gis = fakeGis(outcomes);
   const session = new GoogleAuthSession({
     clientId: "client-id",
     scope: SCOPE,
+    ...(optionalScope ? { optionalScope } : {}),
     loginHint: "jane@example.com",
     tokenStore: sessionTokenStore("gmail:jane@example.com", storage),
     now: () => NOW,
@@ -177,5 +185,54 @@ describe("GoogleAuthSession", () => {
     const { session, storage } = setup();
     await session.signIn();
     expect(storage.dump()).toContain(SCOPE);
+  });
+
+  describe("optional scopes", () => {
+    const CONTACTS = "contacts.readonly contacts.other.readonly";
+
+    it("asks for them too, but signs in without them", async () => {
+      const { session, scopes } = setup(
+        [{ kind: "token", scope: SCOPE }],
+        new MemoryStorage(),
+        CONTACTS,
+      );
+      await session.signIn();
+      expect(scopes[0]).toBe(`${SCOPE} ${CONTACTS}`);
+      expect(session.status).toBe("signed-in");
+    });
+
+    it("needs one reconnect for tokens that were never asked for them", () => {
+      const storage = new MemoryStorage();
+      const store = sessionTokenStore("gmail:jane@example.com", storage);
+      store.save({
+        accessToken: "old",
+        expiresAt: NOW + 3_000_000,
+        scope: SCOPE,
+      });
+      expect(setup([], storage, CONTACTS).session.status).toBe("expired");
+      // Asked, but declined: fine.
+      store.save({
+        accessToken: "declined",
+        expiresAt: NOW + 3_000_000,
+        scope: SCOPE,
+        requested: `${SCOPE} ${CONTACTS}`,
+      });
+      expect(setup([], storage, CONTACTS).session.status).toBe("signed-in");
+    });
+
+    it("doesn't ask again for a declined scope", async () => {
+      const { session, scopes } = setup(
+        [
+          { kind: "token", scope: SCOPE },
+          { kind: "token", scope: SCOPE },
+        ],
+        new MemoryStorage(),
+        CONTACTS,
+      );
+      await session.signIn();
+      session.markExpired();
+      await session.signIn();
+      expect(scopes[1]).toBe(SCOPE);
+    });
   });
 });
