@@ -1,11 +1,21 @@
-import { useMemo, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { useAccounts, useAuthStatus } from "../../accounts/context";
 import type { AccountHandle } from "../../accounts/types";
 import { asAccountId, asMailboxId, type AccountId } from "../../core/ids";
 import type { Mailbox, MailboxRole } from "../../core/model";
 import { useMailboxes } from "../../data/hooks";
-import { useRoute, useRouter, useUi } from "../../state/context";
+import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
+import { useMailActions } from "../actions/useMailActions";
 import { Icon, type IconName } from "../common/Icon";
 import {
   badgeCount,
@@ -13,6 +23,14 @@ import {
   expandedByDefault,
   type MailboxNode,
 } from "./buildTree";
+
+/** The tree item currently under a drag, and whether the drop would only add a label. */
+interface DropHighlight {
+  readonly key: string;
+  readonly copy: boolean;
+}
+
+const DropContext = createContext<DropHighlight | null>(null);
 
 const ROLE_ICONS: Readonly<Record<MailboxRole, IconName>> = {
   inbox: "inbox",
@@ -49,6 +67,58 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const router = useRouter();
   const treeRef = useRef<HTMLDivElement>(null);
   const toggleNode = useUi((state) => state.toggleNode);
+  const store = useUiStore();
+  const actions = useMailActions();
+  const [drop, setDrop] = useState<DropHighlight | null>(null);
+
+  /** The mailbox under a drag, if the dragged messages may go there. */
+  const dropTargetOf = (target: EventTarget) => {
+    const item = (target as HTMLElement).closest<HTMLElement>(
+      '[role="treeitem"]',
+    );
+    const dragging = store.getState().dragging;
+    if (!item || !dragging) return undefined;
+    const { key = "", accountId, mailboxId, assignable, role } = item.dataset;
+    if (accountId !== dragging.accountId || mailboxId === undefined)
+      return undefined;
+    // Spam and Trash come with a later delete/spam feature.
+    if (assignable !== "true" || role === "junk" || role === "trash")
+      return undefined;
+    const current = router.getRoute();
+    if (current?.accountId === accountId && current.mailboxId === mailboxId)
+      return undefined;
+    return { key, mailboxId: asMailboxId(mailboxId), ids: dragging.ids };
+  };
+
+  // Ctrl (Linux/Windows) or Alt/Option (macOS) while dropping: only add the label.
+  const wantsCopy = (event: DragEvent) =>
+    (event.ctrlKey || event.altKey) && actions.canLabel;
+
+  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+    const target = dropTargetOf(event.target);
+    if (!target) {
+      setDrop(null);
+      return;
+    }
+    event.preventDefault();
+    const copy = wantsCopy(event);
+    event.dataTransfer.dropEffect = copy ? "copy" : "move";
+    setDrop((current) =>
+      current?.key === target.key && current.copy === copy
+        ? current
+        : { key: target.key, copy },
+    );
+  };
+
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    const target = dropTargetOf(event.target);
+    setDrop(null);
+    if (!target) return;
+    event.preventDefault();
+    store.getState().setDragging(null);
+    if (wantsCopy(event)) actions.setLabels([target.mailboxId], [], target.ids);
+    else actions.moveTo(target.mailboxId, target.ids);
+  };
   const routeAccountKnown = accounts.some(
     (handle) => handle.account.id === route?.accountId,
   );
@@ -139,15 +209,23 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       tabIndex={-1}
       onClick={onClick}
       onKeyDown={onKeyDown}
+      onDragOver={onDragOver}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDrop(null);
+      }}
+      onDrop={onDrop}
       className="space-y-px px-2 py-2 focus:outline-none"
     >
-      {accounts.map((handle, index) => (
-        <AccountBranch
-          key={handle.account.id}
-          handle={handle}
-          isTabStop={!routeAccountKnown && index === 0}
-        />
-      ))}
+      <DropContext value={drop}>
+        {accounts.map((handle, index) => (
+          <AccountBranch
+            key={handle.account.id}
+            handle={handle}
+            isTabStop={!routeAccountKnown && index === 0}
+          />
+        ))}
+      </DropContext>
     </div>
   );
 }
@@ -240,6 +318,8 @@ function MailboxBranch({
   const selected =
     route?.accountId === accountId && route.mailboxId === mailbox.id;
   const badge = badgeCount(mailbox);
+  const drop = useContext(DropContext);
+  const dropHere = drop?.key === key;
 
   return (
     <>
@@ -255,7 +335,9 @@ function MailboxBranch({
         data-mailbox-id={mailbox.id}
         data-selectable={String(mailbox.selectable)}
         data-has-children={String(hasChildren)}
-        className={rowClass(selected)}
+        data-assignable={String(mailbox.assignable)}
+        data-role={mailbox.role}
+        className={`${rowClass(selected)} ${dropHere ? "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20" : ""}`}
         style={{ paddingLeft: `${(depth - 1) * 0.875 + 0.5}rem` }}
       >
         {hasChildren ? (
@@ -275,6 +357,11 @@ function MailboxBranch({
         >
           {mailbox.name}
         </span>
+        {dropHere && (
+          <span className="shrink-0 rounded bg-blue-600 px-1.5 py-px text-[0.6875rem] font-semibold text-white">
+            {drop.copy ? "Add label" : "Move here"}
+          </span>
+        )}
         {badge !== undefined && (
           <span className="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
             <span className="sr-only">, </span>

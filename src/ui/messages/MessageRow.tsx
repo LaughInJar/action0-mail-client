@@ -15,6 +15,10 @@ export interface MessageRowProps {
   readonly selectionMode: boolean;
   /** Show recipients instead of the sender (Sent, Drafts). */
   readonly showRecipients: boolean;
+  /** Can be dragged onto the mailbox tree (mouse only). */
+  readonly draggable: boolean;
+  /** The star toggles on click (the list handles the click). */
+  readonly starrable: boolean;
 }
 
 /** One message in the list. Clicks are handled by the list (event delegation). */
@@ -25,6 +29,8 @@ export const MessageRow = memo(function MessageRow({
   selected,
   selectionMode,
   showRecipients,
+  draggable,
+  starrable,
 }: MessageRowProps) {
   const unread = !summary.flags.seen;
   const who = showRecipients
@@ -37,8 +43,9 @@ export const MessageRow = memo(function MessageRow({
       role="option"
       aria-selected={selected}
       data-message-id={summary.id}
+      draggable={draggable}
       className={[
-        "flex cursor-default gap-3 border-b border-zinc-100 px-3 py-2.5 select-none dark:border-zinc-800/70 pointer-coarse:py-3",
+        "group flex cursor-default gap-3 border-b border-zinc-100 px-3 py-2.5 select-none dark:border-zinc-800/70 pointer-coarse:py-3",
         selected && selectionMode
           ? "bg-blue-100 dark:bg-blue-500/25"
           : focused
@@ -100,15 +107,35 @@ export const MessageRow = memo(function MessageRow({
               <span className="sr-only">, has attachments</span>
             </>
           )}
-          {summary.flags.flagged && (
-            <>
+          {starrable ? (
+            // Clicks are handled by the list; `s` is the keyboard path.
+            <span
+              data-star=""
+              title={summary.flags.flagged ? "Unstar (s)" : "Star (s)"}
+              className={`-m-1 grid shrink-0 place-items-center p-1 ${
+                summary.flags.flagged
+                  ? ""
+                  : "invisible group-hover:visible pointer-coarse:hidden"
+              }`}
+            >
+              <Icon
+                name="star"
+                className={`size-3.5 ${
+                  summary.flags.flagged
+                    ? "fill-amber-400 text-amber-500"
+                    : "text-zinc-400 hover:text-amber-500"
+                }`}
+              />
+            </span>
+          ) : (
+            summary.flags.flagged && (
               <Icon
                 name="star"
                 className="size-3.5 shrink-0 fill-amber-400 text-amber-500"
               />
-              <span className="sr-only">, starred</span>
-            </>
+            )
           )}
+          {summary.flags.flagged && <span className="sr-only">, starred</span>}
         </div>
       </div>
     </div>

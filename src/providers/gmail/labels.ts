@@ -13,6 +13,8 @@ interface SystemMailbox {
   readonly name: string;
   readonly kind: MailboxKind;
   readonly role: MailboxRole;
+  /** Whether users can move messages in and out (see `Mailbox.assignable`). */
+  readonly assignable: boolean;
 }
 
 /**
@@ -20,15 +22,25 @@ interface SystemMailbox {
  * where the synthetic "All Mail" view goes.
  */
 const SYSTEM_MAILBOXES: readonly (readonly [string, SystemMailbox] | null)[] = [
-  ["INBOX", { name: "Inbox", kind: "label", role: "inbox" }],
+  ["INBOX", { name: "Inbox", kind: "label", role: "inbox", assignable: true }],
   // Starred is a flag in the domain model; the mailbox is a view over it.
-  ["STARRED", { name: "Starred", kind: "view", role: "flagged" }],
-  ["IMPORTANT", { name: "Important", kind: "label", role: "important" }],
-  ["SENT", { name: "Sent", kind: "label", role: "sent" }],
-  ["DRAFT", { name: "Drafts", kind: "label", role: "drafts" }],
+  [
+    "STARRED",
+    { name: "Starred", kind: "view", role: "flagged", assignable: false },
+  ],
+  // Gmail decides importance itself; changing it is not a "label" action here.
+  [
+    "IMPORTANT",
+    { name: "Important", kind: "label", role: "important", assignable: false },
+  ],
+  ["SENT", { name: "Sent", kind: "label", role: "sent", assignable: false }],
+  [
+    "DRAFT",
+    { name: "Drafts", kind: "label", role: "drafts", assignable: false },
+  ],
   null,
-  ["SPAM", { name: "Spam", kind: "label", role: "junk" }],
-  ["TRASH", { name: "Trash", kind: "label", role: "trash" }],
+  ["SPAM", { name: "Spam", kind: "label", role: "junk", assignable: true }],
+  ["TRASH", { name: "Trash", kind: "label", role: "trash", assignable: true }],
 ];
 
 const SYSTEM_BY_ID = new Map(
@@ -85,6 +97,7 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
         role: "all",
         selectable: true,
         hidden: false,
+        assignable: false,
       });
       continue;
     }
@@ -96,6 +109,7 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
       name: system.name,
       kind: system.kind,
       role: system.role,
+      assignable: system.assignable,
     });
   }
 
@@ -107,15 +121,18 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
       kind: "view",
       selectable: false,
       hidden: false,
+      assignable: false,
     });
     for (const [id, name] of categories) {
       const label = byId.get(id);
       if (!label) continue;
+      // Categories are tabs of the inbox; changing them is a separate feature.
       result.push({
         ...base(label),
         name,
         kind: "label",
         parentId: asMailboxId(CATEGORIES_ID),
+        assignable: false,
       });
     }
   }
@@ -145,6 +162,7 @@ function mapUserLabels(labels: readonly GmailLabel[]): Mailbox[] {
         kind: "label",
         selectable: false,
         hidden: false,
+        assignable: false,
         ...(grandParentId === undefined
           ? {}
           : { parentId: asMailboxId(grandParentId) }),
@@ -159,6 +177,7 @@ function mapUserLabels(labels: readonly GmailLabel[]): Mailbox[] {
       ...base(label),
       name: leafName(label.name),
       kind: "label",
+      assignable: true,
       ...(parentId === undefined ? {} : { parentId: asMailboxId(parentId) }),
     });
   }
@@ -172,7 +191,9 @@ function mapUserLabels(labels: readonly GmailLabel[]): Mailbox[] {
     .map(([, mailbox]) => mailbox);
 }
 
-function base(label: GmailLabel): Omit<Mailbox, "name" | "kind"> {
+function base(
+  label: GmailLabel,
+): Omit<Mailbox, "name" | "kind" | "assignable"> {
   const unread = label.messagesUnread ?? 0;
   const hidden =
     label.labelListVisibility === "labelHide" ||

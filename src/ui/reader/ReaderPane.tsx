@@ -144,6 +144,36 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
             }}
           />
         )}
+        {actions.canMove && (
+          <IconButton
+            label="Move to… (v)"
+            icon="folder"
+            disabled={!message}
+            onClick={() => {
+              actions.openPicker("move", [messageId]);
+            }}
+          />
+        )}
+        {actions.canLabel && (
+          <IconButton
+            label="Labels… (l)"
+            icon="tag"
+            disabled={!message}
+            onClick={() => {
+              actions.openPicker("labels", [messageId]);
+            }}
+          />
+        )}
+        {actions.canStar && message && (
+          <IconButton
+            label={message.flags.flagged ? "Unstar (s)" : "Star (s)"}
+            icon="star"
+            pressed={message.flags.flagged}
+            onClick={() => {
+              actions.toggleStar([messageId]);
+            }}
+          />
+        )}
         {actions.canSetSeen && message && (
           <IconButton
             label={

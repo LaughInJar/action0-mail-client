@@ -42,7 +42,7 @@ export const DEMO_MAILBOX = {
 
 const M = DEMO_MAILBOX;
 
-const MAILBOXES: readonly Mailbox[] = [
+const MAILBOX_DEFINITIONS: readonly Omit<Mailbox, "assignable">[] = [
   {
     id: M.inbox,
     name: "Inbox",
@@ -170,6 +170,24 @@ const MAILBOXES: readonly Mailbox[] = [
     hidden: false,
   },
 ];
+
+/** Mailboxes users can move messages into or label with. */
+const ASSIGNABLE: ReadonlySet<MailboxId> = new Set([
+  M.inbox,
+  M.spam,
+  M.trash,
+  M.archive2019,
+  M.personal,
+  M.receipts,
+  M.work,
+  M.clients,
+  M.internal,
+]);
+
+const MAILBOXES: readonly Mailbox[] = MAILBOX_DEFINITIONS.map((mailbox) => ({
+  ...mailbox,
+  assignable: ASSIGNABLE.has(mailbox.id),
+}));
 
 const PEOPLE: readonly EmailAddress[] = [
   { name: "Anna Berger", address: "anna.berger@example.org" },

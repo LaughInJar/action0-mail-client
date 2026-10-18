@@ -124,3 +124,38 @@ describe("label classification", () => {
     expect(isMappedLabel(gmailLabel("CHAT"))).toBe(false);
   });
 });
+
+describe("assignable", () => {
+  it("marks Inbox, Spam, Trash and user labels as move/label targets", () => {
+    const mailboxes = mapLabels([
+      ...[
+        "INBOX",
+        "STARRED",
+        "IMPORTANT",
+        "SENT",
+        "DRAFT",
+        "SPAM",
+        "TRASH",
+      ].map((id) => gmailLabel(id)),
+      gmailLabel("CATEGORY_SOCIAL"),
+      gmailLabel("Label_1", { name: "Work/Clients" }),
+    ]);
+    const assignable = Object.fromEntries(
+      mailboxes.map((m) => [m.name, m.assignable]),
+    );
+    expect(assignable).toEqual({
+      Inbox: true,
+      Starred: false,
+      Important: false,
+      Sent: false,
+      Drafts: false,
+      "All Mail": false,
+      Spam: true,
+      Trash: true,
+      Categories: false,
+      Social: false,
+      Work: false,
+      Clients: true,
+    });
+  });
+});

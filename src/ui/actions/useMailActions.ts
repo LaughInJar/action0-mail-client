@@ -1,15 +1,19 @@
 import { useMemo } from "react";
 import { useAccountHandle } from "../../accounts/context";
-import type { MessageId } from "../../core/ids";
-import { inverseOf, type MailIntent } from "../../core/intents";
+import type { MailboxId, MessageId } from "../../core/ids";
+import {
+  inverseOf,
+  type MailIntent,
+  type MessageChange,
+} from "../../core/intents";
 import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
 import { useApplyIntent, usePreviewIntent } from "../../data/mutations";
-import { belongsTo, type MessageChange } from "../../data/optimistic";
+import { belongsTo } from "../../data/optimistic";
 import { useRoute, useRouter, useUiStore } from "../../state/context";
 import { nextAfterRemoval } from "../../state/selection";
+import type { PickerState } from "../../state/uiStore";
 import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
-import { listKeyOf } from "../messages/useListController";
 
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
@@ -23,13 +27,39 @@ export interface SetSeenOptions {
 export interface MailActions {
   readonly canArchive: boolean;
   readonly canSetSeen: boolean;
+  readonly canStar: boolean;
+  readonly canMove: boolean;
+  readonly canLabel: boolean;
   /** The selection (in list order), or else the focused message. */
   readonly targets: () => MessageId[];
   /** Archives `ids`, or the targets. */
   readonly archive: (ids?: readonly MessageId[]) => void;
   readonly setSeen: (seen: boolean, options?: SetSeenOptions) => void;
+  /** Stars all of them, unless all are starred already: then unstars all. */
+  readonly toggleStar: (ids?: readonly MessageId[]) => void;
+  /** Moves out of the current mailbox into `to`. */
+  readonly moveTo: (to: MailboxId, ids?: readonly MessageId[]) => void;
+  readonly setLabels: (
+    add: readonly MailboxId[],
+    remove: readonly MailboxId[],
+    ids?: readonly MessageId[],
+  ) => void;
+  /** Opens the move or label picker for `ids`, or the targets. */
+  readonly openPicker: (
+    mode: PickerState["mode"],
+    ids?: readonly MessageId[],
+  ) => void;
   /** Reverts the action of the current toast. */
   readonly undo: () => void;
+}
+
+interface PerformOptions {
+  /** Toast text for the done action; omit for silent actions. */
+  readonly done?: (count: number) => string;
+  /** Prefix of the error toast. */
+  readonly failure: string;
+  /** Toast when nothing would change; omit to stay quiet. */
+  readonly nothing?: string;
 }
 
 const count = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
@@ -54,6 +84,8 @@ export function useMailActions(): MailActions {
   return useMemo((): MailActions => {
     const orderedIds = (items ?? []).map((item) => item.id);
     const mailbox = findMailbox(mailboxes, route?.mailboxId);
+    const nameOf = (id: MailboxId) =>
+      findMailbox(mailboxes, id)?.name ?? "the mailbox";
 
     const targets = (): MessageId[] => {
       const { selectedIds, focusedId } = store.getState();
@@ -63,7 +95,7 @@ export function useMailActions(): MailActions {
       return [...selectedIds].sort((a, b) => rank(a) - rank(b));
     };
 
-    const apply = (intent: MailIntent, failure: string) => {
+    const run = (intent: MailIntent, failure: string) => {
       if (!route) return;
       mutate(
         { accountId: route.accountId, intent },
@@ -78,7 +110,10 @@ export function useMailActions(): MailActions {
       );
     };
 
-    /** Moves the cursor off rows that are about to leave the current list. */
+    /**
+     * Rows that leave the current list drop out of the selection; if the
+     * cursor was on one, it moves to the next row below (or above at the end).
+     */
     const stepAway = (changes: readonly MessageChange[]) => {
       if (!route || !mailbox) return;
       const removed = new Set(
@@ -86,20 +121,18 @@ export function useMailActions(): MailActions {
           .filter((change) => !belongsTo(mailbox, change.after))
           .map((change) => change.id),
       );
+      if (removed.size === 0) return;
       const state = store.getState();
-      if (
-        removed.size === 0 ||
-        state.focusedId === null ||
-        !removed.has(state.focusedId)
-      ) {
-        state.clearSelection();
-        return;
-      }
-      const next = nextAfterRemoval(orderedIds, removed);
-      if (next === null) state.enterList(listKeyOf(route) ?? "", null);
-      else state.focusOnly(next);
+      const focusLeaves =
+        state.focusedId !== null && removed.has(state.focusedId);
+      const next = focusLeaves ? nextAfterRemoval(orderedIds, removed) : null;
+      state.removeFromList(removed, next);
       // On phones the reader is a screen of its own: follow along or go back.
-      if (breakpoint === "narrow" && route.messageId !== undefined) {
+      if (
+        focusLeaves &&
+        breakpoint === "narrow" &&
+        route.messageId !== undefined
+      ) {
         const list = { accountId: route.accountId, mailboxId: route.mailboxId };
         router.navigate(next === null ? list : { ...list, messageId: next }, {
           replace: true,
@@ -107,67 +140,131 @@ export function useMailActions(): MailActions {
       }
     };
 
+    /** Preview → step away → mutate → undo toast. */
+    const perform = (intent: MailIntent, options: PerformOptions) => {
+      if (!route || intent.ids.length === 0) return;
+      const { showToast } = store.getState();
+      const { changes } = preview({ accountId: route.accountId, intent });
+      if (changes.length === 0) {
+        if (options.nothing)
+          showToast({ message: options.nothing, tone: "info" });
+        return;
+      }
+      stepAway(changes);
+      run(intent, options.failure);
+      if (!options.done) return;
+      showToast({
+        message: options.done(changes.length),
+        tone: "info",
+        undo: {
+          accountId: route.accountId,
+          intents: inverseOf(intent, changes, {
+            labels: capabilities?.labels ?? false,
+          }),
+          known: changes.map((change) => change.after),
+        },
+      });
+    };
+
+    const ids = (explicit?: readonly MessageId[]) =>
+      explicit ? [...explicit] : targets();
+
     return {
       canArchive: capabilities?.archive ?? false,
       canSetSeen: capabilities?.settableFlags.includes("seen") ?? false,
+      canStar: capabilities?.settableFlags.includes("flagged") ?? false,
+      canMove: capabilities?.move ?? false,
+      canLabel: capabilities?.labels ?? false,
       targets,
 
-      archive: (ids) => {
-        if (!route || !capabilities?.archive) return;
-        const intent: MailIntent = {
-          kind: "archive",
-          ids: ids ? [...ids] : targets(),
-        };
-        if (intent.ids.length === 0) return;
-        const { before, changes } = preview({
-          accountId: route.accountId,
-          intent,
-        });
-        const { showToast } = store.getState();
-        if (changes.length === 0) {
-          showToast({
-            message: "Not in the Inbox, nothing to archive.",
-            tone: "info",
-          });
-          return;
-        }
-        stepAway(changes);
-        apply(intent, "Couldn’t archive");
-        showToast({
-          message: `Archived ${count(changes.length)}`,
-          tone: "info",
-          undo: {
-            accountId: route.accountId,
-            intents: inverseOf(intent, before),
-            known: changes.map((change) => change.after),
+      archive: (explicit) => {
+        if (!capabilities?.archive) return;
+        perform(
+          { kind: "archive", ids: ids(explicit) },
+          {
+            done: (n) => `Archived ${count(n)}`,
+            failure: "Couldn’t archive",
+            nothing: "Not in the Inbox, nothing to archive.",
           },
-        });
+        );
       },
 
-      setSeen: (seen, { ids, silent = false } = {}) => {
-        if (!route || !capabilities?.settableFlags.includes("seen")) return;
-        const intent: MailIntent = {
+      setSeen: (seen, { ids: explicit, silent = false } = {}) => {
+        if (!capabilities?.settableFlags.includes("seen")) return;
+        perform(
+          { kind: "set-flags", ids: ids(explicit), flags: { seen } },
+          {
+            ...(silent
+              ? {}
+              : {
+                  done: (n: number) =>
+                    `Marked ${count(n)} as ${seen ? "read" : "unread"}`,
+                }),
+            failure: `Couldn’t mark as ${seen ? "read" : "unread"}`,
+          },
+        );
+      },
+
+      toggleStar: (explicit) => {
+        if (!route || !capabilities?.settableFlags.includes("flagged")) return;
+        const targetIds = ids(explicit);
+        const star: MailIntent = {
           kind: "set-flags",
-          ids: ids ? [...ids] : targets(),
-          flags: { seen },
+          ids: targetIds,
+          flags: { flagged: true },
         };
-        const { before, changes } = preview({
-          accountId: route.accountId,
-          intent,
-        });
-        if (changes.length === 0) return;
-        apply(intent, `Couldn’t mark as ${seen ? "read" : "unread"}`);
-        if (!silent) {
-          store.getState().showToast({
-            message: `Marked ${count(changes.length)} as ${seen ? "read" : "unread"}`,
-            tone: "info",
-            undo: {
-              accountId: route.accountId,
-              intents: inverseOf(intent, before),
-              known: changes.map((change) => change.after),
+        // Star if any of them isn't starred yet; otherwise unstar all.
+        const flagged =
+          preview({ accountId: route.accountId, intent: star }).changes.length >
+          0;
+        perform(
+          { kind: "set-flags", ids: targetIds, flags: { flagged } },
+          {
+            done: (n) => `${flagged ? "Starred" : "Unstarred"} ${count(n)}`,
+            failure: `Couldn’t ${flagged ? "star" : "unstar"}`,
+          },
+        );
+      },
+
+      moveTo: (to, explicit) => {
+        if (!route || !capabilities?.move) return;
+        const name = nameOf(to);
+        perform(
+          { kind: "move", ids: ids(explicit), from: route.mailboxId, to },
+          {
+            done: (n) => `Moved ${count(n)} to ${name}`,
+            failure: "Couldn’t move",
+            nothing: `Already in ${name}.`,
+          },
+        );
+      },
+
+      setLabels: (add, remove, explicit) => {
+        if (!capabilities?.labels) return;
+        const [onlyAdded] = add;
+        const [onlyRemoved] = remove;
+        perform(
+          { kind: "set-labels", ids: ids(explicit), add, remove },
+          {
+            done: (n) => {
+              if (add.length === 1 && remove.length === 0 && onlyAdded)
+                return `Added label ${nameOf(onlyAdded)} to ${count(n)}`;
+              if (remove.length === 1 && add.length === 0 && onlyRemoved)
+                return `Removed label ${nameOf(onlyRemoved)} from ${count(n)}`;
+              return `Changed labels of ${count(n)}`;
             },
-          });
-        }
+            failure: "Couldn’t change labels",
+          },
+        );
+      },
+
+      openPicker: (mode, explicit) => {
+        if (!route) return;
+        const targetIds = ids(explicit);
+        if (targetIds.length === 0) return;
+        store
+          .getState()
+          .setPicker({ mode, accountId: route.accountId, ids: targetIds });
       },
 
       undo: () => {
@@ -177,14 +274,12 @@ export function useMailActions(): MailActions {
         const { accountId, intents, known } = toast.undo;
         let restoredHere: MessageId | undefined;
         for (const intent of intents) {
-          if (
-            intent.kind === "unarchive" &&
-            route?.accountId === accountId &&
-            mailbox
-          ) {
+          if (route?.accountId === accountId && mailbox) {
             const { changes } = preview({ accountId, intent, known });
-            restoredHere ??= changes.find((change) =>
-              belongsTo(mailbox, change.after),
+            restoredHere ??= changes.find(
+              (change) =>
+                belongsTo(mailbox, change.after) &&
+                !belongsTo(mailbox, change.before),
             )?.id;
           }
           mutate(
@@ -199,7 +294,7 @@ export function useMailActions(): MailActions {
             },
           );
         }
-        // Undoing an archive brings the cursor back to the restored message.
+        // Undo brings the cursor back to a message that returns to this list.
         if (restoredHere !== undefined)
           store.getState().focusOnly(restoredHere);
       },

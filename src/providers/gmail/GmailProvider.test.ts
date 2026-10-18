@@ -279,3 +279,67 @@ describe("GmailProvider writes", () => {
     });
   });
 });
+
+describe("GmailProvider move and labels", () => {
+  function captureBatchModify() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        bodies.push(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return bodies;
+  }
+  const ids = (...names: string[]) => names.map(asMessageId);
+  const box = asMailboxId;
+
+  it("moves by adding the target and removing the source label", async () => {
+    const bodies = captureBatchModify();
+    await provider().move(ids("a"), { from: box("INBOX"), to: box("Label_1") });
+    expect(bodies).toEqual([
+      { ids: ["a"], addLabelIds: ["Label_1"], removeLabelIds: ["INBOX"] },
+    ]);
+  });
+
+  it("only adds when moving out of a view, so it never unstars", async () => {
+    const bodies = captureBatchModify();
+    await provider().move(ids("a"), {
+      from: box(ALL_MAIL_ID),
+      to: box("Label_1"),
+    });
+    await provider().move(ids("a"), {
+      from: box("STARRED"),
+      to: box("Label_1"),
+    });
+    expect(bodies).toEqual([
+      { ids: ["a"], addLabelIds: ["Label_1"] },
+      { ids: ["a"], addLabelIds: ["Label_1"] },
+    ]);
+  });
+
+  it("sets labels in one call", async () => {
+    const bodies = captureBatchModify();
+    await provider().setLabels(ids("a", "b"), {
+      add: [box("Label_1")],
+      remove: [box("Label_2"), box("INBOX")],
+    });
+    expect(bodies).toEqual([
+      {
+        ids: ["a", "b"],
+        addLabelIds: ["Label_1"],
+        removeLabelIds: ["Label_2", "INBOX"],
+      },
+    ]);
+  });
+
+  it("rejects mailbox ids that only exist in our tree", async () => {
+    const gmail = provider();
+    await expect(
+      gmail.move(ids("a"), { from: box("INBOX"), to: box(ALL_MAIL_ID) }),
+    ).rejects.toMatchObject({ code: "provider" });
+    await expect(
+      gmail.setLabels(ids("a"), { add: [box("synthetic:Work")], remove: [] }),
+    ).rejects.toMatchObject({ code: "provider" });
+  });
+});

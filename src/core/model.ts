@@ -88,6 +88,11 @@ export interface Mailbox {
   readonly selectable: boolean;
   /** The user asked the provider to hide this mailbox from the folder list. */
   readonly hidden: boolean;
+  /**
+   * Users may put messages here or take them out: a target for moving and
+   * labelling. False for computed views and system mailboxes like Sent.
+   */
+  readonly assignable: boolean;
   readonly counts?: MailboxCounts;
   readonly color?: { readonly background: string; readonly text: string };
 }
