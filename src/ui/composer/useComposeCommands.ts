@@ -11,9 +11,14 @@ export function useComposeCommands(actions: ComposeActions): void {
   const router = useRouter();
   const commands = useMemo((): Command[] => {
     const group = "Writing";
-    /** The message shown in the reader (or under the cursor). */
-    const current = (): MessageId | undefined =>
-      store.getState().focusedId ?? router.getRoute()?.messageId;
+    /**
+     * The message to answer: the one at the open conversation's cursor, else
+     * the one shown in the reader (or under the cursor).
+     */
+    const current = (): MessageId | undefined => {
+      const { readerCursor, focusedId } = store.getState();
+      return readerCursor ?? focusedId ?? router.getRoute()?.messageId;
+    };
     const withMessage = (run: (id: MessageId) => void) => () => {
       const id = current();
       if (id !== undefined) run(id);

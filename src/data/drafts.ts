@@ -161,6 +161,15 @@ export function createDraftSync(
           ? [...queryKeys.account(accountId), "messages"]
           : queryKeys.messages(accountId, draftsMailbox.id),
     });
+    // Drafts and replies show inside their conversations: the open one
+    // reloads; lists only after sending (each would reload 50 of them).
+    void queryClient.invalidateQueries({
+      queryKey: [...queryKeys.account(accountId), "thread"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: [...queryKeys.account(accountId), "threads"],
+      refetchType: everything ? "active" : "none",
+    });
     void queryClient.invalidateQueries({
       queryKey: queryKeys.mailboxes(accountId),
     });

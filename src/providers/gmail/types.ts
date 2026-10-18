@@ -60,6 +60,18 @@ export interface GmailListMessagesResponse {
   resultSizeEstimate?: number;
 }
 
+export interface GmailListThreadsResponse {
+  threads?: { id: string; snippet?: string; historyId?: string }[];
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+}
+
+/** A thread from `threads.get`; messages oldest first. */
+export interface GmailThread {
+  id: string;
+  messages?: GmailMessage[];
+}
+
 export interface GmailProfile {
   emailAddress: string;
   messagesTotal?: number;

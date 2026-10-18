@@ -190,6 +190,21 @@ export interface Message extends MessageSummary {
   readonly attachments: readonly AttachmentInfo[];
 }
 
+/**
+ * A conversation as a list row: all its messages (in every mailbox, Trash
+ * and Spam included), oldest first.
+ */
+export interface ThreadSummary {
+  readonly id: ThreadId;
+  readonly messages: readonly MessageSummary[];
+}
+
+/** A complete conversation, as the reader shows it: messages oldest first. */
+export interface Thread {
+  readonly id: ThreadId;
+  readonly messages: readonly Message[];
+}
+
 /** An address the account can send from (Gmail: its send-as addresses). */
 export interface Sender {
   readonly address: string;

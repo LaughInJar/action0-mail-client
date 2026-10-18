@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   skipToken,
   useQueryClient,
@@ -19,8 +19,15 @@ import type {
   Cursor,
   MailboxId,
   MessageId,
+  ThreadId,
 } from "../core/ids";
-import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
+import type {
+  Mailbox,
+  Message,
+  MessageSummary,
+  Page,
+  ThreadSummary,
+} from "../core/model";
 import { encodeBase64 } from "../lib/base64url";
 import { queryKeys, type ListSpec } from "./keys";
 
@@ -60,6 +67,20 @@ const flattenPages = (
 const NO_LIST: ListSpec = { mailboxId: NO_MAILBOX, order: "newest" };
 
 /**
+ * Lists don't refetch on mount or focus while a change of the app's own is
+ * on its way: the server may not have it yet, and the old state would
+ * bring back rows that just left (e.g. a list observed anew by the reader
+ * right after archiving). Like the live sync, they catch up afterwards.
+ */
+function useNotWhileMutating() {
+  const queryClient = useQueryClient();
+  return useMemo(() => {
+    const idle = () => queryClient.isMutating() === 0;
+    return { refetchOnMount: idle, refetchOnWindowFocus: idle };
+  }, [queryClient]);
+}
+
+/**
  * The messages of a list (a mailbox, or a search in it) as a flat list that
  * grows with `fetchNextPage()`. Mailbox lists are persisted briefly; search
  * results stay in memory.
@@ -69,7 +90,9 @@ export function useMessageList(
   spec: ListSpec | undefined,
 ) {
   const handle = useReadyHandle(accountId);
+  const quiet = useNotWhileMutating();
   return useInfiniteQuery({
+    ...quiet,
     queryKey: queryKeys.messageList(accountId ?? NO_ACCOUNT, spec ?? NO_LIST),
     queryFn:
       handle && spec
@@ -90,6 +113,65 @@ export function useMessageList(
     select: flattenPages,
     staleTime: 30_000,
     meta: { persist: spec?.search === undefined },
+  });
+}
+
+/**
+ * The conversations of a list, like {@link useMessageList} (one page of
+ * conversations at a time, each with its messages as summaries).
+ */
+export function useThreadList(
+  accountId: AccountId | undefined,
+  spec: ListSpec | undefined,
+) {
+  const handle = useReadyHandle(accountId);
+  const supported = handle?.provider.capabilities.threads === true;
+  const quiet = useNotWhileMutating();
+  return useInfiniteQuery({
+    ...quiet,
+    queryKey: queryKeys.threadList(accountId ?? NO_ACCOUNT, spec ?? NO_LIST),
+    queryFn:
+      handle && spec && supported
+        ? ({ pageParam, signal }) =>
+            handle.provider.listThreads(
+              {
+                mailboxId: spec.mailboxId,
+                order: spec.order,
+                limit: PAGE_SIZE,
+                ...(spec.search === undefined ? {} : { search: spec.search }),
+                ...(pageParam === undefined ? {} : { cursor: pageParam }),
+              },
+              signal,
+            )
+        : skipToken,
+    initialPageParam: undefined as Cursor | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    select: flattenThreadPages,
+    staleTime: 30_000,
+    meta: { persist: spec?.search === undefined },
+  });
+}
+
+const flattenThreadPages = (
+  data: InfiniteData<Page<ThreadSummary>, Cursor | undefined>,
+) => data.pages.flatMap((page) => page.items);
+
+/** A complete conversation. Kept in memory only, never persisted. */
+export function useThread(
+  accountId: AccountId | undefined,
+  threadId: ThreadId | undefined,
+) {
+  const handle = useReadyHandle(accountId);
+  return useQuery({
+    queryKey: queryKeys.thread(
+      accountId ?? NO_ACCOUNT,
+      threadId ?? ("" as ThreadId),
+    ),
+    queryFn:
+      handle && threadId !== undefined
+        ? ({ signal }) => handle.provider.getThread(threadId, signal)
+        : skipToken,
+    staleTime: 60_000,
   });
 }
 

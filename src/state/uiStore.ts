@@ -50,7 +50,10 @@ export interface DragState {
 export interface PickerState {
   readonly mode: "move" | "labels";
   readonly accountId: AccountId;
+  /** Rows of the list: messages, or conversations (by their oldest message). */
   readonly ids: readonly MessageId[];
+  /** The rows are conversations. */
+  readonly conversations?: boolean;
 }
 
 /** A destructive action waiting for the user's confirmation. */
@@ -173,6 +176,11 @@ export interface UiState extends selection.SelectionState {
   readonly theme: ThemeMode;
   /** App settings. Persisted. */
   readonly settings: AppSettings;
+  /**
+   * The message at the cursor of the open conversation (conversation view):
+   * what `n`/`p` move and `r`/`f` answer. Session only.
+   */
+  readonly readerCursor: MessageId | null;
   /** Text of the folder filter above the tree. Session only. */
   readonly folderFilter: string;
   /** Messages whose remote content the user allowed. Session only. */
@@ -229,6 +237,7 @@ export interface UiActions {
   readonly setColumnWidth: (index: 0 | 1, width: number) => void;
   readonly setListOrder: (order: MessageOrder) => void;
   readonly setTheme: (theme: ThemeMode) => void;
+  readonly setReaderCursor: (id: MessageId | null) => void;
   readonly updateSettings: (patch: Partial<AppSettings>) => void;
   /** Remote images of this sender load without asking (in "trusted" mode). */
   readonly trustSender: (address: string) => void;
@@ -333,6 +342,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           listOrder: "newest",
           theme: readTheme(storage),
           settings: DEFAULT_SETTINGS,
+          readerCursor: null,
           folderFilter: "",
           drawerOpen: false,
           helpOpen: false,
@@ -398,6 +408,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setTheme: (theme) => {
             saveTheme(storage, theme);
             set({ theme });
+          },
+          setReaderCursor: (readerCursor) => {
+            set({ readerCursor });
           },
           updateSettings: (patch) => {
             set((s) => ({ settings: { ...s.settings, ...patch } }));

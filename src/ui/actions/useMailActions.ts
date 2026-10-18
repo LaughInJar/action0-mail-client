@@ -10,11 +10,18 @@ import {
 import { findMailbox } from "../../data/hooks";
 import {
   cachedMailboxes,
+  cachedSummaries,
+  threadMessageIds,
   useApplyIntent,
   useEmptyMailbox,
   usePreviewIntent,
 } from "../../data/mutations";
-import { belongsTo, isolatingMailboxes } from "../../data/optimistic";
+import { rowsLeaving } from "../../data/listRows";
+import {
+  belongsTo,
+  isolatingMailboxes,
+  threadIdOf,
+} from "../../data/optimistic";
 import { useRouter, useUiStore } from "../../state/context";
 import { listRoute } from "../../state/router";
 import { nextAfterRemoval } from "../../state/selection";
@@ -30,6 +37,8 @@ export interface SetSeenOptions {
   readonly ids?: readonly MessageId[];
   /** No toast (automatic mark-as-read). */
   readonly silent?: boolean;
+  /** The ids are messages, not rows (never whole conversations). */
+  readonly exact?: boolean;
 }
 
 /** User-level mail actions on the current list. */
@@ -44,8 +53,15 @@ export interface MailActions {
   /** Archives `ids`, or the targets. */
   readonly archive: (ids?: readonly MessageId[]) => void;
   readonly setSeen: (seen: boolean, options?: SetSeenOptions) => void;
-  /** Stars all of them, unless all are starred already: then unstars all. */
-  readonly toggleStar: (ids?: readonly MessageId[]) => void;
+  /**
+   * Stars all of them, unless all are starred already: then unstars all.
+   * Conversations: stars the newest message of those without a star, or
+   * unstars every message. `exact`: the ids are messages, not rows.
+   */
+  readonly toggleStar: (
+    ids?: readonly MessageId[],
+    options?: { readonly exact?: boolean },
+  ) => void;
   /** Moves out of the current mailbox into `to`. */
   readonly moveTo: (to: MailboxId, ids?: readonly MessageId[]) => void;
   readonly setLabels: (
@@ -86,7 +102,9 @@ interface PerformOptions {
   readonly nothing?: string;
 }
 
-const count = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
+const messages = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
+const conversationCount = (n: number) =>
+  n === 1 ? "1 conversation" : `${n} conversations`;
 
 /**
  * Turns "the current message or selection" into intents: predicts the
@@ -96,7 +114,8 @@ const count = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
 export function useMailActions(): MailActions {
   const {
     route,
-    list: { data: items },
+    rows,
+    conversations,
     mailboxes,
     scope: mailbox,
     listKey,
@@ -115,8 +134,19 @@ export function useMailActions(): MailActions {
   const capabilities = handle?.provider.capabilities;
 
   return useMemo((): MailActions => {
-    const orderedIds = (items ?? []).map((item) => item.id);
+    const orderedIds = (rows ?? []).map((row) => row.id);
     const isolating = isolatingMailboxes(mailboxes ?? []);
+    const count = conversations ? conversationCount : messages;
+    /** Rows → messages: a conversation stands for all its messages. */
+    const expand = (ids: readonly MessageId[]): MessageId[] =>
+      conversations && route
+        ? threadMessageIds(queryClient, route.accountId, ids)
+        : [...ids];
+    /** How many rows the changes touch (conversations, or messages). */
+    const touched = (changes: readonly MessageChange[]) =>
+      conversations
+        ? new Set(changes.map((change) => threadIdOf(change.before))).size
+        : changes.length;
     const view = mailbox?.role;
     // A label created a moment ago may not have reached `mailboxes` yet.
     const mailboxOf = (id: MailboxId) =>
@@ -151,15 +181,7 @@ export function useMailActions(): MailActions {
      */
     const stepAway = (changes: readonly MessageChange[]) => {
       if (!route || !mailbox) return;
-      const removed = new Set(
-        changes
-          .filter(
-            (change) =>
-              change.deleted === true ||
-              !belongsTo(mailbox, change.after, isolating),
-          )
-          .map((change) => change.id),
-      );
+      const removed = rowsLeaving(rows ?? [], mailbox, changes, isolating);
       if (removed.size === 0) return;
       const state = store.getState();
       const { afterRemove } = state.settings;
@@ -188,9 +210,19 @@ export function useMailActions(): MailActions {
       }
     };
 
-    /** Preview → step away → mutate → undo toast. */
-    const perform = (intent: MailIntent, options: PerformOptions) => {
-      if (!route || intent.ids.length === 0) return;
+    /**
+     * Preview → step away → mutate → undo toast. The intent's ids are rows
+     * (whole conversations in conversation view), unless `exact`.
+     */
+    const perform = (
+      rowIntent: MailIntent,
+      options: PerformOptions,
+      exact = false,
+    ) => {
+      if (!route || rowIntent.ids.length === 0) return;
+      const intent: MailIntent = exact
+        ? rowIntent
+        : { ...rowIntent, ids: expand(rowIntent.ids) };
       const { showToast } = store.getState();
       const { changes } = preview({ accountId: route.accountId, intent });
       if (changes.length === 0) {
@@ -205,7 +237,7 @@ export function useMailActions(): MailActions {
         labels: capabilities?.labels ?? false,
       });
       showToast({
-        message: options.done(changes.length),
+        message: options.done(touched(changes)),
         tone: "info",
         // Permanent deletion has nothing to undo.
         ...(inverse.length > 0
@@ -243,7 +275,10 @@ export function useMailActions(): MailActions {
         );
       },
 
-      setSeen: (seen, { ids: explicit, silent = false } = {}) => {
+      setSeen: (
+        seen,
+        { ids: explicit, silent = false, exact = false } = {},
+      ) => {
         if (!capabilities?.settableFlags.includes("seen")) return;
         perform(
           { kind: "set-flags", ids: ids(explicit), flags: { seen } },
@@ -256,15 +291,50 @@ export function useMailActions(): MailActions {
                 }),
             failure: `Couldn’t mark as ${seen ? "read" : "unread"}`,
           },
+          exact,
         );
       },
 
-      toggleStar: (explicit) => {
+      toggleStar: (explicit, { exact = false } = {}) => {
         if (!route || !capabilities?.settableFlags.includes("flagged")) return;
         const targetIds = ids(explicit);
+        const done = (flagged: boolean) => (n: number) =>
+          `${flagged ? "Starred" : "Unstarred"} ${count(n)}`;
+        const failure = (flagged: boolean) =>
+          `Couldn’t ${flagged ? "star" : "unstar"}`;
+
+        if (conversations && !exact) {
+          // Like Gmail: a conversation's star is on its newest message.
+          const threads = targetIds.map((id) =>
+            cachedSummaries(
+              queryClient,
+              route.accountId,
+              threadMessageIds(queryClient, route.accountId, [id]),
+            ).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt)),
+          );
+          const unstarred = threads.filter(
+            (messages) => !messages.some((m) => m.flags.flagged),
+          );
+          const flagged = unstarred.length > 0;
+          const messageIds = flagged
+            ? unstarred.flatMap((messages) => {
+                const newest = messages.at(-1);
+                return newest ? [newest.id] : [];
+              })
+            : threads.flatMap((messages) =>
+                messages.filter((m) => m.flags.flagged).map((m) => m.id),
+              );
+          perform(
+            { kind: "set-flags", ids: messageIds, flags: { flagged } },
+            { done: done(flagged), failure: failure(flagged) },
+            true,
+          );
+          return;
+        }
+
         const star: MailIntent = {
           kind: "set-flags",
-          ids: targetIds,
+          ids: exact ? targetIds : expand(targetIds),
           flags: { flagged: true },
         };
         // Star if any of them isn't starred yet; otherwise unstar all.
@@ -273,10 +343,8 @@ export function useMailActions(): MailActions {
           0;
         perform(
           { kind: "set-flags", ids: targetIds, flags: { flagged } },
-          {
-            done: (n) => `${flagged ? "Starred" : "Unstarred"} ${count(n)}`,
-            failure: `Couldn’t ${flagged ? "star" : "unstar"}`,
-          },
+          { done: done(flagged), failure: failure(flagged) },
+          exact,
         );
       },
 
@@ -343,9 +411,12 @@ export function useMailActions(): MailActions {
         if (!route) return;
         const targetIds = ids(explicit);
         if (targetIds.length === 0) return;
-        store
-          .getState()
-          .setPicker({ mode, accountId: route.accountId, ids: targetIds });
+        store.getState().setPicker({
+          mode,
+          accountId: route.accountId,
+          ids: targetIds,
+          conversations,
+        });
       },
 
       canTrash: capabilities?.trash ?? false,
@@ -485,7 +556,6 @@ export function useMailActions(): MailActions {
     apply,
     capabilities,
     empty,
-    items,
     listKey,
     mailbox,
     mailboxes,
@@ -493,6 +563,8 @@ export function useMailActions(): MailActions {
     queryClient,
     route,
     router,
+    rows,
+    conversations,
     store,
   ]);
 }

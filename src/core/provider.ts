@@ -6,6 +6,7 @@ import type {
   MailboxId,
   MessageId,
   SyncToken,
+  ThreadId,
 } from "./ids";
 import type {
   EmailAddress,
@@ -17,6 +18,8 @@ import type {
   MessageSummary,
   Page,
   Sender,
+  Thread,
+  ThreadSummary,
 } from "./model";
 
 /**
@@ -55,6 +58,8 @@ export interface ProviderCapabilities {
   readonly manageMailboxes: boolean;
   /** Colours a mailbox may get; empty if colours can't be set. */
   readonly mailboxColors: readonly MailboxColor[];
+  /** Supports {@link MailProvider.listThreads} and {@link MailProvider.getThread}. */
+  readonly threads: boolean;
   /** Supports {@link MailProvider.listSenders}. */
   readonly senders: boolean;
   /**
@@ -157,6 +162,19 @@ export interface MailProvider {
     query: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>>;
+
+  /**
+   * Conversations with a message in the mailbox (optionally only matching
+   * ones), ordered by their newest message. Each comes with all its
+   * messages, as summaries.
+   */
+  listThreads(
+    query: ListMessagesQuery,
+    signal?: AbortSignal,
+  ): Promise<Page<ThreadSummary>>;
+
+  /** A complete conversation: every message with its (unsanitized) body. */
+  getThread(id: ThreadId, signal?: AbortSignal): Promise<Thread>;
 
   /** A complete message including its (unsanitized) body. */
   getMessage(id: MessageId, signal?: AbortSignal): Promise<Message>;

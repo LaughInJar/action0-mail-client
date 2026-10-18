@@ -4,6 +4,7 @@ import type {
   AttachmentId,
   MailboxId,
   MessageId,
+  ThreadId,
 } from "../core/ids";
 import type { MessageOrder } from "../core/provider";
 
@@ -35,6 +36,20 @@ export const queryKeys = {
       mailboxId,
       { search: search ?? "", order },
     ] as const,
+  /** Prefix of every conversation list of a mailbox. */
+  threads: (accountId: AccountId, mailboxId: MailboxId) =>
+    ["acct", accountId, "threads", mailboxId] as const,
+  /** One conversation list; like {@link queryKeys.messageList}. */
+  threadList: (accountId: AccountId, { mailboxId, search, order }: ListSpec) =>
+    [
+      "acct",
+      accountId,
+      "threads",
+      mailboxId,
+      { search: search ?? "", order },
+    ] as const,
+  thread: (accountId: AccountId, threadId: ThreadId) =>
+    ["acct", accountId, "thread", threadId] as const,
   senders: (accountId: AccountId) => ["acct", accountId, "senders"] as const,
   message: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "message", messageId] as const,
@@ -47,10 +62,17 @@ export const queryKeys = {
   ) => ["acct", accountId, "attachment", messageId, attachmentId] as const,
 };
 
-/** The list a {@link queryKeys.messageList} key stands for; undefined for other keys. */
+/**
+ * The list a {@link queryKeys.messageList} or {@link queryKeys.threadList}
+ * key stands for; undefined for other keys.
+ */
 export function listSpecOfKey(key: QueryKey): ListSpec | undefined {
   const [, , kind, mailboxId, view] = key;
-  if (kind !== "messages" || typeof mailboxId !== "string") return undefined;
+  if (
+    (kind !== "messages" && kind !== "threads") ||
+    typeof mailboxId !== "string"
+  )
+    return undefined;
   const { search = "", order = "newest" } = (view ?? {}) as {
     search?: string;
     order?: MessageOrder;

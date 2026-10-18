@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { MessageId } from "../../core/ids";
-import type { MessageSummary } from "../../core/model";
+import type { ListRow } from "../../data/listRows";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
 import { useRouter, useUi, useUiStore } from "../../state/context";
@@ -9,7 +9,7 @@ import type { UiStore } from "../../state/uiStore";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { listKeyOf, useCurrentList } from "./useCurrentList";
 
-const EMPTY: readonly MessageSummary[] = [];
+const EMPTY: readonly ListRow[] = [];
 
 /**
  * Owns the message-list behavior that must work regardless of which panes
@@ -20,10 +20,10 @@ const EMPTY: readonly MessageSummary[] = [];
  * - registers the list's keyboard commands.
  */
 export function useListController(breakpoint: Breakpoint): void {
-  const { route, list, listKey } = useCurrentList();
+  const { route, list, rows, listKey } = useCurrentList();
   const router = useRouter();
   const store = useUiStore();
-  const items = list.data ?? EMPTY;
+  const items = rows ?? EMPTY;
   const ids = useMemo(() => items.map((item) => item.id), [items]);
 
   // URL → store: switching lists resets the selection; a message in the URL gets focus.
@@ -46,7 +46,11 @@ export function useListController(breakpoint: Breakpoint): void {
     const sync = () => {
       const state = store.getState();
       const current = router.getRoute();
-      if (!current || state.listKey !== listKeyOf(current, state.listOrder))
+      if (
+        !current ||
+        state.listKey !==
+          listKeyOf(current, state.listOrder, state.settings.conversations)
+      )
         return;
       // Nothing open any more ("back to the list" after archiving).
       if (state.focusedId === null) {

@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from "react";
-import type { AccountId, MessageId } from "../../core/ids";
+import type { AccountId, MessageId, ThreadId } from "../../core/ids";
+import type { Mailbox } from "../../core/model";
 import { isMailError } from "../../core/errors";
 import { useMailboxes, useMessage } from "../../data/hooks";
 import { useRoute, useRouter, useUi } from "../../state/context";
@@ -11,7 +12,8 @@ import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
-import { listKeyOf } from "../messages/useCurrentList";
+import { listKeyOf, useCurrentList } from "../messages/useCurrentList";
+import { ConversationView } from "./ConversationView";
 import { Icon } from "../common/Icon";
 import {
   useComposeActions,
@@ -26,10 +28,12 @@ import { useUnsubscribe } from "./useUnsubscribe";
 /** Column (c): the focused message, or a summary of the multi-selection. */
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const route = useRoute();
+  const { conversations, rows, scope } = useCurrentList();
   const router = useRouter();
   const listKey = listKeyOf(
     route,
     useUi((state) => state.listOrder),
+    useUi((state) => state.settings.conversations),
   );
   const focusedId = useUi((state) =>
     state.listKey === listKey ? state.focusedId : null,
@@ -68,12 +72,64 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
       </Placeholder>
     );
   }
+  if (conversations)
+    return (
+      <ConversationRow
+        key={messageId}
+        accountId={route.accountId}
+        rowId={messageId}
+        threadId={rows?.find((row) => row.id === messageId)?.thread?.id}
+        mailbox={scope}
+        {...(back ? { onBack: back } : {})}
+      />
+    );
   return (
     <MessageView
       key={messageId}
       accountId={route.accountId}
       messageId={messageId}
       {...(back ? { onBack: back } : {})}
+    />
+  );
+}
+
+/**
+ * The conversation of a row. Its id is known from the list; after a reload
+ * (before the list is there) it comes from the row's message.
+ */
+function ConversationRow({
+  accountId,
+  rowId,
+  threadId,
+  mailbox,
+  onBack,
+}: {
+  readonly accountId: AccountId;
+  readonly rowId: MessageId;
+  readonly threadId: ThreadId | undefined;
+  readonly mailbox: Mailbox | undefined;
+  readonly onBack?: () => void;
+}) {
+  const { data: message, error } = useMessage(
+    accountId,
+    threadId === undefined ? rowId : undefined,
+  );
+  const id = threadId ?? message?.threadId;
+  if (id === undefined)
+    return error ? (
+      <Placeholder title="This conversation no longer exists">
+        {errorMessage(error)}
+      </Placeholder>
+    ) : (
+      <ReaderSkeleton />
+    );
+  return (
+    <ConversationView
+      accountId={accountId}
+      rowId={rowId}
+      threadId={id}
+      mailbox={mailbox}
+      {...(onBack ? { onBack } : {})}
     />
   );
 }

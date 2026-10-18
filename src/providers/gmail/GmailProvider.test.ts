@@ -1348,3 +1348,96 @@ describe("GmailProvider senders and signatures", () => {
     expect(draft.from).toEqual({ name: "Team", address: "team@example.com" });
   });
 });
+
+describe("GmailProvider threads", () => {
+  const thread = (id: string, messageIds: string[]) => ({
+    id,
+    messages: messageIds.map((messageId, index) =>
+      gmailMessage(messageId, {
+        internalDate: String(1760000000000 + index * 1000),
+      }),
+    ),
+  });
+
+  it("lists conversations of a label with their messages, oldest first", async () => {
+    let listParams: URLSearchParams | undefined;
+    const fetched: string[] = [];
+    server.use(
+      http.get(url("threads"), ({ request }) => {
+        listParams = new URL(request.url).searchParams;
+        return HttpResponse.json({
+          threads: [{ id: "t1" }, { id: "t2" }],
+          nextPageToken: "next",
+        });
+      }),
+      http.get(url("threads/:id"), ({ params, request }) => {
+        const id = String(params.id);
+        fetched.push(
+          `${id}:${new URL(request.url).searchParams.get("format") ?? ""}`,
+        );
+        // Gmail answers oldest first; a shuffled answer is sorted anyway.
+        if (id === "t1") {
+          const t = thread("t1", ["m1", "m2"]);
+          return HttpResponse.json({
+            ...t,
+            messages: [...t.messages].reverse(),
+          });
+        }
+        return HttpResponse.json(thread("t2", ["m3"]));
+      }),
+    );
+    const page = await provider().listThreads({
+      mailboxId: asMailboxId("INBOX"),
+      search: "from:anna",
+      limit: 25,
+    });
+    expect(listParams?.get("labelIds")).toBe("INBOX");
+    expect(listParams?.get("q")).toBe("from:anna");
+    expect(listParams?.get("maxResults")).toBe("25");
+    expect(fetched.sort()).toEqual(["t1:metadata", "t2:metadata"]);
+    expect(page.nextCursor).toBe("next");
+    expect(page.items.map((t) => [t.id, t.messages.map((m) => m.id)])).toEqual([
+      ["t1", ["m1", "m2"]],
+      ["t2", ["m3"]],
+    ]);
+  });
+
+  it("lists every conversation id first for oldest first", async () => {
+    server.use(
+      http.get(url("threads"), ({ request }) => {
+        const token = new URL(request.url).searchParams.get("pageToken");
+        return HttpResponse.json(
+          token
+            ? { threads: [{ id: "t1" }] }
+            : { threads: [{ id: "t3" }, { id: "t2" }], nextPageToken: "p2" },
+        );
+      }),
+      http.get(url("threads/:id"), ({ params }) =>
+        HttpResponse.json(
+          thread(String(params.id), [`m-${String(params.id)}`]),
+        ),
+      ),
+    );
+    const page = await provider().listThreads({
+      mailboxId: asMailboxId("INBOX"),
+      order: "oldest",
+      limit: 2,
+    });
+    expect(page.items.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(page.nextCursor).toBeDefined();
+  });
+
+  it("loads a whole conversation with bodies", async () => {
+    server.use(
+      http.get(url("threads/t1"), ({ request }) => {
+        expect(new URL(request.url).searchParams.get("format")).toBe("full");
+        return HttpResponse.json(thread("t1", ["m1", "m2"]));
+      }),
+    );
+    const full = await provider().getThread(asThreadId("t1"));
+    expect(full.messages.map((m) => [m.id, m.body.text])).toEqual([
+      ["m1", "Body of m1"],
+      ["m2", "Body of m2"],
+    ]);
+  });
+});

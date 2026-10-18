@@ -5,7 +5,7 @@ import type { MailboxId } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import { useMailboxes } from "../../data/hooks";
 import { mailboxPath } from "../../data/mailboxActions";
-import { cachedSummaries } from "../../data/mutations";
+import { cachedSummaries, threadMessageIds } from "../../data/mutations";
 import { useRoute, useUi } from "../../state/context";
 import type { PickerState } from "../../state/uiStore";
 import { useMailActions } from "../actions/useMailActions";
@@ -99,25 +99,38 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const createActive = offerCreate && activeIndex === visible.length;
   const highlighted = createActive ? undefined : visible[activeIndex]?.mailbox;
 
-  // Current label state of the targets, for the tri-state checkboxes.
+  // Current label state of the targets, for the tri-state checkboxes. A
+  // conversation has a label when one of its messages has it.
   const initial = useMemo(() => {
-    const summaries = cachedSummaries(
-      queryClient,
-      picker.accountId,
-      picker.ids,
-    );
+    const units = picker.ids
+      .map((id) =>
+        cachedSummaries(
+          queryClient,
+          picker.accountId,
+          picker.conversations === true
+            ? threadMessageIds(queryClient, picker.accountId, [id])
+            : [id],
+        ),
+      )
+      .filter((unit) => unit.length > 0);
     const states = new Map<MailboxId, LabelState>();
     for (const mailbox of candidates) {
-      const holders = summaries.filter((s) =>
-        s.mailboxIds.includes(mailbox.id),
+      const holders = units.filter((unit) =>
+        unit.some((s) => s.mailboxIds.includes(mailbox.id)),
       ).length;
       states.set(
         mailbox.id,
-        holders === 0 ? "off" : holders === summaries.length ? "on" : "mixed",
+        holders === 0 ? "off" : holders === units.length ? "on" : "mixed",
       );
     }
     return states;
-  }, [queryClient, picker.accountId, picker.ids, candidates]);
+  }, [
+    queryClient,
+    picker.accountId,
+    picker.ids,
+    picker.conversations,
+    candidates,
+  ]);
 
   const stateOf = (id: MailboxId): LabelState => {
     const choice = choices.get(id);
@@ -227,7 +240,15 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
         <h2 id={titleId} className="mb-2 text-sm font-semibold">
           {title}{" "}
           <span className="font-normal text-zinc-500">
-            ({count === 1 ? "1 message" : `${count} messages`})
+            (
+            {picker.conversations === true
+              ? count === 1
+                ? "1 conversation"
+                : `${count} conversations`
+              : count === 1
+                ? "1 message"
+                : `${count} messages`}
+            )
           </span>
         </h2>
         <input

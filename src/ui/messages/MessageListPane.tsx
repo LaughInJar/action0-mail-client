@@ -19,8 +19,20 @@ import { everywhereMailbox, useCurrentList } from "./useCurrentList";
 
 /** Column (b): header, search and message list of the current mailbox. */
 export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
-  const { route, list, mailboxes, mailbox, scope, order, listKey } =
-    useCurrentList();
+  const {
+    route,
+    list,
+    rows,
+    conversations,
+    mailboxes,
+    isolating,
+    mailbox,
+    scope,
+    order,
+    listKey,
+  } = useCurrentList();
+  const drafts = mailboxes?.find((m) => m.role === "drafts")?.id;
+  const things = conversations ? "conversations" : "messages";
   const router = useRouter();
   const store = useUiStore();
   const accounts = useAccounts();
@@ -59,7 +71,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   let body;
   if (!route) body = <Note>Choose a folder.</Note>;
   else if (!handle) body = <Note>This account is no longer connected.</Note>;
-  else if (!list.data && status !== "signed-in")
+  else if (!rows && status !== "signed-in")
     body = <Note>Reconnect the account to see its messages.</Note>;
   else if (list.isPending)
     body = (
@@ -73,7 +85,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         <ListSkeleton />
       </>
     );
-  else if (list.isError && !list.data)
+  else if (list.isError && !rows)
     body = (
       <Note>
         {errorMessage(list.error)}{" "}
@@ -86,12 +98,13 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         </button>
       </Note>
     );
-  else if (list.data.length === 0 && search)
+  else if (!rows) body = <ListSkeleton />;
+  else if (rows.length === 0 && search)
     body = (
       <Note>
         {search.everywhere || !mailbox
-          ? `No messages match “${search.text}”.`
-          : `No messages match “${search.text}” in ${mailbox.name}.`}
+          ? `No ${things} match “${search.text}”.`
+          : `No ${things} match “${search.text}” in ${mailbox.name}.`}
         {!search.everywhere &&
           everywhere &&
           mailbox &&
@@ -114,21 +127,24 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           )}
       </Note>
     );
-  else if (list.data.length === 0) body = <Note>No messages here.</Note>;
+  else if (rows.length === 0) body = <Note>No {things} here.</Note>;
   else
     body = (
       <MessageList
         key={listKey}
         accountId={route.accountId}
         allowDrag={!isolated}
-        items={list.data}
+        rows={rows}
         mailbox={scope}
+        isolating={isolating}
+        drafts={drafts}
         {...(listKey === null ? {} : { listKey })}
         {...(search ? { label: `Results for “${search.text}”` } : {})}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
         fetchNextPage={loadMore}
         onOpen={onOpen}
+        enterOpens={breakpoint === "narrow" || isDrafts}
         {...(actions.canStar
           ? {
               onToggleStar: (id: MessageId) => {
@@ -210,17 +226,15 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           <span className="min-w-0 flex-1">
             Messages in {scope.name} are deleted automatically after 30 days.
           </span>
-          {actions.canDeleteForever &&
-            !search &&
-            (list.data?.length ?? 0) > 0 && (
-              <button
-                type="button"
-                onClick={actions.requestEmpty}
-                className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
-              >
-                Empty {scope.name}
-              </button>
-            )}
+          {actions.canDeleteForever && !search && (rows?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={actions.requestEmpty}
+              className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
+            >
+              Empty {scope.name}
+            </button>
+          )}
         </div>
       )}
       <div className="min-h-0 flex-1">{body}</div>

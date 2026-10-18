@@ -2,7 +2,7 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management (features 1–9).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
@@ -19,6 +19,7 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Unsubscribe from newsletters with one button next to the sender. It uses the sender's one-click unsubscribe (RFC 8058) when there is one, otherwise sends the unsubscribe mail, otherwise opens the sender's unsubscribe page. It can't be undone, so it asks first.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
+- Conversation view (Settings → Reading, off by default): one row per conversation ("Anna, me 3"), and the reader shows the whole conversation, oldest first, with older read messages folded to one line. Your replies and drafts show in place. Archive, labels, delete and the other actions apply to the whole conversation; <kbd>n</kbd>/<kbd>p</kbd> move between its messages, <kbd>Enter</kbd> opens or closes one, and <kbd>r</kbd>/<kbd>f</kbd> answer the one at the cursor.
 - Settings (⚙ next to the theme switch): list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
 - Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
@@ -128,6 +129,8 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 | <kbd>Shift</kbd> + <kbd>s</kbd>                                             | Report spam; inside Spam: not spam                        |
 | <kbd>Shift</kbd> + <kbd>Delete</kbd>                                        | Delete forever (inside Trash and Spam, with confirmation) |
 | <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                                 |
+| <kbd>n</kbd> / <kbd>p</kbd>                                                 | Next / previous message in a conversation                 |
+| <kbd>Enter</kbd> or <kbd>o</kbd> in a conversation                          | Open or close the message at the cursor                   |
 | <kbd>?</kbd>                                                                | Show all shortcuts                                        |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.

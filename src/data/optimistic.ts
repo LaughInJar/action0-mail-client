@@ -1,7 +1,13 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import type { Cursor, MailboxId, MessageId } from "../core/ids";
+import type { Cursor, MailboxId, MessageId, ThreadId } from "../core/ids";
 import type { MailIntent, MessageChange } from "../core/intents";
-import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
+import type {
+  Mailbox,
+  Message,
+  MessageSummary,
+  Page,
+  ThreadSummary,
+} from "../core/model";
 import type {
   MailChange,
   MessageOrder,
@@ -11,6 +17,12 @@ import type {
 /** Cached shape of a message list (an infinite query). */
 export type MessageListData = InfiniteData<
   Page<MessageSummary>,
+  Cursor | undefined
+>;
+
+/** Cached shape of a conversation list. */
+export type ThreadListData = InfiniteData<
+  Page<ThreadSummary>,
   Cursor | undefined
 >;
 
@@ -277,15 +289,15 @@ export function patchList(
   return { ...data, pages };
 }
 
-function insertByDate(
-  pages: Page<MessageSummary>[],
-  row: MessageSummary,
+function insertByDate<T>(
+  pages: Page<T>[],
+  row: T,
   order: MessageOrder,
-): Page<MessageSummary>[] {
-  const comesAfter = (item: MessageSummary) =>
-    order === "newest"
-      ? item.receivedAt < row.receivedAt
-      : item.receivedAt > row.receivedAt;
+  dateOf: (item: T) => string = (item) => (item as MessageSummary).receivedAt,
+): Page<T>[] {
+  const date = dateOf(row);
+  const comesAfter = (item: T) =>
+    order === "newest" ? dateOf(item) < date : dateOf(item) > date;
   for (const [pageIndex, page] of pages.entries()) {
     const index = page.items.findIndex(comesAfter);
     if (index !== -1) {
@@ -377,4 +389,204 @@ function roleId(
   role: Mailbox["role"],
 ): MailboxId | undefined {
   return mailboxes.find((mailbox) => mailbox.role === role)?.id;
+}
+
+/** The conversation of a message (one of its own if the provider has none). */
+export function threadIdOf(message: MessageSummary): ThreadId {
+  return message.threadId ?? (message.id as string as ThreadId);
+}
+
+/**
+ * The messages of a conversation that show in `mailbox`: those in Spam or
+ * Trash only there, the others everywhere else (your replies from Sent show
+ * in the Inbox's conversation too).
+ */
+export function visibleMessages<T extends MessageSummary>(
+  thread: { readonly messages: readonly T[] },
+  mailbox: Mailbox,
+  isolating: ReadonlySet<MailboxId>,
+): T[] {
+  return thread.messages.filter((message) =>
+    isolating.has(mailbox.id)
+      ? message.mailboxIds.includes(mailbox.id)
+      : !message.mailboxIds.some((id) => isolating.has(id)),
+  );
+}
+
+/** Whether a conversation shows up in `mailbox`: one of its messages does. */
+export function threadBelongsTo(
+  mailbox: Mailbox,
+  thread: ThreadSummary,
+  isolating: ReadonlySet<MailboxId> = new Set(),
+): boolean {
+  return thread.messages.some((message) =>
+    belongsTo(mailbox, message, isolating),
+  );
+}
+
+/** Date of a conversation's newest message shown in `mailbox`. */
+function threadDate(
+  mailbox: Mailbox,
+  isolating: ReadonlySet<MailboxId>,
+): (thread: ThreadSummary) => string {
+  return (thread) => {
+    const shown = visibleMessages(thread, mailbox, isolating);
+    return (shown.length > 0 ? shown : thread.messages).reduce(
+      (latest, message) =>
+        message.receivedAt > latest ? message.receivedAt : latest,
+      "",
+    );
+  };
+}
+
+const byDate = (a: MessageSummary, b: MessageSummary) =>
+  a.receivedAt.localeCompare(b.receivedAt);
+
+/** A conversation with changes applied to its messages (deleted ones dropped). */
+function changedThread(
+  thread: ThreadSummary,
+  byId: ReadonlyMap<MessageId, MessageChange>,
+): ThreadSummary {
+  return {
+    ...thread,
+    messages: thread.messages.flatMap((message) => {
+      const change = byId.get(message.id);
+      if (!change) return [message];
+      if (change.deleted === true) return [];
+      return [
+        {
+          ...message,
+          mailboxIds: change.after.mailboxIds,
+          flags: change.after.flags,
+        },
+      ];
+    }),
+  };
+}
+
+/**
+ * {@link patchList} for conversation lists: messages change inside their
+ * rows, rows leave when none of their messages belongs any more, and
+ * conversations that come back (undo) are rebuilt: from `known` (as they
+ * were last seen) with the changes applied, else from the changed messages.
+ */
+export function patchThreadList(
+  data: ThreadListData,
+  mailbox: Mailbox,
+  changes: readonly MessageChange[],
+  isolating: ReadonlySet<MailboxId> = new Set(),
+  order: MessageOrder = "newest",
+  known: ReadonlyMap<ThreadId, ThreadSummary> = new Map(),
+): ThreadListData {
+  const byId = new Map(changes.map((change) => [change.id, change]));
+  let pages: Page<ThreadSummary>[] = data.pages.map((page) => ({
+    ...page,
+    items: page.items.flatMap((thread) => {
+      if (!thread.messages.some((message) => byId.has(message.id)))
+        return [thread];
+      const next = changedThread(thread, byId);
+      return next.messages.length > 0 &&
+        threadBelongsTo(mailbox, next, isolating)
+        ? [next]
+        : [];
+    }),
+  }));
+
+  const present = new Set(
+    data.pages.flatMap((page) => page.items.map((thread) => thread.id)),
+  );
+  const returning = new Map<ThreadId, MessageChange[]>();
+  for (const change of changes) {
+    const id = threadIdOf(change.after);
+    if (present.has(id) || change.deleted === true) continue;
+    returning.set(id, [...(returning.get(id) ?? []), change]);
+  }
+  for (const [id, group] of returning) {
+    const base = known.get(id)?.messages ?? [];
+    const changed = new Set(group.map((change) => change.id));
+    const rest = base.filter((message) => !changed.has(message.id));
+    const before = { id, messages: [...rest, ...group.map((c) => c.before)] };
+    const after = {
+      id,
+      messages: [...rest, ...group.map((c) => c.after)].sort(byDate),
+    };
+    if (
+      threadBelongsTo(mailbox, after, isolating) &&
+      !threadBelongsTo(mailbox, before, isolating)
+    )
+      pages = insertByDate(pages, after, order, threadDate(mailbox, isolating));
+  }
+  return { ...data, pages };
+}
+
+/**
+ * {@link applyServerChanges} for conversation lists: a message updates in
+ * its row or joins its conversation's row (which then moves to its new date
+ * position); a message of a conversation that isn't listed starts a row.
+ */
+export function applyServerChangesToThreads(
+  data: ThreadListData,
+  mailbox: Mailbox,
+  changes: readonly MailChange[],
+  isolating: ReadonlySet<MailboxId> = new Set(),
+  order: MessageOrder = "newest",
+): ThreadListData {
+  const latest = new Map<MessageId, MessageSummary | null>();
+  for (const change of changes)
+    latest.set(
+      change.kind === "removed" ? change.id : change.message.id,
+      change.kind === "removed" ? null : change.message,
+    );
+  if (latest.size === 0) return data;
+  const dateOf = threadDate(mailbox, isolating);
+
+  const joining = new Map<ThreadId, MessageSummary[]>();
+  for (const message of latest.values()) {
+    if (!message) continue;
+    const id = threadIdOf(message);
+    joining.set(id, [...(joining.get(id) ?? []), message]);
+  }
+
+  const moved: ThreadSummary[] = [];
+  const listed = new Set<ThreadId>();
+  let pages: Page<ThreadSummary>[] = data.pages.map((page) => ({
+    ...page,
+    items: page.items.flatMap((thread) => {
+      listed.add(thread.id);
+      const known = new Set(thread.messages.map((message) => message.id));
+      const added = (joining.get(thread.id) ?? []).filter(
+        (message) => !known.has(message.id),
+      );
+      const touched =
+        added.length > 0 ||
+        thread.messages.some((message) => latest.has(message.id));
+      if (!touched) return [thread];
+      const messages = [
+        ...thread.messages.flatMap((message) => {
+          if (!latest.has(message.id)) return [message];
+          const next = latest.get(message.id);
+          return next ? [next] : [];
+        }),
+        ...added,
+      ].sort(byDate);
+      const next = { ...thread, messages };
+      if (messages.length === 0 || !threadBelongsTo(mailbox, next, isolating))
+        return [];
+      // A newer message moves the conversation; otherwise it stays put.
+      if (dateOf(next) !== dateOf(thread)) {
+        moved.push(next);
+        return [];
+      }
+      return [next];
+    }),
+  }));
+  for (const thread of moved)
+    pages = insertByDate(pages, thread, order, dateOf);
+  for (const [id, messages] of joining) {
+    if (listed.has(id)) continue;
+    const thread = { id, messages: [...messages].sort(byDate) };
+    if (threadBelongsTo(mailbox, thread, isolating))
+      pages = insertByDate(pages, thread, order, dateOf);
+  }
+  return { ...data, pages };
 }

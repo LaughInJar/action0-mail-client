@@ -187,7 +187,8 @@ function SearchField({ placeholder }: { placeholder: string }) {
 
   /** Moves focus to the list, once it shows the results of `route`. */
   const focusResults = (target: Route) => {
-    const key = listKeyOf(target, store.getState().listOrder);
+    const { listOrder, settings } = store.getState();
+    const key = listKeyOf(target, listOrder, settings.conversations);
     focusWhenReady(MESSAGE_LIST_ID, {
       accept: (element) => element.dataset.listKey === key,
     });

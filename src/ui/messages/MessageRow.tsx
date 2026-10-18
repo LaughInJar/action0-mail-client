@@ -1,20 +1,19 @@
 import { memo } from "react";
-import type { MessageSummary } from "../../core/model";
-import { displayName, displayNames, formatListDate } from "../common/format";
+import { formatListDate } from "../common/format";
 import { Icon } from "../common/Icon";
+import type { RowView } from "./rowView";
 
 /** Props of {@link MessageRow}. */
 export interface MessageRowProps {
   readonly domId: string;
-  readonly summary: MessageSummary;
+  /** What the row shows (a message or a conversation). */
+  readonly view: RowView;
   /** The cursor is on this row (it is shown in the reader). */
   readonly focused: boolean;
   /** Part of the selection the next action would apply to. */
   readonly selected: boolean;
   /** Show checkboxes (a multi-selection exists). */
   readonly selectionMode: boolean;
-  /** Show recipients instead of the sender (Sent, Drafts). */
-  readonly showRecipients: boolean;
   /** Can be dragged onto the mailbox tree (mouse only). */
   readonly draggable: boolean;
   /** The star toggles on click (the list handles the click). */
@@ -23,28 +22,40 @@ export interface MessageRowProps {
   readonly compact: boolean;
 }
 
-/** One message in the list. Clicks are handled by the list (event delegation). */
+/** One message (or conversation) in the list. Clicks are handled by the list (event delegation). */
 export const MessageRow = memo(function MessageRow({
   domId,
-  summary,
+  view,
   focused,
   selected,
   selectionMode,
-  showRecipients,
   draggable,
   starrable,
   compact,
 }: MessageRowProps) {
-  const unread = !summary.flags.seen;
-  const who = showRecipients
-    ? `To: ${displayNames(summary.to) || "(no recipients)"}`
-    : displayName(summary.from);
+  const { unread } = view;
+  const who = (
+    <>
+      {view.who}
+      {view.draft && (
+        <span className="font-normal text-red-700 dark:text-red-400">
+          {view.who ? ", " : ""}Draft
+        </span>
+      )}
+      {view.count !== undefined && (
+        <span className="ml-1 text-xs font-normal text-zinc-500">
+          {view.count}
+          <span className="sr-only"> messages</span>
+        </span>
+      )}
+    </>
+  );
   const time = (
     <time
-      dateTime={summary.receivedAt}
+      dateTime={view.receivedAt}
       className={`shrink-0 text-xs tabular-nums ${unread ? "font-semibold text-blue-700 dark:text-blue-300" : "text-zinc-500"}`}
     >
-      {formatListDate(summary.receivedAt)}
+      {formatListDate(view.receivedAt)}
     </time>
   );
   const subjectAndSnippet = (
@@ -56,14 +67,14 @@ export const MessageRow = memo(function MessageRow({
             : "text-zinc-700 dark:text-zinc-300"
         }
       >
-        {summary.subject || "(no subject)"}
+        {view.subject || "(no subject)"}
       </span>
-      {summary.snippet && <> — {summary.snippet}</>}
+      {view.snippet && <> — {view.snippet}</>}
     </p>
   );
   const markers = (
     <>
-      {summary.hasAttachments && (
+      {view.hasAttachments && (
         <>
           <Icon name="paperclip" className="size-3.5 shrink-0 text-zinc-400" />
           <span className="sr-only">, has attachments</span>
@@ -73,9 +84,9 @@ export const MessageRow = memo(function MessageRow({
         // Clicks are handled by the list; `s` is the keyboard path.
         <span
           data-star=""
-          title={summary.flags.flagged ? "Unstar (s)" : "Star (s)"}
+          title={view.flagged ? "Unstar (s)" : "Star (s)"}
           className={`-m-1 grid shrink-0 place-items-center p-1 ${
-            summary.flags.flagged
+            view.flagged
               ? ""
               : "invisible group-hover:visible pointer-coarse:hidden"
           }`}
@@ -83,21 +94,21 @@ export const MessageRow = memo(function MessageRow({
           <Icon
             name="star"
             className={`size-3.5 ${
-              summary.flags.flagged
+              view.flagged
                 ? "fill-amber-400 text-amber-500"
                 : "text-zinc-400 hover:text-amber-500"
             }`}
           />
         </span>
       ) : (
-        summary.flags.flagged && (
+        view.flagged && (
           <Icon
             name="star"
             className="size-3.5 shrink-0 fill-amber-400 text-amber-500"
           />
         )
       )}
-      {summary.flags.flagged && <span className="sr-only">, starred</span>}
+      {view.flagged && <span className="sr-only">, starred</span>}
     </>
   );
 
@@ -106,7 +117,7 @@ export const MessageRow = memo(function MessageRow({
       id={domId}
       role="option"
       aria-selected={selected}
-      data-message-id={summary.id}
+      data-message-id={view.id}
       draggable={draggable}
       className={[
         "group flex cursor-default gap-3 border-b border-zinc-100 px-3 select-none dark:border-zinc-800/70",

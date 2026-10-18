@@ -23,6 +23,8 @@ export interface AppSettings {
   readonly undoSendSeconds: (typeof UNDO_SEND_CHOICES)[number];
   /** Desktop notifications for new mail (the browser must allow them too). */
   readonly notifications: boolean;
+  /** One row per conversation instead of per message (where the account supports it). */
+  readonly conversations: boolean;
 }
 
 /** The settings of a browser that never changed any. */
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   trustedSenders: [],
   undoSendSeconds: 30,
   notifications: true,
+  conversations: false,
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -79,6 +82,10 @@ export function parseSettings(value: unknown): AppSettings {
       typeof raw.notifications === "boolean"
         ? raw.notifications
         : d.notifications,
+    conversations:
+      typeof raw.conversations === "boolean"
+        ? raw.conversations
+        : d.conversations,
   };
 }
 
