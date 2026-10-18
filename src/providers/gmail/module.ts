@@ -47,6 +47,10 @@ export function createGmailModule({
     type: "gmail",
     label: "Google / Gmail",
 
+    prepare: async () => {
+      await loadGis();
+    },
+
     async connect() {
       const ready = peekGis();
       const token = await requestGoogleToken(ready ?? (await loadGis()), {

@@ -2,15 +2,21 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { readConfig } from "./app/config";
-import { createAppServices, createDefaultModules } from "./app/services";
+import {
+  createAppServices,
+  createDefaultModules,
+  createDefaultSetups,
+} from "./app/services";
 import { getLocalStorage, getSessionStorage } from "./lib/storage";
 import "./index.css";
 
 const config = readConfig();
 const sessionStorage = getSessionStorage();
+const localStorage = getLocalStorage();
 const services = createAppServices({
-  modules: createDefaultModules(config, sessionStorage),
-  localStorage: getLocalStorage(),
+  modules: createDefaultModules(config, sessionStorage, localStorage),
+  createSetups: createDefaultSetups(config, sessionStorage, localStorage),
+  localStorage,
   sessionStorage,
   version: config.version,
 });

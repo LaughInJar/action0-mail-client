@@ -2,7 +2,8 @@ import { render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { onTestFinished } from "vitest";
 import { saveAccounts } from "../accounts/accountStorage";
-import type { ProviderModule } from "../accounts/types";
+import type { AccountRegistry } from "../accounts/AccountRegistry";
+import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { App } from "../app/App";
 import { createAppServices } from "../app/services";
 import { createDemoData } from "../providers/fake/demoData";
@@ -22,6 +23,8 @@ export interface RenderAppOptions {
   readonly hash?: string;
   readonly data?: () => FakeMailData;
   readonly modules?: readonly ProviderModule[];
+  /** Runtime provider setups (e.g. a Google client ID entered in the wizard). */
+  readonly setups?: (registry: AccountRegistry) => readonly ProviderSetup[];
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -31,6 +34,7 @@ export function renderApp({
   hash,
   data = () => createDemoData(TEST_NOW),
   modules,
+  setups,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
@@ -38,6 +42,7 @@ export function renderApp({
 
   const services = createAppServices({
     modules: modules ?? [createDemoModule({ latencyMs: 0, data })],
+    ...(setups ? { createSetups: setups } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,

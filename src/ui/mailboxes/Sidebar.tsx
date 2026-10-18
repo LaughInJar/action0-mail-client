@@ -1,8 +1,5 @@
-import { useState } from "react";
 import { useAccountRegistry, useAccounts } from "../../accounts/context";
-import type { ProviderType } from "../../core/model";
-import { useRoute, useRouter } from "../../state/context";
-import { errorMessage } from "../common/errorMessage";
+import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 
@@ -31,27 +28,7 @@ function AccountsPanel() {
   const accounts = useAccounts();
   const route = useRoute();
   const router = useRouter();
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-
-  const connected = new Set(accounts.map((handle) => handle.account.type));
-  const addable = registry
-    .availableModules()
-    .filter((module) => module.type !== "demo" || !connected.has("demo"));
-
-  const add = (type: ProviderType) => {
-    setError(undefined);
-    setBusy(true);
-    // No await before add(): the sign-in popup must open inside this click.
-    registry
-      .add(type)
-      .catch((cause: unknown) => {
-        setError(errorMessage(cause));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  };
+  const setAddAccountOpen = useUi((state) => state.setAddAccountOpen);
 
   return (
     <details className="group border-t border-zinc-200 text-sm dark:border-zinc-800">
@@ -86,30 +63,19 @@ function AccountsPanel() {
             </button>
           </li>
         ))}
-        {addable.map((module) => (
-          <li key={module.type}>
-            <button
-              type="button"
-              disabled={busy}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-blue-700 hover:bg-zinc-200/60 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
-              onClick={() => {
-                add(module.type);
-              }}
-            >
-              <Icon name="plus" />
-              Add {module.label}
-            </button>
-          </li>
-        ))}
+        <li>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-blue-700 hover:bg-zinc-200/60 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
+            onClick={() => {
+              setAddAccountOpen(true);
+            }}
+          >
+            <Icon name="plus" />
+            Add account
+          </button>
+        </li>
       </ul>
-      {error !== undefined && (
-        <p
-          role="alert"
-          className="px-4 pb-3 text-xs text-red-700 dark:text-red-400"
-        >
-          {error}
-        </p>
-      )}
     </details>
   );
 }

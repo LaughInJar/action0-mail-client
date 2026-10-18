@@ -1,10 +1,16 @@
+import { useCallback } from "react";
 import {
   skipToken,
+  useQueryClient,
   useInfiniteQuery,
   useQuery,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { useAccountHandle, useAuthStatus } from "../accounts/context";
+import {
+  useAccountHandle,
+  useAccountRegistry,
+  useAuthStatus,
+} from "../accounts/context";
 import type { AccountHandle } from "../accounts/types";
 import type { AccountId, Cursor, MailboxId, MessageId } from "../core/ids";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
@@ -160,4 +166,28 @@ export function findMailbox(
   return id === undefined
     ? undefined
     : mailboxes?.find((mailbox) => mailbox.id === id);
+}
+
+/**
+ * Loads an account's mailboxes into the cache (or returns the cached ones),
+ * e.g. to open the Inbox of an account that was just connected.
+ */
+export function useFetchMailboxes(): (
+  accountId: AccountId,
+) => Promise<readonly Mailbox[]> {
+  const queryClient = useQueryClient();
+  const registry = useAccountRegistry();
+  return useCallback(
+    async (accountId: AccountId) => {
+      const handle = registry.get(accountId);
+      if (!handle) return [];
+      return queryClient.query({
+        queryKey: queryKeys.mailboxes(accountId),
+        queryFn: ({ signal }) => handle.provider.listMailboxes(signal),
+        staleTime: 60_000,
+        meta: { persist: true },
+      });
+    },
+    [queryClient, registry],
+  );
 }

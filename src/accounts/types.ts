@@ -13,6 +13,12 @@ export interface ProviderModule {
   readonly label: string;
 
   /**
+   * Loads whatever {@link connect} needs (e.g. Google's sign-in script), so
+   * that connect() can open its popup synchronously inside the click.
+   */
+  readonly prepare?: () => Promise<void>;
+
+  /**
    * Adds a new account interactively (the user picks and authorizes an
    * account). Must be called from a user gesture.
    */
@@ -29,4 +35,22 @@ export interface AccountHandle {
   readonly account: Account;
   readonly auth: AuthSession;
   readonly provider: MailProvider;
+}
+
+/** Where a provider setting comes from: the build (`.env.local`) or this browser. */
+export type SettingSource = "build" | "browser";
+
+/**
+ * Lets the user configure a provider at runtime, e.g. Google's OAuth client
+ * ID. The composition root implements it; the UI only sees this interface.
+ */
+export interface ProviderSetup {
+  readonly type: ProviderType;
+  /** The value in use and where it came from; a build value takes precedence. */
+  readonly current: () =>
+    { readonly value: string; readonly source: SettingSource } | undefined;
+  /** An error message for an invalid value, otherwise undefined. */
+  readonly validate: (value: string) => string | undefined;
+  /** Saves the value in this browser and (re-)registers the provider module. */
+  readonly apply: (value: string) => void;
 }

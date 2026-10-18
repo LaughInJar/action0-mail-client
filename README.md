@@ -38,21 +38,35 @@ The app uses the Google Identity Services token model with the full-access scope
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
    - **Authorized redirect URIs:** none needed.
-5. Copy the client ID and put it into `.env.local` in the project root:
+5. Copy the client ID and give it to the app, either way works:
+   - **In the app:** **Add account → Google** shows these steps (with the exact origin to copy) and a field for the client ID. It's saved as a setting in that browser. This also works on a deployed site, without a rebuild.
+   - **In `.env.local`** in the project root; this takes precedence over the setting in the browser:
 
-   ```sh
-   cp .env.example .env.local
-   # then edit .env.local:
-   VITE_GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
-   ```
+     ```sh
+     cp .env.example .env.local
+     # then edit .env.local:
+     VITE_GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+     ```
 
-6. Restart `npm run dev` and click **Sign in with Google**.
+6. **Add account → Google → Continue with Google**, choose your account and allow access.
 
 Things to know:
 
 - `https://mail.google.com/` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
 - Google issues access tokens that last **one hour** and no refresh token to browser apps without a backend. The app refreshes the token on your next click or key press shortly before it expires (the Google popup opens and closes by itself while you're signed in to Google). If that's not possible, a bar offers a one-click **Reconnect**. On touch devices the popup would open as a new tab, so there the bar appears a few minutes before expiry instead.
 - A message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read.
+
+### Troubleshooting Google sign-in
+
+Google shows these errors in its own window, so the app can't see them; the wizard lists them under _Did Google show an error?_.
+
+| Google says                                                             | Fix                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Error 401: invalid_client**, _no registered origin_                   | The client has no **Authorized JavaScript origin** for the address you opened (or isn't of type _Web application_). Add exactly `http://localhost:5173`: `http`, no trailing slash, `localhost` rather than `127.0.0.1`. Redirect URIs stay empty. Changes take a few minutes. |
+| **Error 400: origin_mismatch**                                          | Same cause: the address in the browser isn't one of the registered origins.                                                                                                                                                                                                    |
+| **Access blocked: … has not completed the Google verification process** | Your address isn't a test user. Add it under **Audience → Test users**.                                                                                                                                                                                                        |
+| A message about your **organization** or **administrator**              | Your Google Workspace admin blocks unverified apps. Only they can allow it.                                                                                                                                                                                                    |
+| The popup doesn't open                                                  | The browser blocked it. Allow popups for the site and click again.                                                                                                                                                                                                             |
 
 ## Testing on a phone
 
