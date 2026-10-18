@@ -107,7 +107,7 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           subjectId={subjectId}
         />
         <MessageBody accountId={accountId} message={message} />
-        <AttachmentList message={message} />
+        <AttachmentList accountId={accountId} message={message} />
         {compose.canCompose && (
           <AnswerButtons
             compose={compose}

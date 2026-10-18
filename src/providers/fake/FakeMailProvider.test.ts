@@ -208,7 +208,7 @@ describe("FakeMailProvider drafts and sending", () => {
     subject: "Hello",
     html: "<p>Hello there</p>",
     text: "Hello there",
-    forwarded: [],
+    attachments: [],
   };
 
   it("keeps drafts in Drafts, with a new message on every save", async () => {
@@ -270,23 +270,37 @@ describe("FakeMailProvider drafts and sending", () => {
     const fake = provider();
     const { id, messageId } = await fake.saveDraft({
       ...draft,
-      forwarded: [
+      attachments: [
         {
-          messageId: asMessageId("inline-image"),
-          attachmentId: asAttachmentId("logo"),
+          id: "logo",
           filename: "logo-draft.svg",
           mimeType: "image/svg+xml",
           size: 10,
+          source: {
+            messageId: asMessageId("inline-image"),
+            attachmentId: asAttachmentId("logo"),
+          },
+        },
+        {
+          id: "mine",
+          filename: "notes.txt",
+          mimeType: "text/plain",
+          size: 2,
+          content: new Blob(["hi"]),
         },
       ],
     });
     const saved = await fake.getDraft(id);
-    const [part] = saved.forwarded;
-    expect(part).toMatchObject({ messageId, filename: "logo-draft.svg" });
+    const [part, mine] = saved.attachments;
+    expect(part).toMatchObject({
+      filename: "logo-draft.svg",
+      source: { messageId },
+    });
     const blob = await fake.getAttachment(
       messageId,
-      part?.attachmentId ?? asAttachmentId(""),
+      part?.source?.attachmentId ?? asAttachmentId(""),
     );
+    expect(mine?.filename).toBe("notes.txt");
     expect(await blob.text()).toContain("<svg");
   });
 

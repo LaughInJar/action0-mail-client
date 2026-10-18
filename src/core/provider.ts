@@ -42,6 +42,8 @@ export interface ProviderCapabilities {
   readonly compose: boolean;
   /** Supports {@link MailProvider.searchContacts}. */
   readonly contacts: boolean;
+  /** Most bytes of attachments one mail may carry (inline images included). */
+  readonly maxAttachmentBytes: number;
 }
 
 /** Date order of a message list. */

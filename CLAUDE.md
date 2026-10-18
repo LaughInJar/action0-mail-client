@@ -126,3 +126,8 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Sending waits 30 s with "Undo" and "Send now". Leaving the page meanwhile asks first; a mail that didn't go out stays a draft.
   - Replies and forwards keep the original as-is (sanitized, collapsed, removable) inside Gmail's quote marker. Forwards include the original's attachments.
   - Address suggestions come from Google Contacts (People API: contacts and "other contacts"), with recent mail as the fallback. This adds two read-only scopes, so accounts reconnect once, and the People API has to be enabled in Google Cloud.
+- **Attachments decisions:**
+  - Received attachments: images open in an in-app viewer (← / → between them, Esc closes, Download), PDFs in the browser's PDF viewer in a new tab, everything else downloads. Every attachment also has a Download button. HTML, SVG and XML files are never opened as pages, only downloaded.
+  - Files get into a mail through the paperclip (file picker), by dropping them onto the composer, by pasting, or by dropping them anywhere on the app while no composer is open (that starts a new mail).
+  - Images dropped or pasted into the text are inline, like Gmail; other files, and images dropped elsewhere on the composer, are attachments.
+  - At most 25 MB of attachments per mail (Gmail's limit, inline images included), with a clear message beyond that. Files are saved with the draft; drafts with more than 1 MB of files save every 30 s. Large mails use Gmail's resumable upload.

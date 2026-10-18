@@ -9,6 +9,7 @@ import { SendQueueBar } from "../composer/SendQueueBar";
 import { useComposeActions } from "../composer/useComposeActions";
 import { useComposeCommands } from "../composer/useComposeCommands";
 import { useComposerEffects } from "../composer/useComposerEffects";
+import { useFileDrop } from "../composer/useFileDrop";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
@@ -48,6 +49,7 @@ function MailApp() {
   const compose = useComposeActions();
   useComposerEffects(breakpoint, compose);
   useComposeCommands(compose);
+  const fileDrop = useFileDrop(compose);
   const undo = useUndo(actions, compose);
   useActionCommands(actions, undo);
 
@@ -127,6 +129,11 @@ function MailApp() {
       <AddAccountDialog />
       <ComposerHost breakpoint={breakpoint} actions={compose} />
       <SendQueueBar actions={compose} />
+      {fileDrop && (
+        <div className="pointer-events-none fixed inset-3 z-[60] grid place-items-center rounded-2xl border-4 border-dashed border-blue-500 bg-blue-50/80 text-lg font-semibold text-blue-900 dark:bg-blue-950/80 dark:text-blue-100">
+          Drop to start a new mail with these files
+        </div>
+      )}
       <ToastHost onUndo={undo.undo} />
     </div>
   );

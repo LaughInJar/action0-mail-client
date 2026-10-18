@@ -3,7 +3,11 @@
  * the HTML helpers need a browser DOM.
  */
 import { isValidAddress } from "../core/addresses";
-import type { DraftInput, ForwardedPart, Threading } from "../core/compose";
+import type {
+  DraftInput,
+  OutgoingAttachment,
+  Threading,
+} from "../core/compose";
 import type { DraftId } from "../core/ids";
 import type { EmailAddress } from "../core/model";
 import { editorHtmlToMail, htmlToText } from "./html";
@@ -20,8 +24,8 @@ export interface ComposerContent {
   readonly body: string;
   /** The quoted original of a reply or forward. */
   readonly quote?: Quote;
-  /** Parts of the original that a forward carries (files and inline images). */
-  readonly forwarded: readonly ForwardedPart[];
+  /** Files, and inline images (referenced from the text or quote as `cid:`). */
+  readonly attachments: readonly OutgoingAttachment[];
   readonly threading?: Threading;
 }
 
@@ -43,7 +47,7 @@ const valid = (list: readonly EmailAddress[]) =>
 
 /**
  * The draft for this content. Invalid addresses stay in the composer only;
- * inline images go along only while the quote that shows them does.
+ * inline images go along only while the text or quote still shows them.
  */
 export function draftInputOf(
   content: ComposerContent,
@@ -58,16 +62,29 @@ export function draftInputOf(
     subject: content.subject,
     html,
     text,
-    forwarded: content.quote
-      ? content.forwarded
-      : content.forwarded.filter((part) => part.contentId === undefined),
+    attachments: sentAttachments(content, html),
     ...(content.threading ? { threading: content.threading } : {}),
   };
 }
 
-/** Bytes that every save of this content uploads again. */
-export function forwardedBytes(content: ComposerContent): number {
-  return content.forwarded.reduce((sum, part) => sum + part.size, 0);
+/** The attachments that go out: files, and inline images `html` shows. */
+function sentAttachments(
+  content: ComposerContent,
+  html: string,
+): OutgoingAttachment[] {
+  return content.attachments.filter(
+    (part) =>
+      part.contentId === undefined || html.includes(`cid:${part.contentId}`),
+  );
+}
+
+/** Bytes of attachments the mail would carry (each save uploads them again). */
+export function sentBytes(content: ComposerContent): number {
+  const { html } = mailBody(content.body, content.quote);
+  return sentAttachments(content, html).reduce(
+    (sum, part) => sum + part.size,
+    0,
+  );
 }
 
 /**
@@ -89,4 +106,23 @@ export function mailHtmlToEditor(html: string): string {
     div.replaceWith(paragraph);
   }
   return doc.body.innerHTML;
+}
+
+/**
+ * A file of your own as an attachment; `inline` makes it an inline image
+ * (with a new Content-ID) for the text.
+ */
+export function attachmentFromFile(
+  file: File,
+  inline: boolean,
+): OutgoingAttachment {
+  const id = crypto.randomUUID();
+  return {
+    id,
+    filename: file.name || (inline ? "image.png" : "attachment"),
+    mimeType: file.type || "application/octet-stream",
+    size: file.size,
+    content: file,
+    ...(inline ? { contentId: `${id}@action0` } : {}),
+  };
 }

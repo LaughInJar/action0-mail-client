@@ -11,6 +11,9 @@ export const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me/";
 export const GMAIL_UPLOAD_BASE =
   "https://gmail.googleapis.com/upload/gmail/v1/users/me/";
 
+/** Uploads bigger than this (bytes) use a resumable session. */
+export const RESUMABLE_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 /** Base URL of the Google People API (contacts). */
 export const PEOPLE_API_BASE = "https://people.googleapis.com/v1/";
 
@@ -95,12 +98,74 @@ export class GmailHttp {
   }
 
   /**
-   * Uploads a raw RFC 5322 message with JSON metadata (`uploadType=multipart`)
-   * to `path` below {@link GMAIL_UPLOAD_BASE}. Requests that create something
-   * (`retry: false`) aren't repeated after a network error or a 5xx, because
-   * the first attempt may have succeeded.
+   * Uploads a raw RFC 5322 message with JSON metadata to `path` below
+   * {@link GMAIL_UPLOAD_BASE}. Messages over {@link RESUMABLE_UPLOAD_BYTES}
+   * use a resumable upload: its session can be retried safely, even when it
+   * creates something. Otherwise one multipart request; requests that create
+   * something (`retry: false`) then aren't repeated after a network error or
+   * a 5xx, because the first attempt may have succeeded.
    */
-  upload<T>(
+  async upload<T>(
+    method: "POST" | "PUT",
+    path: string,
+    metadata: unknown,
+    raw: string,
+    { retry, signal }: { retry: boolean; signal?: AbortSignal | undefined },
+  ): Promise<T> {
+    if (raw.length > RESUMABLE_UPLOAD_BYTES) {
+      const session = await this.#startResumable(
+        method,
+        path,
+        metadata,
+        raw,
+        signal,
+      );
+      // Without a readable session URL (CORS), fall back to one request.
+      if (session)
+        return this.#limit(() =>
+          this.#request<T>(
+            session,
+            "PUT",
+            { payload: raw, contentType: "message/rfc822" },
+            signal,
+          ),
+        );
+    }
+    return this.#multipart<T>(method, path, metadata, raw, { retry, signal });
+  }
+
+  /** Opens a resumable upload session; resolves to its URL. */
+  #startResumable(
+    method: "POST" | "PUT",
+    path: string,
+    metadata: unknown,
+    raw: string,
+    signal: AbortSignal | undefined,
+  ): Promise<URL | undefined> {
+    const url = new URL(path, GMAIL_UPLOAD_BASE);
+    url.searchParams.set("uploadType", "resumable");
+    return this.#limit(async () => {
+      const response = await this.#exchange(
+        url,
+        method,
+        {
+          payload: JSON.stringify(metadata),
+          contentType: "application/json; charset=UTF-8",
+        },
+        signal,
+        true,
+        {
+          "X-Upload-Content-Type": "message/rfc822",
+          // The raw message is 7-bit ASCII: characters are bytes.
+          "X-Upload-Content-Length": String(raw.length),
+        },
+      );
+      const location = response.headers.get("Location");
+      return location ? new URL(location) : undefined;
+    });
+  }
+
+  #multipart<T>(
     method: "POST" | "PUT",
     path: string,
     metadata: unknown,
@@ -159,6 +224,21 @@ export class GmailHttp {
     signal: AbortSignal | undefined,
     retry = true,
   ): Promise<T> {
+    const response = await this.#exchange(url, method, content, signal, retry);
+    // Some endpoints (batchModify) answer with an empty body.
+    const text = await response.text();
+    return (text === "" ? undefined : JSON.parse(text)) as T;
+  }
+
+  /** Sends a request (with retries) and returns the successful response. */
+  async #exchange(
+    url: URL,
+    method: "GET" | "POST" | "PUT" | "DELETE",
+    content: { payload: string; contentType: string } | undefined,
+    signal: AbortSignal | undefined,
+    retry: boolean,
+    headers: Readonly<Record<string, string>> = {},
+  ): Promise<Response> {
     const maxAttempts = retry ? this.#maxAttempts : 1;
     for (let attempt = 1; ; attempt++) {
       const token = await this.#auth.getAccessToken();
@@ -167,6 +247,7 @@ export class GmailHttp {
         response = await this.#fetch(url, {
           method,
           headers: {
+            ...headers,
             Authorization: `Bearer ${token}`,
             ...(content === undefined
               ? {}
@@ -186,11 +267,7 @@ export class GmailHttp {
         });
       }
 
-      if (response.ok) {
-        // Some endpoints (batchModify) answer with an empty body.
-        const text = await response.text();
-        return (text === "" ? undefined : JSON.parse(text)) as T;
-      }
+      if (response.ok) return response;
 
       const body = await readErrorBody(response);
       const message = body.error?.message ?? response.statusText;

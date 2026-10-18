@@ -12,7 +12,14 @@ import {
   useAuthStatus,
 } from "../accounts/context";
 import type { AccountHandle } from "../accounts/types";
-import type { AccountId, Cursor, MailboxId, MessageId } from "../core/ids";
+import { MailError } from "../core/errors";
+import type {
+  AccountId,
+  AttachmentId,
+  Cursor,
+  MailboxId,
+  MessageId,
+} from "../core/ids";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
 import { encodeBase64 } from "../lib/base64url";
 import { queryKeys, type ListSpec } from "./keys";
@@ -188,6 +195,39 @@ export function useFetchMailboxes(): (
         queryFn: ({ signal }) => handle.provider.listMailboxes(signal),
         staleTime: 60_000,
         meta: { persist: true },
+      });
+    },
+    [queryClient, registry],
+  );
+}
+
+/**
+ * Loads an attachment's bytes. Memory only; kept for a few minutes, so
+ * paging back and forth in the image viewer doesn't download again.
+ */
+export function useFetchAttachment(): (
+  accountId: AccountId,
+  messageId: MessageId,
+  attachmentId: AttachmentId,
+) => Promise<Blob> {
+  const queryClient = useQueryClient();
+  const registry = useAccountRegistry();
+  return useCallback(
+    (accountId, messageId, attachmentId) => {
+      const handle = registry.get(accountId);
+      if (!handle)
+        return Promise.reject(
+          new MailError(
+            "auth-required",
+            "This account is no longer connected.",
+          ),
+        );
+      return queryClient.query({
+        queryKey: queryKeys.attachment(accountId, messageId, attachmentId),
+        queryFn: ({ signal }) =>
+          handle.provider.getAttachment(messageId, attachmentId, signal),
+        staleTime: Infinity,
+        gcTime: 5 * 60_000,
       });
     },
     [queryClient, registry],

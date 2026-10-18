@@ -9,7 +9,7 @@ import { useMemo } from "react";
 import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import { draftInputOf, type ComposerContent } from "../compose/session";
-import type { Draft, ForwardedPart } from "../core/compose";
+import type { Draft, OutgoingAttachment } from "../core/compose";
 import { isMailError, MailError } from "../core/errors";
 import type { AccountId, DraftId, MessageId } from "../core/ids";
 import type { EmailAddress, Mailbox, Message } from "../core/model";
@@ -65,8 +65,8 @@ export interface DraftSync {
   /** The parts with their bytes loaded (kept in memory while composing). */
   readonly loadParts: (
     accountId: AccountId,
-    parts: readonly ForwardedPart[],
-  ) => Promise<ForwardedPart[]>;
+    parts: readonly OutgoingAttachment[],
+  ) => Promise<OutgoingAttachment[]>;
 }
 
 const instances = new WeakMap<QueryClient, DraftSync>();
@@ -115,25 +115,34 @@ export function createDraftSync(
     return provider;
   };
 
-  const loadParts = (accountId: AccountId, parts: readonly ForwardedPart[]) =>
+  const bytesOf = (accountId: AccountId, part: OutgoingAttachment) => {
+    if (!part.source)
+      throw new MailError("provider", `No content for "${part.filename}".`);
+    return providerOf(accountId).getAttachment(
+      part.source.messageId,
+      part.source.attachmentId,
+    );
+  };
+
+  const loadParts = (
+    accountId: AccountId,
+    parts: readonly OutgoingAttachment[],
+  ) =>
     Promise.all(
       parts.map(async (part) =>
         part.content
           ? part
           : {
               ...part,
-              content: await providerOf(accountId).getAttachment(
-                part.messageId,
-                part.attachmentId,
-              ),
+              content: await bytesOf(accountId, part),
             },
       ),
     );
 
-  /** The content ready to upload: forwarded bytes loaded first (a draft's own parts vanish when it's replaced). */
+  /** The content ready to upload: attachment bytes loaded first (a draft's own parts vanish when it's replaced). */
   const prepared = async (accountId: AccountId, content: ComposerContent) => ({
     ...content,
-    forwarded: await loadParts(accountId, content.forwarded),
+    attachments: await loadParts(accountId, content.attachments),
   });
 
   const drafts = (accountId: AccountId) =>

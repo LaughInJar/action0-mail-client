@@ -1,4 +1,4 @@
-import type { Draft, DraftInput } from "../../core/compose";
+import { attachmentOf, type Draft, type DraftInput } from "../../core/compose";
 import { MailError } from "../../core/errors";
 import {
   asAttachmentId,
@@ -72,6 +72,7 @@ export class FakeMailProvider implements MailProvider {
     deleteForever: true,
     compose: true,
     contacts: false,
+    maxAttachmentBytes: 25 * 1024 * 1024,
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
@@ -341,16 +342,9 @@ export class FakeMailProvider implements MailProvider {
       id,
       messageId: message.id,
       // The parts now belong to the draft's own message.
-      forwarded: message.attachments.map((attachment) => ({
-        messageId: message.id,
-        attachmentId: attachment.id,
-        filename: attachment.filename,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-        ...(attachment.contentId === undefined
-          ? {}
-          : { contentId: attachment.contentId }),
-      })),
+      attachments: message.attachments.map((part) =>
+        attachmentOf(message.id, part),
+      ),
     };
   }
 
@@ -403,18 +397,21 @@ export class FakeMailProvider implements MailProvider {
       .slice(0, 10);
   }
 
-  /** A message made from draft content, with copies of its forwarded parts. */
+  /** A message made from draft content, with copies of its attachments. */
   #composeMessage(
     draft: DraftInput,
     mailboxIds: readonly MailboxId[],
     seen: boolean,
   ): Message {
     const id = asMessageId(`m-${String(this.#nextId++)}`);
-    const attachments = draft.forwarded.map((part, index) => {
+    const attachments = draft.attachments.map((part, index) => {
       const attachmentId = asAttachmentId(`part-${String(index)}`);
       const content =
         part.content ??
-        this.#attachments.get(`${part.messageId}/${part.attachmentId}`);
+        (part.source &&
+          this.#attachments.get(
+            `${part.source.messageId}/${part.source.attachmentId}`,
+          ));
       if (content) this.#attachments.set(`${id}/${attachmentId}`, content);
       return {
         id: attachmentId,

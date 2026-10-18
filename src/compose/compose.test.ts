@@ -3,7 +3,7 @@ import { asMessageId, asThreadId } from "../core/ids";
 import type { Message } from "../core/model";
 import { editorHtmlToMail, htmlToText, textToHtml } from "./html";
 import { forwardQuote, replyQuote, splitQuote } from "./quote";
-import { draftInputOf, mailBody, mailHtmlToEditor } from "./session";
+import { draftInputOf, mailBody, mailHtmlToEditor, sentBytes } from "./session";
 
 const original: Message = {
   id: asMessageId("m1"),
@@ -97,19 +97,56 @@ describe("draftInputOf", () => {
       bcc: [],
       subject: "Hi",
       body: "<p>Hello</p>",
-      forwarded: [
+      attachments: [
         {
-          messageId: asMessageId("m1"),
-          attachmentId: "a" as never,
+          id: "logo",
           filename: "logo.png",
           mimeType: "image/png",
           size: 3,
           contentId: "logo@x",
+          content: new Blob(["png"]),
+        },
+        {
+          id: "file",
+          filename: "notes.txt",
+          mimeType: "text/plain",
+          size: 2,
+          content: new Blob(["hi"]),
         },
       ],
     });
     expect(input.to).toEqual([{ address: "anna@example.org" }]);
-    expect(input.forwarded).toEqual([]);
+    // The text doesn't show the picture, so it's left out.
+    expect(input.attachments.map((a) => a.id)).toEqual(["file"]);
     expect(input).toMatchObject({ html: "<div>Hello</div>", text: "Hello" });
+  });
+});
+
+describe("inline images", () => {
+  const picture = {
+    id: "pic",
+    filename: "shot.png",
+    mimeType: "image/png",
+    size: 10,
+    contentId: "pic@action0",
+    content: new Blob(["png"]),
+  };
+
+  it("go along while the text shows them, shrinking to the window", () => {
+    const content = {
+      to: [{ address: "anna@example.org" }],
+      cc: [],
+      bcc: [],
+      subject: "Pic",
+      body: '<p>Look <img src="cid:pic@action0" alt="shot.png"></p>',
+      attachments: [picture],
+    };
+    const input = draftInputOf(content);
+    expect(input.attachments.map((a) => a.id)).toEqual(["pic"]);
+    expect(input.html).toContain(
+      '<img src="cid:pic@action0" alt="shot.png" style="max-width:100%">',
+    );
+    expect(sentBytes(content)).toBe(10);
+    expect(sentBytes({ ...content, body: "<p>Look</p>" })).toBe(0);
   });
 });

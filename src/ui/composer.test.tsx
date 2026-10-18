@@ -6,8 +6,9 @@ import { demoHash, renderApp } from "../test/renderApp";
 
 const subject = (name: string) =>
   screen.findByRole("heading", { level: 1, name });
+// The editor loads on first use; on a cold CI machine that takes a moment.
 const composer = (name: string | RegExp) =>
-  screen.findByRole("dialog", { name });
+  screen.findByRole("dialog", { name }, { timeout: 5000 });
 const toastText = (text: string | RegExp) =>
   screen.findByText(text, { selector: "div[aria-live] span" });
 const field = (name: string) => screen.getByRole("combobox", { name });

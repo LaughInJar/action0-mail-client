@@ -348,6 +348,45 @@ const WIDE_HTML = `<!doctype html><html><body>
 
 const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80"><rect width="160" height="80" rx="12" fill="#2563eb"/><text x="80" y="50" font-family="sans-serif" font-size="28" fill="#fff" text-anchor="middle">action0</text></svg>`;
 
+/** A one-page PDF for the demo invoice. */
+const INVOICE_PDF = `%PDF-1.4
+1 0 obj
+<</Type/Catalog/Pages 2 0 R>>
+endobj
+2 0 obj
+<</Type/Pages/Kids[3 0 R]/Count 1>>
+endobj
+3 0 obj
+<</Type/Page/Parent 2 0 R/MediaBox[0 0 320 160]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>
+endobj
+4 0 obj
+<</Length 94>>
+stream
+BT /F1 20 Tf 30 80 Td (Invoice 2026-1043) Tj 0 -30 Td /F1 12 Tf (Demo shop - thank you!) Tj ET
+endstream
+endobj
+5 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000054 00000 n 
+0000000105 00000 n 
+0000000217 00000 n 
+0000000359 00000 n 
+trailer
+<</Size 6/Root 1 0 R>>
+startxref
+422
+%%EOF
+`;
+
+/** A simple picture for the demo's photo attachments. */
+const photo = (sky: string, sun: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420"><rect width="640" height="420" fill="${sky}"/><circle cx="470" cy="120" r="60" fill="${sun}"/><path d="M0 330 L170 200 L300 300 L420 220 L640 360 L640 420 L0 420 Z" fill="#14532d"/></svg>`;
+
 const SPECIAL_MESSAGES: readonly MessageSeed[] = [
   {
     key: "welcome",
@@ -403,6 +442,37 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
     },
   },
   {
+    key: "photos",
+    from: PEOPLE[4] ?? ME,
+    subject: "Photos from the hike",
+    snippet: "Two pictures from Saturday, and the route as a web page",
+    minutesAgo: 60 * 20,
+    mailboxIds: [M.inbox, M.personal],
+    body: {
+      text: "Two pictures from Saturday, and the route as a web page.\n\nSophie",
+    },
+    attachments: [
+      {
+        id: asAttachmentId("photo-1"),
+        filename: "summit.svg",
+        mimeType: "image/svg+xml",
+        size: 412,
+      },
+      {
+        id: asAttachmentId("photo-2"),
+        filename: "sunset.svg",
+        mimeType: "image/svg+xml",
+        size: 412,
+      },
+      {
+        id: asAttachmentId("route"),
+        filename: "route.html",
+        mimeType: "text/html",
+        size: 120,
+      },
+    ],
+  },
+  {
     key: "invoice",
     from: { name: "Shop", address: "billing@shop.example" },
     subject: "Your invoice 2026-1043",
@@ -415,7 +485,7 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
         id: asAttachmentId("invoice-pdf"),
         filename: "invoice-2026-1043.pdf",
         mimeType: "application/pdf",
-        size: 84_213,
+        size: 602,
       },
     ],
   },
@@ -530,8 +600,25 @@ export function createDemoData(now = Date.now()): FakeMailData {
   const attachments = new Map<string, Blob>([
     ["inline-image/logo", new Blob([LOGO_SVG], { type: "image/svg+xml" })],
     [
+      "photos/photo-1",
+      new Blob([photo("#7dd3fc", "#fde047")], { type: "image/svg+xml" }),
+    ],
+    [
+      "photos/photo-2",
+      new Blob([photo("#fb923c", "#dc2626")], { type: "image/svg+xml" }),
+    ],
+    [
+      "photos/route",
+      new Blob(
+        [
+          "<html><body><h1>Route</h1><script>alert('never runs')</script></body></html>",
+        ],
+        { type: "text/html" },
+      ),
+    ],
+    [
       "invoice/invoice-pdf",
-      new Blob(["%PDF-1.4 demo"], { type: "application/pdf" }),
+      new Blob([INVOICE_PDF], { type: "application/pdf" }),
     ],
   ]);
   return {

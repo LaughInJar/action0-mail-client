@@ -1,5 +1,10 @@
 import type { QueryKey } from "@tanstack/react-query";
-import type { AccountId, MailboxId, MessageId } from "../core/ids";
+import type {
+  AccountId,
+  AttachmentId,
+  MailboxId,
+  MessageId,
+} from "../core/ids";
 import type { MessageOrder } from "../core/provider";
 
 /** Which message list: a mailbox's messages, or only those matching a search, by date. */
@@ -34,6 +39,11 @@ export const queryKeys = {
     ["acct", accountId, "message", messageId] as const,
   inlineImages: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "inline-images", messageId] as const,
+  attachment: (
+    accountId: AccountId,
+    messageId: MessageId,
+    attachmentId: AttachmentId,
+  ) => ["acct", accountId, "attachment", messageId, attachmentId] as const,
 };
 
 /** The list a {@link queryKeys.messageList} key stands for; undefined for other keys. */

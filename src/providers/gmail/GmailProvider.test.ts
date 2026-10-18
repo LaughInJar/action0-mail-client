@@ -554,7 +554,7 @@ describe("GmailProvider drafts and sending", () => {
     subject: "Grüße",
     html: "<p>Hi</p>",
     text: "Hi",
-    forwarded: [],
+    attachments: [],
     threading: {
       threadId: asThreadId("t1"),
       inReplyTo: "<m1@x>",
@@ -643,17 +643,19 @@ describe("GmailProvider drafts and sending", () => {
     const result = await provider().sendDraft({
       ...draft,
       id: asDraftId("d1"),
-      forwarded: [
+      attachments: [
         {
-          messageId: asMessageId("orig"),
-          attachmentId: asAttachmentId("att1"),
+          id: "a",
           filename: "a.bin",
           mimeType: "application/octet-stream",
           size: 3,
+          source: {
+            messageId: asMessageId("orig"),
+            attachmentId: asAttachmentId("att1"),
+          },
         },
         {
-          messageId: asMessageId("orig"),
-          attachmentId: asAttachmentId("loaded"),
+          id: "b",
           filename: "b.txt",
           mimeType: "text/plain",
           size: 2,
@@ -735,10 +737,9 @@ describe("GmailProvider drafts and sending", () => {
         references: ["<m0@x>", "<m1@x>"],
       },
     });
-    expect(loaded.forwarded).toEqual([
+    expect(loaded.attachments).toEqual([
       expect.objectContaining({
-        messageId: "m-b",
-        attachmentId: "att9",
+        source: { messageId: "m-b", attachmentId: "att9" },
         filename: "x.pdf",
       }),
     ]);
@@ -837,5 +838,75 @@ describe("GmailProvider.searchContacts", () => {
       code: "unavailable",
       message: "The People API isn't enabled in the Google Cloud project.",
     });
+  });
+});
+
+describe("GmailProvider, large drafts", () => {
+  const upload = (path: string) => `${GMAIL_UPLOAD_BASE}${path}`;
+  const big = {
+    to: [{ address: "anna@example.org" }],
+    cc: [],
+    bcc: [],
+    subject: "Big",
+    html: "<p>Files</p>",
+    text: "Files",
+    attachments: [
+      {
+        id: "big",
+        filename: "big.bin",
+        mimeType: "application/octet-stream",
+        size: 4_500_000,
+        content: new Blob([new Uint8Array(4_500_000)]),
+      },
+    ],
+  };
+
+  it("uploads through a resumable session", async () => {
+    const steps: string[] = [];
+    let uploaded = 0;
+    server.use(
+      http.post(upload("drafts"), async ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        steps.push(`start:${params.get("uploadType") ?? ""}`);
+        expect(request.headers.get("X-Upload-Content-Type")).toBe(
+          "message/rfc822",
+        );
+        expect(await request.json()).toEqual({ message: {} });
+        return new HttpResponse(null, {
+          headers: { Location: `${upload("drafts")}?upload_id=s1` },
+        });
+      }),
+      http.put(upload("drafts"), async ({ request }) => {
+        steps.push(
+          `put:${new URL(request.url).searchParams.get("upload_id") ?? ""}`,
+        );
+        uploaded = (await request.text()).length;
+        return HttpResponse.json({ id: "d9", message: { id: "m9" } });
+      }),
+    );
+    expect(await provider().saveDraft(big)).toEqual({
+      id: "d9",
+      messageId: "m9",
+    });
+    expect(steps).toEqual(["start:resumable", "put:s1"]);
+    expect(uploaded).toBeGreaterThan(6_000_000);
+  });
+
+  it("falls back to one multipart request without a session URL", async () => {
+    const types: string[] = [];
+    server.use(
+      http.post(upload("drafts"), ({ request }) => {
+        const type = new URL(request.url).searchParams.get("uploadType") ?? "";
+        types.push(type);
+        return type === "resumable"
+          ? new HttpResponse(null)
+          : HttpResponse.json({ id: "d1", message: { id: "m1" } });
+      }),
+    );
+    expect(await provider().saveDraft(big)).toEqual({
+      id: "d1",
+      messageId: "m1",
+    });
+    expect(types).toEqual(["resumable", "multipart"]);
   });
 });

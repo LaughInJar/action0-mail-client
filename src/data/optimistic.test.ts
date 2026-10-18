@@ -53,6 +53,7 @@ const labels: ProviderCapabilities = {
   deleteForever: true,
   compose: true,
   contacts: false,
+  maxAttachmentBytes: 25 * 1024 * 1024,
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 
