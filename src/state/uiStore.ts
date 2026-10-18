@@ -23,6 +23,19 @@ export interface Toast {
   };
 }
 
+/** Messages being dragged (`dragover` handlers can't read the drag data). */
+export interface DragState {
+  readonly accountId: AccountId;
+  readonly ids: readonly MessageId[];
+}
+
+/** The open mailbox picker and the messages it acts on (captured when it opened). */
+export interface PickerState {
+  readonly mode: "move" | "labels";
+  readonly accountId: AccountId;
+  readonly ids: readonly MessageId[];
+}
+
 /** UI state that isn't server data and isn't in the URL. */
 export interface UiState extends selection.SelectionState {
   /** `${accountId}/${mailboxId}` of the list that focus and selection belong to. */
@@ -37,6 +50,8 @@ export interface UiState extends selection.SelectionState {
   readonly helpOpen: boolean;
   /** The current toast. Session only. */
   readonly toast: Toast | null;
+  readonly dragging: DragState | null;
+  readonly picker: PickerState | null;
 }
 
 /** State transitions. */
@@ -56,6 +71,11 @@ export interface UiActions {
     delta: number,
   ) => void;
   readonly clearSelection: () => void;
+  /** Messages left the list (moved, archived): see {@link selection.removeFromList}. */
+  readonly removeFromList: (
+    removed: ReadonlySet<MessageId>,
+    next: MessageId | null,
+  ) => void;
   readonly allowRemoteContent: (id: MessageId) => void;
   readonly setColumnWidth: (index: 0 | 1, width: number) => void;
   readonly toggleNode: (key: string) => void;
@@ -65,6 +85,8 @@ export interface UiActions {
   readonly showToast: (toast: Omit<Toast, "id">) => void;
   /** Hides the toast with this id (if it is still the current one). */
   readonly dismissToast: (id: number) => void;
+  readonly setDragging: (dragging: DragState | null) => void;
+  readonly setPicker: (picker: PickerState | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -119,6 +141,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           drawerOpen: false,
           helpOpen: false,
           toast: null,
+          dragging: null,
+          picker: null,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -148,6 +172,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           clearSelection: () => {
             update(selection.clearSelection);
+          },
+          removeFromList: (removed, next) => {
+            update((s) => selection.removeFromList(s, removed, next));
           },
           allowRemoteContent: (id) => {
             set((s) => ({
@@ -179,6 +206,12 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           dismissToast: (id) => {
             set((s) => (s.toast?.id === id ? { toast: null } : {}));
+          },
+          setDragging: (dragging) => {
+            set({ dragging });
+          },
+          setPicker: (picker) => {
+            set({ picker });
           },
         };
       },

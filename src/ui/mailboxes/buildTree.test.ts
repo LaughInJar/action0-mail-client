@@ -10,6 +10,7 @@ const mailbox = (id: string, extra: Partial<Mailbox> = {}): Mailbox => ({
   kind: "label",
   selectable: true,
   hidden: false,
+  assignable: true,
   ...extra,
 });
 

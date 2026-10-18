@@ -1,72 +1,124 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { asMailboxId, asMessageId } from "./ids";
-import { inverseOf, runIntent } from "./intents";
+import { asMailboxId, asMessageId, type MessageId } from "./ids";
+import { inverseOf, runIntent, type MessageChange } from "./intents";
 import type { MessageSummary } from "./model";
 import type { MailProvider } from "./provider";
 
 const summary = (
   id: string,
-  seen: boolean,
-  flagged = false,
+  mailboxIds: string[],
+  flags: { seen?: boolean; flagged?: boolean } = {},
 ): MessageSummary => ({
   id: asMessageId(id),
-  mailboxIds: [asMailboxId("inbox")],
+  mailboxIds: mailboxIds.map(asMailboxId),
   to: [],
   subject: id,
   snippet: "",
   receivedAt: "2026-10-18T10:00:00.000Z",
-  flags: { seen, flagged },
+  flags: { seen: flags.seen ?? true, flagged: flags.flagged ?? false },
   hasAttachments: false,
 });
 
-const [a, b, c] = ["a", "b", "c"].map(asMessageId) as [
-  ReturnType<typeof asMessageId>,
-  ReturnType<typeof asMessageId>,
-  ReturnType<typeof asMessageId>,
-];
+const change = (
+  before: MessageSummary,
+  after: Partial<MessageSummary>,
+): MessageChange => ({
+  id: before.id,
+  before,
+  after: { ...before, ...after },
+});
+
+const ids = (...names: string[]): MessageId[] => names.map(asMessageId);
+const box = asMailboxId;
+const labels = { labels: true };
 
 describe("inverseOf", () => {
-  it("swaps archive and unarchive", () => {
-    expect(inverseOf({ kind: "archive", ids: [a, b] }, [])).toEqual([
-      { kind: "unarchive", ids: [a, b] },
-    ]);
-    expect(inverseOf({ kind: "unarchive", ids: [a] }, [])).toEqual([
-      { kind: "archive", ids: [a] },
-    ]);
+  it("swaps archive and unarchive for the messages that changed", () => {
+    const a = summary("a", ["inbox"]);
+    const changes = [change(a, { mailboxIds: [] })];
+    expect(
+      inverseOf({ kind: "archive", ids: ids("a", "b") }, changes, labels),
+    ).toEqual([{ kind: "unarchive", ids: ["a"] }]);
+    expect(
+      inverseOf({ kind: "unarchive", ids: ids("a") }, changes, labels),
+    ).toEqual([{ kind: "archive", ids: ["a"] }]);
+    expect(inverseOf({ kind: "archive", ids: ids("a") }, [], labels)).toEqual(
+      [],
+    );
   });
 
-  it("restores only the flags that actually changed", () => {
-    const before = [
-      summary("a", false),
-      summary("b", true),
-      summary("c", false),
-    ];
+  it("restores flags per flag that actually changed", () => {
+    const a = summary("a", ["inbox"], { seen: false, flagged: true });
+    const c = summary("c", ["inbox"], { seen: false });
+    const intent = {
+      kind: "set-flags",
+      ids: ids("a", "c"),
+      flags: { seen: true, flagged: false },
+    } as const;
+    const after = { flags: { seen: true, flagged: false } };
     expect(
-      inverseOf(
-        { kind: "set-flags", ids: [a, b, c], flags: { seen: true } },
-        before,
-      ),
-    ).toEqual([{ kind: "set-flags", ids: [a, c], flags: { seen: false } }]);
-  });
-
-  it("handles several flags at once and nothing-to-undo", () => {
-    const before = [summary("a", false, true)];
-    expect(
-      inverseOf(
-        { kind: "set-flags", ids: [a], flags: { seen: true, flagged: false } },
-        before,
-      ),
+      inverseOf(intent, [change(a, after), change(c, after)], labels),
     ).toEqual([
-      { kind: "set-flags", ids: [a], flags: { seen: false } },
-      { kind: "set-flags", ids: [a], flags: { flagged: true } },
+      { kind: "set-flags", ids: ["a", "c"], flags: { seen: false } },
+      { kind: "set-flags", ids: ["a"], flags: { flagged: true } },
     ]);
+  });
+
+  it("reverses label moves per exact diff, never removing labels the message already had", () => {
+    // a: Inbox → Work. b already had Work: the move only removed Inbox.
+    const a = summary("a", ["inbox"]);
+    const b = summary("b", ["inbox", "work"]);
+    const intent = {
+      kind: "move",
+      ids: ids("a", "b"),
+      from: box("inbox"),
+      to: box("work"),
+    } as const;
+    const moved = { mailboxIds: [box("work")] };
     expect(
-      inverseOf(
-        { kind: "set-flags", ids: [a], flags: { flagged: true } },
-        before,
-      ),
-    ).toEqual([]);
+      inverseOf(intent, [change(a, moved), change(b, moved)], labels),
+    ).toEqual([
+      { kind: "set-labels", ids: ["a"], add: ["inbox"], remove: ["work"] },
+      { kind: "set-labels", ids: ["b"], add: ["inbox"], remove: [] },
+    ]);
+  });
+
+  it("reverses label changes and groups identical diffs", () => {
+    const a = summary("a", ["inbox"]);
+    const b = summary("b", ["inbox"]);
+    const intent = {
+      kind: "set-labels",
+      ids: ids("a", "b"),
+      add: [box("work")],
+      remove: [],
+    } as const;
+    const labelled = { mailboxIds: [box("inbox"), box("work")] };
+    expect(
+      inverseOf(intent, [change(a, labelled), change(b, labelled)], labels),
+    ).toEqual([
+      { kind: "set-labels", ids: ["a", "b"], add: [], remove: ["work"] },
+    ]);
+  });
+
+  it("moves back to the original folder for folder providers", () => {
+    const a = summary("a", ["inbox"]);
+    const b = summary("b", ["projects"]);
+    const intent = {
+      kind: "move",
+      ids: ids("a", "b"),
+      from: box("inbox"),
+      to: box("archive"),
+    } as const;
+    const moved = { mailboxIds: [box("archive")] };
+    expect(
+      inverseOf(intent, [change(a, moved), change(b, moved)], {
+        labels: false,
+      }),
+    ).toEqual([
+      { kind: "move", ids: ["a"], from: "archive", to: "inbox" },
+      { kind: "move", ids: ["b"], from: "archive", to: "projects" },
+    ]);
   });
 });
 
@@ -75,11 +127,16 @@ describe("runIntent", () => {
     const archive = vi.fn(() => Promise.resolve({}));
     const unarchive = vi.fn(() => Promise.resolve({}));
     const setFlags = vi.fn(() => Promise.resolve({}));
+    const move = vi.fn(() => Promise.resolve({}));
+    const setLabels = vi.fn(() => Promise.resolve({}));
     const provider = {
       archive,
       unarchive,
       setFlags,
+      move,
+      setLabels,
     } as unknown as MailProvider;
+    const [a, b, c] = ids("a", "b", "c") as [MessageId, MessageId, MessageId];
     await runIntent(provider, { kind: "archive", ids: [a] });
     await runIntent(provider, { kind: "unarchive", ids: [b] });
     await runIntent(provider, {
@@ -87,8 +144,30 @@ describe("runIntent", () => {
       ids: [c],
       flags: { seen: false },
     });
+    await runIntent(provider, {
+      kind: "move",
+      ids: [a],
+      from: box("inbox"),
+      to: box("work"),
+    });
+    await runIntent(provider, {
+      kind: "set-labels",
+      ids: [b],
+      add: [box("x")],
+      remove: [box("y")],
+    });
     expect(archive).toHaveBeenCalledWith([a], undefined);
     expect(unarchive).toHaveBeenCalledWith([b], undefined);
     expect(setFlags).toHaveBeenCalledWith([c], { seen: false }, undefined);
+    expect(move).toHaveBeenCalledWith(
+      [a],
+      { from: "inbox", to: "work" },
+      undefined,
+    );
+    expect(setLabels).toHaveBeenCalledWith(
+      [b],
+      { add: ["x"], remove: ["y"] },
+      undefined,
+    );
   });
 });

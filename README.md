@@ -2,11 +2,12 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive and read/unread (features 1 and 2).
+**Status:** Gmail: reading, archive, read/unread, move, labels and stars (features 1–3).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
-- Archive and mark as read/unread, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
+- Archive, mark as read/unread, star, move and label, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
+- Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
@@ -73,20 +74,23 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 
 ## Keyboard shortcuts
 
-| Keys                                                                        | Action                                 |
-| --------------------------------------------------------------------------- | -------------------------------------- |
-| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                |
-| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                   |
-| <kbd>x</kbd>                                                                | Select or unselect the current message |
-| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)     |
-| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message            |
-| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                     |
-| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail |
-| <kbd>a</kbd>                                                                | Archive the message or selection       |
-| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                  |
-| <kbd>z</kbd>                                                                | Undo the last action                   |
-| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)              |
-| <kbd>?</kbd>                                                                | Show all shortcuts                     |
+| Keys                                                                        | Action                                              |
+| --------------------------------------------------------------------------- | --------------------------------------------------- |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                             |
+| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                                |
+| <kbd>x</kbd>                                                                | Select or unselect the current message              |
+| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)                  |
+| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                         |
+| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                  |
+| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail              |
+| <kbd>a</kbd>                                                                | Archive the message or selection                    |
+| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                               |
+| <kbd>z</kbd>                                                                | Undo the last action                                |
+| <kbd>v</kbd>                                                                | Move to… (pick a mailbox, Enter moves)              |
+| <kbd>l</kbd>                                                                | Labels… (toggle labels, Enter applies, Esc cancels) |
+| <kbd>s</kbd>                                                                | Star / unstar                                       |
+| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                           |
+| <kbd>?</kbd>                                                                | Show all shortcuts                                  |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
 
@@ -123,7 +127,7 @@ The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc862
 - `folder` — exclusive, one per message (Exchange, IMAP),
 - `view` — computed, like Gmail's "All Mail" or "Starred".
 
-An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses.
+An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not.
 
 ### What is stored where
 

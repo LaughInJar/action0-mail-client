@@ -99,4 +99,32 @@ describe("FakeMailProvider", () => {
     });
     expect(inbox.items[0]?.id).toBe("welcome");
   });
+
+  it("moves and relabels like a label-based provider", async () => {
+    const fake = provider();
+    const welcome = asMessageId("welcome");
+    await fake.move([welcome], {
+      from: DEMO_MAILBOX.inbox,
+      to: DEMO_MAILBOX.work,
+    });
+    expect((await fake.getMessage(welcome)).mailboxIds).toEqual([
+      DEMO_MAILBOX.work,
+    ]);
+    await fake.move([welcome], {
+      from: DEMO_MAILBOX.all,
+      to: DEMO_MAILBOX.personal,
+    });
+    expect((await fake.getMessage(welcome)).mailboxIds).toEqual([
+      DEMO_MAILBOX.work,
+      DEMO_MAILBOX.personal,
+    ]);
+    await fake.setLabels([welcome], {
+      add: [DEMO_MAILBOX.inbox],
+      remove: [DEMO_MAILBOX.work],
+    });
+    expect((await fake.getMessage(welcome)).mailboxIds).toEqual([
+      DEMO_MAILBOX.personal,
+      DEMO_MAILBOX.inbox,
+    ]);
+  });
 });

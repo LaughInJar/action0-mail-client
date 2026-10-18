@@ -49,6 +49,8 @@ export class FakeMailProvider implements MailProvider {
     mailboxKinds: ["label", "view"],
     archive: true,
     settableFlags: ["seen", "flagged"],
+    move: true,
+    labels: true,
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
@@ -148,6 +150,44 @@ export class FakeMailProvider implements MailProvider {
     return this.#write(ids, signal, (message) => ({
       ...message,
       flags: { ...message.flags, ...flags },
+    }));
+  }
+
+  /** Label semantics, like Gmail: add `to`, leave `from` unless it is a view. */
+  move(
+    ids: readonly MessageId[],
+    { from, to }: { readonly from: MailboxId; readonly to: MailboxId },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const fromIsView =
+      this.#mailboxes.find((mailbox) => mailbox.id === from)?.kind === "view";
+    return this.#write(ids, signal, (message) => ({
+      ...message,
+      mailboxIds: [
+        ...new Set([
+          ...message.mailboxIds.filter((id) => fromIsView || id !== from),
+          to,
+        ]),
+      ],
+    }));
+  }
+
+  setLabels(
+    ids: readonly MessageId[],
+    change: {
+      readonly add: readonly MailboxId[];
+      readonly remove: readonly MailboxId[];
+    },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#write(ids, signal, (message) => ({
+      ...message,
+      mailboxIds: [
+        ...new Set([
+          ...message.mailboxIds.filter((id) => !change.remove.includes(id)),
+          ...change.add,
+        ]),
+      ],
     }));
   }
 

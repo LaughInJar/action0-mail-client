@@ -144,3 +144,24 @@ export function nextAfterRemoval(
   }
   return null;
 }
+
+/**
+ * Messages left the list: they drop out of the selection, and if the cursor
+ * was on one of them it moves to `next`. The rest of the selection stays.
+ */
+export function removeFromList(
+  state: SelectionState,
+  removed: ReadonlySet<MessageId>,
+  next: MessageId | null,
+): SelectionState {
+  const selectedIds = new Set(
+    [...state.selectedIds].filter((id) => !removed.has(id)),
+  );
+  const focusLeft = state.focusedId !== null && removed.has(state.focusedId);
+  const focusedId = focusLeft ? next : state.focusedId;
+  const anchorId =
+    state.anchorId !== null && removed.has(state.anchorId)
+      ? focusedId
+      : state.anchorId;
+  return { focusedId, selectedIds, anchorId };
+}

@@ -1,6 +1,6 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import type { Cursor, MailboxId, MessageId } from "../core/ids";
-import type { MailIntent } from "../core/intents";
+import type { Cursor, MailboxId } from "../core/ids";
+import type { MailIntent, MessageChange } from "../core/intents";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
 import type { ProviderCapabilities } from "../core/provider";
 
@@ -10,12 +10,7 @@ export type MessageListData = InfiniteData<
   Cursor | undefined
 >;
 
-/** What an intent does to one message. */
-export interface MessageChange {
-  readonly id: MessageId;
-  readonly before: MessageSummary;
-  readonly after: MessageSummary;
-}
+export type { MessageChange };
 
 /**
  * Predicts the effect of an intent on the given messages. Messages that
@@ -37,21 +32,43 @@ export function planChanges(
     ? roleId(mailboxes, "archive")
     : undefined;
 
+  const kindOf = new Map(
+    mailboxes.map((mailbox) => [mailbox.id, mailbox.kind]),
+  );
+  const context: ApplyContext = { inbox, archiveFolder, kindOf };
+
   const changes: MessageChange[] = [];
   for (const id of new Set(intent.ids)) {
     const before = byId.get(id);
     if (!before) continue;
-    const after = apply(intent, before, inbox, archiveFolder);
+    const after = apply(intent, before, context);
     if (after) changes.push({ id, before, after });
   }
   return changes;
 }
 
+interface ApplyContext {
+  readonly inbox: MailboxId | undefined;
+  readonly archiveFolder: MailboxId | undefined;
+  readonly kindOf: ReadonlyMap<MailboxId, Mailbox["kind"]>;
+}
+
+/** The summary with new memberships, or undefined if they don't change. */
+function withMailboxes(
+  message: MessageSummary,
+  mailboxIds: readonly MailboxId[],
+): MessageSummary | undefined {
+  const next = [...new Set(mailboxIds)];
+  const same =
+    next.length === message.mailboxIds.length &&
+    next.every((id) => message.mailboxIds.includes(id));
+  return same ? undefined : { ...message, mailboxIds: next };
+}
+
 function apply(
   intent: MailIntent,
   message: MessageSummary,
-  inbox: MailboxId | undefined,
-  archiveFolder: MailboxId | undefined,
+  { inbox, archiveFolder, kindOf }: ApplyContext,
 ): MessageSummary | undefined {
   switch (intent.kind) {
     case "archive": {
@@ -89,6 +106,21 @@ function apply(
       }
       return { ...message, flags };
     }
+    case "move": {
+      const isFolder = (id: MailboxId) => kindOf.get(id) === "folder";
+      // Folders are exclusive: leave every folder. Labels: leave `from`, unless it's a view.
+      const kept = isFolder(intent.to)
+        ? message.mailboxIds.filter((id) => !isFolder(id))
+        : message.mailboxIds.filter(
+            (id) => id !== intent.from || kindOf.get(intent.from) === "view",
+          );
+      return withMailboxes(message, [...kept, intent.to]);
+    }
+    case "set-labels":
+      return withMailboxes(message, [
+        ...message.mailboxIds.filter((id) => !intent.remove.includes(id)),
+        ...intent.add,
+      ]);
   }
 }
 

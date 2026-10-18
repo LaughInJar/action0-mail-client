@@ -9,6 +9,7 @@ import {
   focusOnly,
   moveFocus,
   nextAfterRemoval,
+  removeFromList,
   selectRange,
   toggle,
   type SelectionState,
@@ -97,5 +98,23 @@ describe("nextAfterRemoval", () => {
     expect(nextAfterRemoval(ids, set("d", "e"))).toBe("c");
     expect(nextAfterRemoval(ids, set("a", "b", "c", "d", "e"))).toBeNull();
     expect(nextAfterRemoval(ids, set("x"))).toBeNull();
+  });
+});
+
+describe("removeFromList", () => {
+  const set = (...items: string[]) => new Set(items.map(asMessageId));
+
+  it("keeps the rest of the selection and the cursor when other rows leave", () => {
+    const state = { focusedId: a, selectedIds: set("a", "b"), anchorId: a };
+    expect(removeFromList(state, set("d"), null)).toEqual(state);
+  });
+
+  it("drops removed rows from the selection and moves a removed cursor", () => {
+    const state = { focusedId: b, selectedIds: set("a", "b"), anchorId: b };
+    expect(removeFromList(state, set("b"), c)).toEqual({
+      focusedId: c,
+      selectedIds: set("a"),
+      anchorId: c,
+    });
   });
 });

@@ -98,3 +98,8 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - After archiving, the cursor moves to the next message below, or the one above at the end of the list.
   - Shortcuts: `a` archive, `Shift+I` mark read, `Shift+U` mark unread, `z` undo.
   - Write operations are optimistic with rollback, and show an undo toast.
+- **Feature 3 (move/label + star) decisions:**
+  - A plain drag moves: it removes the current mailbox's label and adds the target. Ctrl/Alt-drag only adds the label. Touch uses the pickers instead of drag and drop.
+  - `v` opens the Move to… picker and `l` the Labels picker. Changes in the label picker apply when it closes (Enter or click outside), as one undoable action; Esc cancels.
+  - Spam and Trash are not move targets yet. They come with a separate delete/spam feature.
+  - Starring is included: `s` and clickable stars.

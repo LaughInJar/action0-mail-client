@@ -20,6 +20,10 @@ export interface ProviderCapabilities {
   readonly archive: boolean;
   /** Flags that {@link MailProvider.setFlags} can change. */
   readonly settableFlags: readonly (keyof MessageFlags)[];
+  /** Supports {@link MailProvider.move}. */
+  readonly move: boolean;
+  /** Supports {@link MailProvider.setLabels}: memberships can be added and removed freely. */
+  readonly labels: boolean;
 }
 
 /** Parameters of {@link MailProvider.listMessages}. */
@@ -89,6 +93,27 @@ export interface MailProvider {
   setFlags(
     ids: readonly MessageId[],
     flags: Partial<MessageFlags>,
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /**
+   * Moves messages out of `from` (the list the user is in) into `to`.
+   * Label-based providers add `to` and remove `from` unless it is a view;
+   * folder-based providers move the messages.
+   */
+  move(
+    ids: readonly MessageId[],
+    target: { readonly from: MailboxId; readonly to: MailboxId },
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Adds and removes labels (only if {@link ProviderCapabilities.labels}). */
+  setLabels(
+    ids: readonly MessageId[],
+    change: {
+      readonly add: readonly MailboxId[];
+      readonly remove: readonly MailboxId[];
+    },
     signal?: AbortSignal,
   ): Promise<MutationResult>;
 }

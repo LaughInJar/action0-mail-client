@@ -12,6 +12,7 @@ import { Welcome } from "../welcome/Welcome";
 import { Drawer } from "./Drawer";
 import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
+import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
 import { useBreakpoint } from "./useBreakpoint";
 import { useGlobalCommands } from "./useGlobalCommands";
@@ -109,6 +110,7 @@ function MailApp() {
       <ReconnectBar />
       <div className="flex min-h-0 flex-1">{content}</div>
       <ShortcutHelp />
+      <MailboxPickerHost />
       <ToastHost onUndo={actions.undo} />
     </div>
   );

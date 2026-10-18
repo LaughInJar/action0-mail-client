@@ -1,5 +1,10 @@
-import { isMailError } from "../../core/errors";
-import { asCursor, type AttachmentId, type MessageId } from "../../core/ids";
+import { isMailError, MailError } from "../../core/errors";
+import {
+  asCursor,
+  type AttachmentId,
+  type MailboxId,
+  type MessageId,
+} from "../../core/ids";
 import type {
   Mailbox,
   Message,
@@ -15,7 +20,13 @@ import type {
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
 import type { GmailHttp } from "./http";
-import { ALL_MAIL_ID, isMappedLabel, mapLabels } from "./labels";
+import {
+  ALL_MAIL_ID,
+  CATEGORIES_ID,
+  isMappedLabel,
+  isMembershipLabel,
+  mapLabels,
+} from "./labels";
 import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
 import type {
   GmailAttachment,
@@ -28,6 +39,20 @@ import type {
 
 /** Mailboxes whose messages `messages.list` excludes unless asked explicitly. */
 const SPAM_TRASH = new Set(["SPAM", "TRASH"]);
+
+/** Mailbox ids that are views, not labels. */
+const VIEW_IDS: ReadonlySet<string> = new Set([ALL_MAIL_ID, "STARRED"]);
+
+/** An error if any id is one we invented for the tree (Gmail doesn't know them). */
+function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
+  const invented = ids.find(
+    (id) =>
+      id === ALL_MAIL_ID || id === CATEGORIES_ID || id.startsWith("synthetic:"),
+  );
+  return invented === undefined
+    ? undefined
+    : new MailError("provider", `"${invented}" is not a Gmail label.`);
+}
 
 /** `messages.batchModify` accepts at most this many ids per call. */
 export const BATCH_MODIFY_LIMIT = 1000;
@@ -44,6 +69,8 @@ export class GmailProvider implements MailProvider {
     mailboxKinds: ["label", "view"],
     archive: true,
     settableFlags: ["seen", "flagged"],
+    move: true,
+    labels: true,
   };
   readonly #http: GmailHttp;
 
@@ -166,6 +193,46 @@ export class GmailProvider implements MailProvider {
     if (flags.seen !== undefined) (flags.seen ? remove : add).push("UNREAD");
     if (flags.flagged !== undefined)
       (flags.flagged ? add : remove).push("STARRED");
+    return this.#modify(
+      ids,
+      { addLabelIds: add, removeLabelIds: remove },
+      signal,
+    );
+  }
+
+  /**
+   * Gmail moves by relabelling: add `to`, remove `from` unless `from` is a
+   * view (All Mail, Starred), so moving out of a view never unstars.
+   */
+  move(
+    ids: readonly MessageId[],
+    { from, to }: { readonly from: MailboxId; readonly to: MailboxId },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const invalid = inventedIdError([to]);
+    if (invalid) return Promise.reject(invalid);
+    const removeFrom =
+      isMembershipLabel(from) && !VIEW_IDS.has(from) ? [from] : [];
+    return this.#modify(
+      ids,
+      { addLabelIds: [to], removeLabelIds: removeFrom },
+      signal,
+    );
+  }
+
+  setLabels(
+    ids: readonly MessageId[],
+    {
+      add,
+      remove,
+    }: {
+      readonly add: readonly MailboxId[];
+      readonly remove: readonly MailboxId[];
+    },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const invalid = inventedIdError([...add, ...remove]);
+    if (invalid) return Promise.reject(invalid);
     return this.#modify(
       ids,
       { addLabelIds: add, removeLabelIds: remove },

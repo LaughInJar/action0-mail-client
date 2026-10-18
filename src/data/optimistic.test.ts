@@ -22,6 +22,7 @@ const box = (id: string, extra: Partial<Mailbox> = {}): Mailbox => ({
   kind: "label",
   selectable: true,
   hidden: false,
+  assignable: true,
   ...extra,
 });
 
@@ -45,6 +46,8 @@ const labels: ProviderCapabilities = {
   mailboxKinds: ["label", "view"],
   archive: true,
   settableFlags: ["seen", "flagged"],
+  move: true,
+  labels: true,
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 
@@ -249,5 +252,74 @@ describe("patchCounts", () => {
       unstar,
     );
     expect(patched[0]?.counts).toEqual({ unread: 0, total: 0 });
+  });
+});
+
+describe("move and set-labels", () => {
+  it("moves from a label: leaves the source, joins the target", () => {
+    const [change] = planChanges(
+      { kind: "move", ids: ids("m3"), from: inbox.id, to: work.id },
+      [m3],
+      mailboxes,
+      labels,
+    );
+    expect(change?.after.mailboxIds).toEqual(["work"]);
+    expect(rowIds(patchList(list([m2, m3]), inbox, [change!]))).toEqual(["m2"]);
+    // Inserted into a cached Work list at its date position.
+    expect(rowIds(patchList(list([m1]), work, [change!]))).toEqual([
+      "m1",
+      "m3",
+    ]);
+    const counts = patchCounts(mailboxes, [change!]);
+    expect(counts.find((m) => m.id === inbox.id)?.counts).toEqual({
+      unread: 1,
+      total: 2,
+    });
+    expect(counts.find((m) => m.id === work.id)?.counts).toEqual({
+      unread: 2,
+      total: 3,
+    });
+  });
+
+  it("moving out of a view only adds the target", () => {
+    const [change] = planChanges(
+      { kind: "move", ids: ids("m2"), from: starred.id, to: work.id },
+      [m2],
+      mailboxes,
+      labels,
+    );
+    expect(change?.after.mailboxIds).toEqual(["inbox", "work"]);
+    expect(change?.after.flags.flagged).toBe(true);
+  });
+
+  it("moving into a folder leaves every other folder", () => {
+    const inFolder = message("f", 5, ["archive"]);
+    const projects = box("projects", { kind: "folder" });
+    const [change] = planChanges(
+      { kind: "move", ids: ids("f"), from: archiveFolder.id, to: projects.id },
+      [inFolder],
+      [...mailboxes, projects],
+      folders,
+    );
+    expect(change?.after.mailboxIds).toEqual(["projects"]);
+  });
+
+  it("set-labels adds and removes, and skips messages that wouldn't change", () => {
+    const changes = planChanges(
+      { kind: "set-labels", ids: ids("m1", "m2"), add: [work.id], remove: [] },
+      [m1, m2],
+      mailboxes,
+      labels,
+    );
+    expect(changes.map((c) => [c.id, c.after.mailboxIds])).toEqual([
+      ["m2", ["inbox", "work"]],
+    ]);
+    const [removed] = planChanges(
+      { kind: "set-labels", ids: ids("m1"), add: [], remove: [work.id] },
+      [m1],
+      mailboxes,
+      labels,
+    );
+    expect(removed?.after.mailboxIds).toEqual(["inbox"]);
   });
 });

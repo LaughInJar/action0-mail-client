@@ -67,12 +67,20 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   else
     body = (
       <MessageList
+        accountId={route.accountId}
         items={list.data}
         mailbox={mailbox}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
         fetchNextPage={loadMore}
         onOpen={onOpen}
+        {...(actions.canStar
+          ? {
+              onToggleStar: (id: MessageId) => {
+                actions.toggleStar([id]);
+              },
+            }
+          : {})}
       />
     );
 
@@ -94,33 +102,6 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
             <p className="flex-1 px-2 text-sm font-medium" aria-live="polite">
               {selectedCount} selected
             </p>
-            {actions.canArchive && (
-              <IconButton
-                label="Archive (a)"
-                icon="archive"
-                onClick={() => {
-                  actions.archive();
-                }}
-              />
-            )}
-            {actions.canSetSeen && (
-              <>
-                <IconButton
-                  label="Mark as read (Shift+I)"
-                  icon="mail-open"
-                  onClick={() => {
-                    actions.setSeen(true);
-                  }}
-                />
-                <IconButton
-                  label="Mark as unread (Shift+U)"
-                  icon="mail"
-                  onClick={() => {
-                    actions.setSeen(false);
-                  }}
-                />
-              </>
-            )}
             <button
               type="button"
               onClick={clearSelection}
@@ -149,6 +130,68 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           onClick={() => void list.refetch()}
         />
       </header>
+      {selectedCount > 0 && (
+        <div
+          role="group"
+          aria-label="Actions for the selected messages"
+          className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          {actions.canArchive && (
+            <IconButton
+              label="Archive (a)"
+              icon="archive"
+              onClick={() => {
+                actions.archive();
+              }}
+            />
+          )}
+          {actions.canMove && (
+            <IconButton
+              label="Move to… (v)"
+              icon="folder"
+              onClick={() => {
+                actions.openPicker("move");
+              }}
+            />
+          )}
+          {actions.canLabel && (
+            <IconButton
+              label="Labels… (l)"
+              icon="tag"
+              onClick={() => {
+                actions.openPicker("labels");
+              }}
+            />
+          )}
+          {actions.canStar && (
+            <IconButton
+              label="Star or unstar (s)"
+              icon="star"
+              onClick={() => {
+                actions.toggleStar();
+              }}
+            />
+          )}
+          {actions.canSetSeen && (
+            <>
+              <IconButton
+                label="Mark as read (Shift+I)"
+                icon="mail-open"
+                onClick={() => {
+                  actions.setSeen(true);
+                }}
+              />
+              <IconButton
+                label="Mark as unread (Shift+U)"
+                icon="mail"
+                onClick={() => {
+                  actions.setSeen(false);
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
       <div className="min-h-0 flex-1">{body}</div>
     </div>
   );

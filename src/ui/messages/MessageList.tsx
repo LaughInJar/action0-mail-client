@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useRef, type MouseEvent } from "react";
-import type { MessageId } from "../../core/ids";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type DragEvent,
+  type MouseEvent,
+} from "react";
+import type { AccountId, MessageId } from "../../core/ids";
 import type { Mailbox, MessageSummary } from "../../core/model";
 import { useUi, useUiStore } from "../../state/context";
+import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
 import { useLongPress } from "./useLongPress";
 
@@ -10,6 +17,7 @@ const rowDomId = (index: number) => `message-row-${index}`;
 
 /** Props of {@link MessageList}. */
 export interface MessageListProps {
+  readonly accountId: AccountId;
   readonly items: readonly MessageSummary[];
   readonly mailbox: Mailbox | undefined;
   readonly hasNextPage: boolean;
@@ -17,6 +25,22 @@ export interface MessageListProps {
   readonly fetchNextPage: () => void;
   /** Shows a message (plain click or tap). */
   readonly onOpen: (id: MessageId) => void;
+  /** Toggles the star of one message (click on a row's star). Omit if starring isn't supported. */
+  readonly onToggleStar?: (id: MessageId) => void;
+}
+
+/** A small badge as drag image ("3 messages"); removed right after the drag starts. */
+function dragBadge(text: string): HTMLElement {
+  const badge = document.createElement("div");
+  badge.textContent = text;
+  badge.style.cssText =
+    "position:fixed;top:-100px;left:-100px;padding:4px 10px;border-radius:9999px;" +
+    "background:#2563eb;color:#fff;font:600 13px system-ui,sans-serif;white-space:nowrap";
+  document.body.append(badge);
+  setTimeout(() => {
+    badge.remove();
+  }, 0);
+  return badge;
 }
 
 /**
@@ -26,15 +50,20 @@ export interface MessageListProps {
  * - Click/tap: show the message (and drop any multi-selection).
  * - Ctrl/Cmd-click: toggle. Shift-click: select a range.
  * - Long press (touch): start selecting; further taps toggle.
+ * - Drag (mouse): rows are drag sources for the mailbox tree. Dragging a
+ *   selected row drags the whole selection.
  */
 export function MessageList({
+  accountId,
   items,
   mailbox,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
   onOpen,
+  onToggleStar,
 }: MessageListProps) {
+  const coarse = useCoarsePointer();
   const store = useUiStore();
   const focusedId = useUi((state) => state.focusedId);
   const selectedIds = useUi((state) => state.selectedIds);
@@ -59,12 +88,32 @@ export function MessageList({
     if (longPress.consumeClick()) return;
     const id = idFromTarget(event.target);
     if (id === undefined) return;
+    if (onToggleStar && (event.target as HTMLElement).closest("[data-star]")) {
+      onToggleStar(id);
+      return;
+    }
     const state = store.getState();
     if (event.shiftKey) state.selectRange(ids, id);
     else if (event.ctrlKey || event.metaKey) state.toggle(id);
     else if (state.selectedIds.size > 0 && pointerType.current !== "mouse")
       state.toggle(id);
     else onOpen(id);
+  };
+
+  const onDragStart = (event: DragEvent<HTMLDivElement>) => {
+    const id = idFromTarget(event.target);
+    if (id === undefined) return;
+    const state = store.getState();
+    const dragged = state.selectedIds.has(id)
+      ? ids.filter((candidate) => state.selectedIds.has(candidate))
+      : [id];
+    state.setDragging({ accountId, ids: dragged });
+    const label =
+      dragged.length === 1 ? "1 message" : `${dragged.length} messages`;
+    event.dataTransfer.effectAllowed = "copyMove";
+    // Firefox only starts a drag with some data set.
+    event.dataTransfer.setData("text/plain", label);
+    event.dataTransfer.setDragImage(dragBadge(label), -12, -12);
   };
 
   const focusedIndex = focusedId === null ? -1 : ids.indexOf(focusedId);
@@ -131,6 +180,10 @@ export function MessageList({
       onPointerUp={longPress.onPointerUp}
       onPointerCancel={longPress.onPointerCancel}
       onContextMenu={longPress.onContextMenu}
+      onDragStart={onDragStart}
+      onDragEnd={() => {
+        store.getState().setDragging(null);
+      }}
       className="h-full overflow-y-auto overscroll-contain focus:outline-none"
     >
       {items.map((summary, index) => {
@@ -144,6 +197,8 @@ export function MessageList({
             selected={selectionMode ? selectedIds.has(summary.id) : focused}
             selectionMode={selectionMode}
             showRecipients={showRecipients}
+            draggable={!coarse}
+            starrable={onToggleStar !== undefined}
           />
         );
       })}

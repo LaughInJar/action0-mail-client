@@ -5,13 +5,14 @@ const FOCUSABLE =
 
 /**
  * While `active`, keeps Tab focus inside `ref`, focuses its first focusable
- * element, calls `onEscape` on Escape, and restores the previous focus when
- * it ends.
+ * element (or the container itself with `focusContainer`), calls `onEscape`
+ * on Escape, and restores the previous focus when it ends.
  */
 export function useFocusTrap(
   ref: RefObject<HTMLElement | null>,
   active: boolean,
   onEscape?: () => void,
+  { focusContainer = false }: { focusContainer?: boolean } = {},
 ): void {
   const escape = useRef(onEscape);
   useEffect(() => {
@@ -27,7 +28,7 @@ export function useFocusTrap(
         : null;
     const focusables = () =>
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE));
-    (focusables()[0] ?? container).focus();
+    (focusContainer ? container : (focusables()[0] ?? container)).focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && escape.current) {
@@ -56,5 +57,5 @@ export function useFocusTrap(
       container.removeEventListener("keydown", onKeyDown);
       previous?.focus();
     };
-  }, [ref, active]);
+  }, [ref, active, focusContainer]);
 }

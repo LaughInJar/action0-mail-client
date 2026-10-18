@@ -42,6 +42,36 @@ export function useActionCommands(actions: MailActions): void {
         },
       },
       {
+        id: "mail.move",
+        group,
+        description: "Move to…",
+        keys: ["v"],
+        when: () => actions.canMove && hasTargets(),
+        run: () => {
+          actions.openPicker("move");
+        },
+      },
+      {
+        id: "mail.labels",
+        group,
+        description: "Labels…",
+        keys: ["l"],
+        when: () => actions.canLabel && hasTargets(),
+        run: () => {
+          actions.openPicker("labels");
+        },
+      },
+      {
+        id: "mail.star",
+        group,
+        description: "Star or unstar",
+        keys: ["s"],
+        when: () => actions.canStar && hasTargets(),
+        run: () => {
+          actions.toggleStar();
+        },
+      },
+      {
         id: "mail.undo",
         group,
         description: "Undo",
