@@ -26,7 +26,8 @@ import {
   GmailHttp,
   PEOPLE_API_BASE,
 } from "./http";
-import { ALL_MAIL_ID } from "./labels";
+import { ALL_MAIL_ID, GMAIL_LABEL_COLORS } from "./labels";
+import type { GmailLabel } from "./types";
 
 const server = setupServer();
 beforeAll(() => {
@@ -1008,5 +1009,240 @@ describe("GmailProvider.changesSince", () => {
       token: "900",
       reset: true,
     });
+  });
+});
+
+describe("GmailProvider label management", () => {
+  /** A small label store behind the labels endpoints; records the writes. */
+  function labelServer(initial: GmailLabel[]) {
+    const labels = new Map(initial.map((label) => [label.id, { ...label }]));
+    const writes: { method: string; id?: string; body?: unknown }[] = [];
+    let next = 100;
+    const notFound = () =>
+      HttpResponse.json({ error: { message: "Not Found" } }, { status: 404 });
+    server.use(
+      http.get(url("labels"), () =>
+        HttpResponse.json({ labels: [...labels.values()] }),
+      ),
+      http.get(url("labels/:id"), ({ params }) => {
+        const label = labels.get(String(params.id));
+        return label ? HttpResponse.json(label) : notFound();
+      }),
+      http.post(url("labels"), async ({ request }) => {
+        const body = (await request.json()) as GmailLabel;
+        writes.push({ method: "POST", body });
+        if ([...labels.values()].some((l) => l.name === body.name))
+          return HttpResponse.json(
+            { error: { code: 409, message: "Label name exists or conflicts" } },
+            { status: 409 },
+          );
+        const label: GmailLabel = {
+          ...body,
+          id: `Label_${next++}`,
+          type: "user",
+        };
+        labels.set(label.id, label);
+        return HttpResponse.json(label);
+      }),
+      http.put(url("labels/:id"), async ({ params, request }) => {
+        const id = String(params.id);
+        const body = (await request.json()) as GmailLabel;
+        writes.push({ method: "PUT", id, body });
+        labels.set(id, { ...body, type: "user" });
+        return HttpResponse.json(labels.get(id));
+      }),
+      http.patch(url("labels/:id"), async ({ params, request }) => {
+        const id = String(params.id);
+        const body = (await request.json()) as Partial<GmailLabel>;
+        const label = labels.get(id);
+        if (!label) return notFound();
+        writes.push({ method: "PATCH", id, body });
+        labels.set(id, { ...label, ...body });
+        return HttpResponse.json(labels.get(id));
+      }),
+      http.delete(url("labels/:id"), ({ params }) => {
+        const id = String(params.id);
+        writes.push({ method: "DELETE", id });
+        labels.delete(id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return { labels, writes };
+  }
+  const user = (id: string, name: string, extra: Partial<GmailLabel> = {}) =>
+    gmailLabel(id, {
+      name,
+      type: "user",
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show",
+      ...extra,
+    });
+  const red = GMAIL_LABEL_COLORS[0]!;
+  const box = asMailboxId;
+
+  it("creates labels by path, with colour and hidden", async () => {
+    const { writes } = labelServer([user("Label_1", "Work")]);
+    const gmail = provider();
+    expect(gmail.capabilities.manageMailboxes).toBe(true);
+    expect(gmail.capabilities.mailboxColors).toHaveLength(16);
+
+    const created = await gmail.createMailbox({
+      name: " 2026 ",
+      parentId: box("Label_1"),
+      color: red,
+      hidden: true,
+    });
+    expect(writes[0]?.body).toEqual({
+      name: "Work/2026",
+      labelListVisibility: "labelHide",
+      messageListVisibility: "show",
+      color: { backgroundColor: "#fb4c2f", textColor: "#ffffff" },
+    });
+    expect(created).toMatchObject({
+      id: "Label_100",
+      name: "2026",
+      parentId: "Label_1",
+      kind: "label",
+      hidden: true,
+      assignable: true,
+      color: red,
+    });
+
+    // Inside a parent that only exists as part of other labels' names.
+    await gmail.createMailbox({
+      name: "Alpha",
+      parentId: box("synthetic:Projects"),
+    });
+    expect(writes[1]?.body).toMatchObject({ name: "Projects/Alpha" });
+  });
+
+  it("says clearly when a name is taken or not allowed", async () => {
+    labelServer([user("Label_1", "Work")]);
+    await expect(provider().createMailbox({ name: "Work" })).rejects.toThrow(
+      "There’s already a label called “Work”.",
+    );
+    await expect(provider().createMailbox({ name: "a/b" })).rejects.toThrow(
+      "Label names can’t contain “/”.",
+    );
+  });
+
+  it("renames the labels inside a renamed label", async () => {
+    const { labels, writes } = labelServer([
+      user("Label_1", "Work", {
+        color: { backgroundColor: "#4a86e8", textColor: "#ffffff" },
+      }),
+      user("Label_2", "Work/Clients"),
+      user("Label_3", "Work/Clients/Acme"),
+      user("Label_4", "Workshop"),
+    ]);
+    const updated = await provider().updateMailbox(box("Label_1"), {
+      name: "Job",
+    });
+    expect(writes[0]).toEqual({
+      method: "PUT",
+      id: "Label_1",
+      body: {
+        id: "Label_1",
+        name: "Job",
+        messageListVisibility: "show",
+        labelListVisibility: "labelShow",
+        color: { backgroundColor: "#4a86e8", textColor: "#ffffff" },
+      },
+    });
+    expect([...labels.values()].map((label) => label.name)).toEqual([
+      "Job",
+      "Job/Clients",
+      "Job/Clients/Acme",
+      "Workshop",
+    ]);
+    expect(updated).toMatchObject({ id: "Label_1", name: "Job" });
+  });
+
+  it("moves a label, removes its colour and hides it", async () => {
+    const { labels, writes } = labelServer([
+      user("Label_1", "Work"),
+      user("Label_2", "Work/Clients", {
+        color: { backgroundColor: "#4a86e8", textColor: "#ffffff" },
+      }),
+      user("Label_5", "Personal"),
+    ]);
+    const gmail = provider();
+    const moved = await gmail.updateMailbox(box("Label_2"), {
+      parentId: box("Label_5"),
+      color: null,
+      hidden: true,
+    });
+    expect(writes[0]?.body).toEqual({
+      id: "Label_2",
+      name: "Personal/Clients",
+      messageListVisibility: "show",
+      labelListVisibility: "labelHide",
+    });
+    expect(moved).toMatchObject({ parentId: "Label_5", hidden: true });
+    expect(moved.color).toBeUndefined();
+
+    await gmail.updateMailbox(box("Label_2"), { parentId: null });
+    expect(labels.get("Label_2")?.name).toBe("Clients");
+    await expect(
+      gmail.updateMailbox(box("Label_1"), { parentId: box("Label_1") }),
+    ).rejects.toThrow("A label can’t go inside itself.");
+  });
+
+  it("deletes user labels, never system ones", async () => {
+    const { writes } = labelServer([
+      user("Label_1", "Work"),
+      gmailLabel("INBOX", { name: "INBOX" }),
+    ]);
+    const gmail = provider();
+    await gmail.deleteMailbox(box("Label_1"));
+    expect(writes).toEqual([{ method: "DELETE", id: "Label_1" }]);
+    await expect(gmail.deleteMailbox(box("INBOX"))).rejects.toThrow(
+      "System labels can’t be changed.",
+    );
+    await expect(gmail.deleteMailbox(box(ALL_MAIL_ID))).rejects.toMatchObject({
+      code: "provider",
+    });
+    expect(writes).toHaveLength(1);
+  });
+});
+
+describe("GmailProvider.oneClickUnsubscribe", () => {
+  it("posts the RFC 8058 body, without credentials", async () => {
+    let seen:
+      { body: string; type: string | null; cookie: string | null } | undefined;
+    server.use(
+      http.post("https://news.example/unsubscribe", async ({ request }) => {
+        seen = {
+          body: await request.text(),
+          type: request.headers.get("Content-Type"),
+          cookie: request.headers.get("Cookie"),
+        };
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+    await provider().oneClickUnsubscribe("https://news.example/unsubscribe");
+    expect(seen).toEqual({
+      body: "List-Unsubscribe=One-Click",
+      type: "application/x-www-form-urlencoded",
+      cookie: null,
+    });
+  });
+
+  it("fails when the sender can't be reached or refuses", async () => {
+    server.use(
+      http.post("https://down.example/u", () => HttpResponse.error()),
+      http.post("https://refuses.example/u", () =>
+        HttpResponse.text("no", { status: 500 }),
+      ),
+    );
+    await expect(
+      provider().oneClickUnsubscribe("https://down.example/u"),
+    ).rejects.toMatchObject({ code: "network" });
+    await expect(
+      provider().oneClickUnsubscribe("https://refuses.example/u"),
+    ).rejects.toMatchObject({ code: "provider", status: 500 });
+    await expect(
+      provider().oneClickUnsubscribe("http://plain.example/u"),
+    ).rejects.toMatchObject({ code: "provider" });
   });
 });

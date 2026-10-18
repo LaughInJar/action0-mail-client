@@ -13,11 +13,13 @@ import type { AccountHandle } from "../../accounts/types";
 import { asAccountId, asMailboxId, type AccountId } from "../../core/ids";
 import type { Mailbox, MailboxRole } from "../../core/model";
 import { useMailboxes } from "../../data/hooks";
+import { isOwnMailbox } from "../../data/mailboxActions";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
 import { findFolded } from "../../lib/text";
 import { useMailActions } from "../actions/useMailActions";
 import { Icon, type IconName } from "../common/Icon";
+import { useLongPress } from "../messages/useLongPress";
 import {
   badgeCount,
   buildMailboxTree,
@@ -67,7 +69,9 @@ export interface MailboxTreeProps {
  * `aria-level`). Arrow keys move between visible items, ←/→ collapse and
  * expand, Enter or Space opens a mailbox. Clicks are delegated to the tree.
  * While the folder filter has text, only matches and their parents show,
- * all expanded.
+ * all expanded. The user's own labels have a menu (rename, colour, ...):
+ * the ⋯ button on the selected one, right-click, long-press, or Shift+F10
+ * and the Menu key.
  */
 export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const accounts = useAccounts();
@@ -79,6 +83,43 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const actions = useMailActions();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
+
+  /**
+   * Opens the label menu of `item`: at a pointer position, below an anchor
+   * element, or below the item itself. False if the item has no menu.
+   */
+  const openMenu = (
+    item: HTMLElement,
+    at?: { x: number; y: number } | Element,
+  ) => {
+    const { accountId, mailboxId, editable } = item.dataset;
+    if (editable !== "true" || !accountId || !mailboxId) return false;
+    let position;
+    if (at && "x" in at && !(at instanceof Element))
+      position = { x: at.x, y: at.y, flipY: at.y };
+    else {
+      const rect = (at ?? item).getBoundingClientRect();
+      position = {
+        x: at ? rect.left : rect.left + 24,
+        y: rect.bottom,
+        flipY: rect.top,
+      };
+    }
+    store.getState().setLabelMenu({
+      accountId: asAccountId(accountId),
+      mailboxId: asMailboxId(mailboxId),
+      ...position,
+    });
+    return true;
+  };
+  // A long press opens the menu; without one (system mailboxes) it's a tap.
+  const pressOpenedMenu = useRef(false);
+  const longPress = useLongPress((target) => {
+    const item = (target as HTMLElement).closest<HTMLElement>(
+      '[role="treeitem"]',
+    );
+    pressOpenedMenu.current = item ? openMenu(item) : false;
+  });
 
   /** The mailbox under a drag, if the dragged messages may go there. */
   const dropTargetOf = (target: EventTarget) => {
@@ -141,9 +182,15 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   );
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (longPress.consumeClick() && pressOpenedMenu.current) return;
     const target = event.target as HTMLElement;
     const item = target.closest<HTMLElement>('[role="treeitem"]');
     if (!item) return;
+    const menuButton = target.closest("[data-label-menu]");
+    if (menuButton) {
+      openMenu(item, menuButton);
+      return;
+    }
     const {
       key = "",
       accountId,
@@ -217,10 +264,33 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       case " ":
         current.click();
         break;
+      case "ContextMenu":
+        if (!openMenu(current)) return;
+        break;
+      case "F10":
+        if (!event.shiftKey || !openMenu(current)) return;
+        break;
       default:
         return;
     }
     event.preventDefault();
+  };
+
+  const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const item = (event.target as HTMLElement).closest<HTMLElement>(
+      '[role="treeitem"]',
+    );
+    // Keyboard-made events (Menu key) have no pointer position.
+    const fromPointer = event.clientX !== 0 || event.clientY !== 0;
+    if (
+      item &&
+      openMenu(
+        item,
+        fromPointer ? { x: event.clientX, y: event.clientY } : undefined,
+      )
+    )
+      event.preventDefault();
+    else longPress.onContextMenu(event);
   };
 
   return (
@@ -231,6 +301,11 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       tabIndex={-1}
       onClick={onClick}
       onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
+      onPointerDown={longPress.onPointerDown}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
       onDragOver={onDragOver}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
@@ -289,6 +364,7 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
         node={node}
         depth={2}
         parentKey={key}
+        manageable={handle.provider.capabilities.manageMailboxes}
       />
     ));
 
@@ -330,6 +406,8 @@ interface MailboxBranchProps {
   readonly node: MailboxNode;
   readonly depth: number;
   readonly parentKey: string;
+  /** The account's own mailboxes can be changed (they get a menu). */
+  readonly manageable: boolean;
 }
 
 function MailboxBranch({
@@ -337,6 +415,7 @@ function MailboxBranch({
   node,
   depth,
   parentKey,
+  manageable,
 }: MailboxBranchProps) {
   const { mailbox, children } = node;
   const route = useRoute();
@@ -352,6 +431,7 @@ function MailboxBranch({
   const badge = badgeCount(mailbox);
   const drop = useContext(DropContext);
   const dropHere = drop?.key === key;
+  const editable = manageable && isOwnMailbox(mailbox);
 
   return (
     <>
@@ -370,6 +450,9 @@ function MailboxBranch({
         data-assignable={String(mailbox.assignable)}
         data-role={mailbox.role}
         data-match={node.match}
+        data-editable={editable || undefined}
+        aria-haspopup={editable ? "menu" : undefined}
+        aria-keyshortcuts={editable ? "Shift+F10" : undefined}
         className={`${rowClass(selected)} ${dropHere ? "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20" : ""}`}
         style={{ paddingLeft: `${(depth - 1) * 0.875 + 0.5}rem` }}
       >
@@ -408,6 +491,23 @@ function MailboxBranch({
             </span>
           </span>
         )}
+        {editable && selected && (
+          // Mouse and touch only (keyboards have Shift+F10), so it stays
+          // out of the tab order and out of the item's accessible name.
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden="true"
+            data-label-menu=""
+            title={`Actions for ${mailbox.name}`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
+            className="-my-1 grid size-6 shrink-0 place-items-center rounded text-zinc-500 hover:bg-zinc-300/60 hover:text-zinc-800 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 pointer-coarse:size-11"
+          >
+            <Icon name="more" className="size-4" />
+          </button>
+        )}
       </div>
       {expanded &&
         children.map((child) => (
@@ -417,6 +517,7 @@ function MailboxBranch({
             node={child}
             depth={depth + 1}
             parentKey={key}
+            manageable={manageable}
           />
         ))}
     </>

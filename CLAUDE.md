@@ -137,3 +137,8 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Desktop notifications: a bar asks once; only new unread Inbox mail, only while the app isn't in front, grouped when several arrive; clicking opens the message.
   - The tab title shows the unread count of all inboxes across accounts, or "Reconnect" when Google access has run out (it can only be renewed on user interaction).
   - The demo account receives a message every couple of minutes, so this can be tried without Gmail.
+- **Unsubscribe and label management decisions:**
+  - Newsletters (with `List-Unsubscribe`) get an Unsubscribe button in the reader. It uses one-click (RFC 8058) when offered, else sends the unsubscribe mail, else opens the sender's page. It can't be undone, so it always asks first (Cancel is the default).
+  - The production CSP allows `connect-src https:` so one-click requests can reach the sender's server. Rationale: remote images may already load from anywhere once allowed, so this barely widens what the app can reach.
+  - Labels: "Create label 'X'" in the Labels and Move pickers (creates and applies), "New label" in the tree, a ⋯ menu on labels in the tree (button on the selected label, right-click, long-press) and a "Manage labels" list that includes hidden labels.
+  - Rename, colour (the provider's palette), parent and "show in folder list" are editable and undoable; renaming a parent renames its sublabels. Deleting a label asks for confirmation. System mailboxes can't be edited.

@@ -6,17 +6,19 @@ import type { MailActions } from "./useMailActions";
 /** The app's undo (`z` and the toasts' Undo buttons). */
 export interface Undo {
   readonly canUndo: () => boolean;
-  /** Undoes the most recent undoable thing: a send, a discarded draft or a mail action. */
+  /** Undoes the most recent undoable thing: a send, a discarded draft, a mail or label action. */
   readonly undo: () => void;
 }
 
-/** {@link Undo} over mail actions, discarded drafts and queued sends. */
+/** {@link Undo} over mail actions, label changes, discarded drafts and queued sends. */
 export function useUndo(mail: MailActions, compose: ComposeActions): Undo {
   const store = useUiStore();
   return useMemo((): Undo => {
     const toastUndo = () => {
       const { toast } = store.getState();
-      return toast?.undo !== undefined || toast?.restoreDraft !== undefined
+      return toast?.undo !== undefined ||
+        toast?.restoreDraft !== undefined ||
+        toast?.revert !== undefined
         ? toast
         : undefined;
     };
@@ -32,6 +34,9 @@ export function useUndo(mail: MailActions, compose: ComposeActions): Undo {
         } else if (toast?.restoreDraft) {
           dismissToast(toast.id);
           compose.restoreDraft(toast.restoreDraft);
+        } else if (toast?.revert) {
+          dismissToast(toast.id);
+          toast.revert();
         } else {
           mail.undo();
         }

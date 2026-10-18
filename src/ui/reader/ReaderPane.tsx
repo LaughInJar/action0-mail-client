@@ -20,6 +20,7 @@ import { AttachmentList } from "./AttachmentList";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useMarkReadOnView } from "./useMarkReadOnView";
+import { useUnsubscribe } from "./useUnsubscribe";
 
 /** Column (c): the focused message, or a summary of the multi-selection. */
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
@@ -96,6 +97,8 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   const drafts = mailboxes?.find((mailbox) => mailbox.role === "drafts");
   const isDraft =
     !!message && !!drafts && message.mailboxIds.includes(drafts.id);
+  const unsubscribe = useUnsubscribe();
+  const unsubscribed = useUi((state) => state.unsubscribed.has(messageId));
 
   let content;
   if (message) {
@@ -105,6 +108,16 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           message={message}
           mailboxes={mailboxes}
           subjectId={subjectId}
+          {...(message.unsubscribe
+            ? {
+                unsubscribe: {
+                  done: unsubscribed,
+                  onClick: () => {
+                    unsubscribe.request(accountId, message);
+                  },
+                },
+              }
+            : {})}
         />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />

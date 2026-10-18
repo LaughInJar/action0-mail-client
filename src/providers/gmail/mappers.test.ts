@@ -100,6 +100,30 @@ describe("toMessage", () => {
     );
     expect(message.hasAttachments).toBe(false);
   });
+
+  it("reads how to unsubscribe from mailing lists", () => {
+    const message = toMessage(
+      gmailMessage("m1", {
+        headers: [
+          {
+            name: "List-Unsubscribe",
+            value:
+              "<mailto:leave@lists.example?subject=stop>, <https://lists.example/u/1>",
+          },
+          {
+            name: "List-Unsubscribe-Post",
+            value: "List-Unsubscribe=One-Click",
+          },
+        ],
+      }),
+    );
+    expect(message.unsubscribe).toEqual({
+      oneClick: "https://lists.example/u/1",
+      mail: { to: "leave@lists.example", subject: "stop" },
+      page: "https://lists.example/u/1",
+    });
+    expect(toMessage(gmailMessage("m2")).unsubscribe).toBeUndefined();
+  });
 });
 
 describe("decodeHtmlEntities", () => {

@@ -7,7 +7,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ComposerContent } from "../compose/session";
 import type { AccountId, DraftId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
-import type { MessageSummary } from "../core/model";
+import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
 import * as selection from "./selection";
 
@@ -27,6 +27,10 @@ export interface Toast {
     /** The messages as the action left them, for messages that left every cached list. */
     readonly known: readonly MessageSummary[];
   };
+  /** Reverts the action the toast reports (changes that aren't mail intents). */
+  readonly revert?: () => void;
+  /** A link the toast offers, opened in a new tab. */
+  readonly link?: { readonly label: string; readonly href: string };
 }
 
 /** Messages being dragged (`dragover` handlers can't read the drag data). */
@@ -58,8 +62,58 @@ export interface ConfirmState {
         readonly accountId: AccountId;
         readonly mailboxId: MailboxId;
         readonly name: string;
+      }
+    | {
+        readonly kind: "unsubscribe";
+        readonly accountId: AccountId;
+        readonly messageId: MessageId;
+        /** Who the user unsubscribes from, for messages. */
+        readonly sender: string;
+        readonly unsubscribe: Unsubscribe;
+      }
+    | {
+        readonly kind: "delete-label";
+        readonly accountId: AccountId;
+        readonly mailboxId: MailboxId;
+        readonly name: string;
       };
 }
+
+/** A confirmed action of {@link ConfirmState}. */
+export type ConfirmAction = ConfirmState["action"];
+
+/** Confirmed actions on messages (see `useMailActions`). */
+export type MailConfirmAction = Extract<
+  ConfirmAction,
+  { readonly kind: "delete-forever" | "empty" }
+>;
+
+/** The open label menu (in the folder tree) and where it shows. */
+export interface LabelMenuState {
+  readonly accountId: AccountId;
+  readonly mailboxId: MailboxId;
+  /** Viewport position of the menu's left edge. */
+  readonly x: number;
+  /** Where its top goes, when it fits below that. */
+  readonly y: number;
+  /** Where its bottom goes otherwise (above what it belongs to). */
+  readonly flipY: number;
+}
+
+/** The open label dialog: a new label, or changes to one. */
+export type LabelDialogState =
+  | {
+      readonly mode: "create";
+      readonly accountId: AccountId;
+      readonly parentId?: MailboxId;
+    }
+  | {
+      readonly mode: "edit";
+      readonly accountId: AccountId;
+      readonly mailboxId: MailboxId;
+      /** Field that gets focus. */
+      readonly focus: "name" | "parent" | "color";
+    };
 
 /** How a composer was started. */
 export type ComposerKind = "new" | "reply" | "reply-all" | "forward" | "draft";
@@ -129,6 +183,12 @@ export interface UiState extends selection.SelectionState {
   readonly composer: ComposerSession | null;
   /** Sent mails within their undo period, oldest first. */
   readonly pendingSends: readonly PendingSend[];
+  /** Messages whose list the user left in this session. Session only. */
+  readonly unsubscribed: ReadonlySet<MessageId>;
+  readonly labelMenu: LabelMenuState | null;
+  readonly labelDialog: LabelDialogState | null;
+  /** The account whose labels "Manage labels" shows. */
+  readonly manageLabels: AccountId | null;
 }
 
 /** State transitions. */
@@ -193,6 +253,10 @@ export interface UiActions {
   readonly queueSend: (key: number, delayMs: number) => PendingSend | undefined;
   /** Removes a pending send (sent, failed or undone) and returns it. */
   readonly takePendingSend: (id: number) => PendingSend | undefined;
+  readonly markUnsubscribed: (id: MessageId) => void;
+  readonly setLabelMenu: (menu: LabelMenuState | null) => void;
+  readonly setLabelDialog: (dialog: LabelDialogState | null) => void;
+  readonly setManageLabels: (accountId: AccountId | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -257,6 +321,10 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           addAccountOpen: false,
           composer: null,
           pendingSends: [],
+          unsubscribed: new Set(),
+          labelMenu: null,
+          labelDialog: null,
+          manageLabels: null,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -428,6 +496,18 @@ export function createUiStore(storage: Storage | undefined): UiStore {
                 pendingSends: s.pendingSends.filter((p) => p.id !== id),
               }));
             return pending;
+          },
+          markUnsubscribed: (id) => {
+            set((s) => ({ unsubscribed: new Set(s.unsubscribed).add(id) }));
+          },
+          setLabelMenu: (labelMenu) => {
+            set({ labelMenu });
+          },
+          setLabelDialog: (labelDialog) => {
+            set({ labelDialog });
+          },
+          setManageLabels: (manageLabels) => {
+            set({ manageLabels });
           },
         };
       },

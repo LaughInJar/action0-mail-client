@@ -15,12 +15,16 @@ const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as {
  * why inline styles and https images are allowed here: the per-message CSP
  * inside the iframe is what actually blocks remote content until the user
  * allows it (see `src/security/mailDocument.ts`).
+ *
+ * `connect-src https:` lets one-click unsubscribe (RFC 8058) reach the
+ * sender's server. Remote images may load from anywhere once allowed, so
+ * this barely widens what the app can reach.
  */
 const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-  "connect-src 'self' https://gmail.googleapis.com https://people.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/",
+  "connect-src 'self' https:",
   "frame-src https://accounts.google.com/gsi/",
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",

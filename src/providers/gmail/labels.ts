@@ -1,5 +1,10 @@
-import { asMailboxId } from "../../core/ids";
-import type { Mailbox, MailboxKind, MailboxRole } from "../../core/model";
+import { asMailboxId, type MailboxId } from "../../core/ids";
+import type {
+  Mailbox,
+  MailboxColor,
+  MailboxKind,
+  MailboxRole,
+} from "../../core/model";
 import type { GmailLabel } from "./types";
 
 /** Synthetic id of the "All Mail" view (Gmail has no label for it). */
@@ -7,7 +12,30 @@ export const ALL_MAIL_ID = "ALL_MAIL";
 /** Synthetic id of the non-selectable "Categories" group. */
 export const CATEGORIES_ID = "CATEGORIES";
 /** Prefix of synthetic parents for user labels whose parent label doesn't exist. */
-const SYNTHETIC_PREFIX = "synthetic:";
+export const SYNTHETIC_PREFIX = "synthetic:";
+
+/**
+ * Label colours offered for Gmail: background/text pairs from the palette
+ * that Gmail's API accepts (it rejects any other value).
+ */
+export const GMAIL_LABEL_COLORS: readonly MailboxColor[] = [
+  { background: "#fb4c2f", text: "#ffffff" },
+  { background: "#ffad47", text: "#000000" },
+  { background: "#fad165", text: "#000000" },
+  { background: "#16a766", text: "#ffffff" },
+  { background: "#43d692", text: "#000000" },
+  { background: "#4a86e8", text: "#ffffff" },
+  { background: "#a479e2", text: "#ffffff" },
+  { background: "#f691b3", text: "#000000" },
+  { background: "#ac2b16", text: "#ffffff" },
+  { background: "#cf8933", text: "#ffffff" },
+  { background: "#0b804b", text: "#ffffff" },
+  { background: "#2da2bb", text: "#ffffff" },
+  { background: "#285bac", text: "#ffffff" },
+  { background: "#653e9b", text: "#ffffff" },
+  { background: "#b65775", text: "#ffffff" },
+  { background: "#666666", text: "#ffffff" },
+];
 
 interface SystemMailbox {
   readonly name: string;
@@ -191,6 +219,38 @@ function mapUserLabels(labels: readonly GmailLabel[]): Mailbox[] {
     .map(([, mailbox]) => mailbox);
 }
 
+/** A user label as a mailbox, nested in `parentId` (see {@link parentPathOf}). */
+export function toUserMailbox(
+  label: GmailLabel,
+  parentId: MailboxId | undefined,
+): Mailbox {
+  return {
+    ...base(label),
+    name: leafName(label.name),
+    kind: "label",
+    assignable: true,
+    ...(parentId === undefined ? {} : { parentId }),
+  };
+}
+
+/** "Work/Clients" for "Work/Clients/2026"; "" at the top level. */
+export function parentPathOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash <= 0 ? "" : path.slice(0, slash);
+}
+
+/** The id of the label at `path`, or of the synthetic node standing in for it. */
+export function idOfPath(
+  path: string,
+  labels: readonly GmailLabel[],
+): MailboxId | undefined {
+  if (path === "") return undefined;
+  const label = labels.find(
+    (candidate) => candidate.type === "user" && candidate.name === path,
+  );
+  return asMailboxId(label?.id ?? SYNTHETIC_PREFIX + path);
+}
+
 function base(
   label: GmailLabel,
 ): Omit<Mailbox, "name" | "kind" | "assignable"> {
@@ -216,6 +276,7 @@ function base(
   };
 }
 
-function leafName(path: string): string {
+/** "Clients" for "Work/Clients". */
+export function leafName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }

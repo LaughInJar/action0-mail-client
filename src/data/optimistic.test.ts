@@ -56,6 +56,8 @@ const labels: ProviderCapabilities = {
   compose: true,
   contacts: false,
   maxAttachmentBytes: 25 * 1024 * 1024,
+  manageMailboxes: true,
+  mailboxColors: [],
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 

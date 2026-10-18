@@ -87,6 +87,12 @@ function ShortcutDialog() {
               </dl>
             </section>
           ))}
+        <p className="text-xs text-zinc-500">
+          In the folder tree,{" "}
+          <kbd className="font-sans font-semibold">Shift</kbd>+
+          <kbd className="font-sans font-semibold">F10</kbd> (or the Menu key)
+          opens the menu of a label: rename, colour, move, hide, delete.
+        </p>
       </div>
     </div>
   );

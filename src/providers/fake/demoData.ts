@@ -9,8 +9,10 @@ import type {
   AttachmentInfo,
   EmailAddress,
   Mailbox,
+  MailboxColor,
   Message,
   MessageBody,
+  Unsubscribe,
 } from "../../core/model";
 import type { FakeMailData } from "./FakeMailProvider";
 
@@ -189,6 +191,26 @@ const MAILBOXES: readonly Mailbox[] = MAILBOX_DEFINITIONS.map((mailbox) => ({
   assignable: ASSIGNABLE.has(mailbox.id),
 }));
 
+/** Colours demo labels may get. */
+const LABEL_COLORS: readonly MailboxColor[] = [
+  { background: "#fb4c2f", text: "#ffffff" },
+  { background: "#ffad47", text: "#000000" },
+  { background: "#fad165", text: "#000000" },
+  { background: "#16a766", text: "#ffffff" },
+  { background: "#43d692", text: "#000000" },
+  { background: "#4a86e8", text: "#ffffff" },
+  { background: "#a479e2", text: "#ffffff" },
+  { background: "#f691b3", text: "#000000" },
+  { background: "#ac2b16", text: "#ffffff" },
+  { background: "#cf8933", text: "#ffffff" },
+  { background: "#0b804b", text: "#ffffff" },
+  { background: "#2da2bb", text: "#ffffff" },
+  { background: "#285bac", text: "#ffffff" },
+  { background: "#653e9b", text: "#ffffff" },
+  { background: "#b65775", text: "#ffffff" },
+  { background: "#666666", text: "#ffffff" },
+];
+
 const PEOPLE: readonly EmailAddress[] = [
   { name: "Anna Berger", address: "anna.berger@example.org" },
   { name: "Lukas Hofer", address: "lukas@example.net" },
@@ -267,6 +289,7 @@ interface MessageSeed {
   readonly flagged?: boolean;
   readonly body: MessageBody;
   readonly attachments?: readonly AttachmentInfo[];
+  readonly unsubscribe?: Unsubscribe;
 }
 
 function buildMessage(seed: MessageSeed, now: number): Message {
@@ -282,6 +305,7 @@ function buildMessage(seed: MessageSeed, now: number): Message {
     replyTo: [],
     internetMessageId: `<${seed.key}@demo.example>`,
     references: [],
+    ...(seed.unsubscribe ? { unsubscribe: seed.unsubscribe } : {}),
     subject: seed.subject,
     snippet: seed.snippet,
     receivedAt: new Date(now - seed.minutesAgo * 60_000).toISOString(),
@@ -410,6 +434,30 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
     mailboxIds: [M.inbox, M.promotions],
     seen: false,
     body: { html: NEWSLETTER_HTML },
+    // One-click goes to the demo provider, never online.
+    unsubscribe: {
+      oneClick: "https://news.example/unsubscribe?u=demo",
+      mail: { to: "unsubscribe@news.example", subject: "Unsubscribe" },
+      page: "https://news.example/unsubscribe?u=demo",
+    },
+  },
+  {
+    key: "club-news",
+    from: { name: "Hiking Club", address: "news@hiking-club.example" },
+    subject: "Autumn tours are open for booking",
+    snippet: "Six new tours, from easy valley walks to a two-day crossing.",
+    minutesAgo: 60 * 52,
+    mailboxIds: [M.promotions],
+    body: {
+      text: "Six new tours, from easy valley walks to a two-day crossing.\n\nBook on the club website.\n\nHiking Club",
+    },
+    unsubscribe: {
+      mail: {
+        to: "leave@hiking-club.example",
+        subject: "unsubscribe",
+        body: "Please take me off the newsletter.",
+      },
+    },
   },
   {
     key: "inline-image",
@@ -627,6 +675,7 @@ export function createDemoData(now = Date.now()): FakeMailData {
     attachments,
     me: ME,
     contacts: PEOPLE.filter((person) => !person.address.includes("noreply")),
+    mailboxColors: LABEL_COLORS,
   };
 }
 

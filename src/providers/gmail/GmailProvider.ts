@@ -21,6 +21,7 @@ import {
 import type {
   EmailAddress,
   Mailbox,
+  MailboxColor,
   Message,
   MessageFlags,
   MessageSummary,
@@ -29,20 +30,29 @@ import type {
 import type {
   ChangeSet,
   ListMessagesQuery,
+  MailboxChange,
   MailChange,
   MailProvider,
   MutationResult,
+  NewMailbox,
   ProviderCapabilities,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
 import { buildMessage } from "../mime/buildMessage";
+import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
 import type { GmailHttp, QueryParams } from "./http";
 import {
   ALL_MAIL_ID,
   CATEGORIES_ID,
+  GMAIL_LABEL_COLORS,
+  idOfPath,
   isMappedLabel,
   isMembershipLabel,
+  leafName,
   mapLabels,
+  parentPathOf,
+  SYNTHETIC_PREFIX,
+  toUserMailbox,
 } from "./labels";
 import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
 import { getHeader } from "./mime";
@@ -78,10 +88,45 @@ function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
     : new MailError("provider", `"${invented}" is not a Gmail label.`);
 }
 
+/** A clear message for Gmail's answers to an unusable label name. */
+function labelNameError(error: unknown, path: string): unknown {
+  if (!isMailError(error)) return error;
+  if (error.status === 409)
+    return new MailError(
+      "provider",
+      `There’s already a label called “${path}”.`,
+      { status: 409, cause: error },
+    );
+  if (error.status === 400 && /label name/i.test(error.message))
+    return new MailError(
+      "provider",
+      `Gmail doesn’t allow the label name “${path}”.`,
+      { status: 400, cause: error },
+    );
+  return error;
+}
+
+/** A leaf name for a label: trimmed, not empty, no "/" (Gmail nests on it). */
+function checkedName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === "") throw new MailError("provider", "A label needs a name.");
+  if (trimmed.includes("/"))
+    throw new MailError("provider", "Label names can’t contain “/”.");
+  return trimmed;
+}
+
 /** The `message` part of draft metadata: files a reply into its thread. */
 function threadOf(draft: DraftInput): { threadId?: string } {
   const threadId = draft.threading?.threadId;
   return threadId === undefined ? {} : { threadId };
+}
+
+/** A colour in the shape of Gmail's label resource. */
+function gmailColor(color: MailboxColor): {
+  backgroundColor: string;
+  textColor: string;
+} {
+  return { backgroundColor: color.background, textColor: color.text };
 }
 
 /** One address per email of a People API person. */
@@ -154,9 +199,12 @@ export class GmailProvider implements MailProvider {
     compose: true,
     contacts: false,
     maxAttachmentBytes: 25 * 1024 * 1024,
+    manageMailboxes: true,
+    mailboxColors: GMAIL_LABEL_COLORS,
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;
+  readonly #fetch: typeof fetch;
   /** Google asks for one empty search before real ones ("warm-up"). */
   #peopleWarmUp: Promise<unknown> | undefined;
   /** Id lists of oldest-first listings, by cursor key (see `#listOldest`). */
@@ -168,10 +216,15 @@ export class GmailProvider implements MailProvider {
   /**
    * @param http Gmail API client.
    * @param options.people People API client; enables contact suggestions.
+   * @param options.fetch For requests to senders (one-click unsubscribe).
    */
-  constructor(http: GmailHttp, options: { people?: GmailHttp } = {}) {
+  constructor(
+    http: GmailHttp,
+    options: { people?: GmailHttp; fetch?: typeof fetch } = {},
+  ) {
     this.#http = http;
     this.#people = options.people;
+    this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.capabilities = {
       ...GmailProvider.#CAPABILITIES,
       contacts: options.people !== undefined,
@@ -432,6 +485,140 @@ export class GmailProvider implements MailProvider {
         ),
       ],
     };
+  }
+
+  async createMailbox(
+    { name, parentId, color, hidden = false }: NewMailbox,
+    signal?: AbortSignal,
+  ): Promise<Mailbox> {
+    const leaf = checkedName(name);
+    const parentPath =
+      parentId === undefined ? "" : await this.#pathOf(parentId, signal);
+    const path = parentPath ? `${parentPath}/${leaf}` : leaf;
+    try {
+      const label = await this.#http.post<GmailLabel>(
+        "labels",
+        {
+          name: path,
+          labelListVisibility: hidden ? "labelHide" : "labelShow",
+          messageListVisibility: "show",
+          ...(color ? { color: gmailColor(color) } : {}),
+        },
+        signal,
+      );
+      return toUserMailbox(label, parentId);
+    } catch (error) {
+      throw labelNameError(error, path);
+    }
+  }
+
+  /**
+   * Gmail only stores paths ("Work/Clients"), so renaming or moving a label
+   * renames every label below it too. The label itself is replaced as a
+   * whole (`labels.update`), which is how its colour can be removed.
+   */
+  async updateMailbox(
+    id: MailboxId,
+    { name, parentId, color, hidden }: MailboxChange,
+    signal?: AbortSignal,
+  ): Promise<Mailbox> {
+    const current = await this.#userLabel(id, signal);
+    const oldPath = current.name;
+    const parentPath =
+      parentId === undefined
+        ? parentPathOf(oldPath)
+        : parentId === null
+          ? ""
+          : await this.#pathOf(parentId, signal);
+    if (parentPath === oldPath || parentPath.startsWith(`${oldPath}/`))
+      throw new MailError("provider", "A label can’t go inside itself.");
+    const leaf = name === undefined ? leafName(oldPath) : checkedName(name);
+    const path = parentPath ? `${parentPath}/${leaf}` : leaf;
+    const nextColor =
+      color === undefined
+        ? current.color
+        : color === null
+          ? undefined
+          : gmailColor(color);
+
+    let updated: GmailLabel;
+    try {
+      updated = await this.#http.put<GmailLabel>(
+        `labels/${encodeURIComponent(id)}`,
+        {
+          id,
+          name: path,
+          messageListVisibility: current.messageListVisibility ?? "show",
+          labelListVisibility:
+            hidden === undefined
+              ? (current.labelListVisibility ?? "labelShow")
+              : hidden
+                ? "labelHide"
+                : "labelShow",
+          ...(nextColor ? { color: nextColor } : {}),
+        },
+        signal,
+      );
+    } catch (error) {
+      throw labelNameError(error, path);
+    }
+
+    const { labels = [] } = await this.#http.get<GmailListLabelsResponse>(
+      "labels",
+      undefined,
+      signal,
+    );
+    if (path !== oldPath) {
+      const below = labels.filter(
+        (label) =>
+          label.type === "user" && label.name.startsWith(`${oldPath}/`),
+      );
+      await Promise.all(
+        below.map(async (label) => {
+          const renamed = path + label.name.slice(oldPath.length);
+          try {
+            await this.#http.patch(
+              `labels/${encodeURIComponent(label.id)}`,
+              { name: renamed },
+              signal,
+            );
+          } catch (error) {
+            throw labelNameError(error, renamed);
+          }
+        }),
+      );
+    }
+    return toUserMailbox(updated, idOfPath(parentPath, labels));
+  }
+
+  async deleteMailbox(id: MailboxId, signal?: AbortSignal): Promise<void> {
+    await this.#userLabel(id, signal);
+    await this.#http.delete(`labels/${encodeURIComponent(id)}`, signal);
+  }
+
+  oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void> {
+    return sendOneClickUnsubscribe(url, this.#fetch, signal);
+  }
+
+  /** A user label (system labels and the tree's own nodes can't be changed). */
+  async #userLabel(id: MailboxId, signal?: AbortSignal): Promise<GmailLabel> {
+    const invalid = inventedIdError([id]);
+    if (invalid) throw invalid;
+    const label = await this.#http.get<GmailLabel>(
+      `labels/${encodeURIComponent(id)}`,
+      undefined,
+      signal,
+    );
+    if (label.type !== "user")
+      throw new MailError("provider", "System labels can’t be changed.");
+    return label;
+  }
+
+  /** The path of a label that others can nest in ("Work/Clients"). */
+  async #pathOf(id: MailboxId, signal?: AbortSignal): Promise<string> {
+    if (id.startsWith(SYNTHETIC_PREFIX))
+      return id.slice(SYNTHETIC_PREFIX.length);
+    return (await this.#userLabel(id, signal)).name;
   }
 
   /** A fresh token (the current history id); `reset` asks callers to reload. */
