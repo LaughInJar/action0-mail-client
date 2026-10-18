@@ -6,6 +6,7 @@ import {
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
 import { useComposeActions } from "../composer/useComposeActions";
+import { ThemeSwitch } from "../layout/ThemeSwitch";
 import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 
@@ -17,9 +18,10 @@ export function Sidebar({ onNavigate }: MailboxTreeProps) {
       aria-label="Mailboxes"
       className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-900"
     >
-      <div className="flex items-center gap-2 px-4 pt-3 pb-1 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+      <div className="flex items-center gap-2 pt-2 pr-2 pb-1 pl-4 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
         <Icon name="mail" className="size-5 text-blue-600 dark:text-blue-400" />
-        action0
+        <span className="flex-1">action0</span>
+        <ThemeSwitch />
       </div>
       {compose.canCompose && (
         <div className="px-2 pt-1 pb-2">
