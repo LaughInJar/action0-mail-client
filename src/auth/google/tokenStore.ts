@@ -1,10 +1,12 @@
 import { readJson, removeKey, writeJson } from "../../lib/storage";
 
-/** An OAuth access token with its absolute expiry. */
+/** An OAuth access token with its absolute expiry and granted scopes. */
 export interface StoredToken {
   readonly accessToken: string;
   /** Epoch milliseconds. */
   readonly expiresAt: number;
+  /** Space-separated scopes the user granted. Empty for tokens stored before scopes were recorded. */
+  readonly scope: string;
 }
 
 /** Where a session keeps its token. Never backed by localStorage. */
@@ -51,8 +53,8 @@ export function memoryTokenStore(initial?: StoredToken): TokenStore {
 
 function parseToken(value: unknown): StoredToken | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { accessToken, expiresAt } = value as Record<string, unknown>;
+  const { accessToken, expiresAt, scope } = value as Record<string, unknown>;
   return typeof accessToken === "string" && typeof expiresAt === "number"
-    ? { accessToken, expiresAt }
+    ? { accessToken, expiresAt, scope: typeof scope === "string" ? scope : "" }
     : undefined;
 }

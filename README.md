@@ -2,10 +2,11 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** feature 1 — Gmail, read-only.
+**Status:** Gmail: reading, archive and read/unread (features 1 and 2).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
+- Archive and mark as read/unread, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
@@ -23,14 +24,14 @@ Open <http://localhost:5173/?demo> to start with the demo account. To read your 
 
 ## Setting up Google sign-in
 
-The app uses the Google Identity Services token model with the `gmail.readonly` scope. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
+The app uses the Google Identity Services token model with the `gmail.modify` scope (read and change mail, e.g. labels and read state; it can't delete mail permanently). You need your own OAuth client ID; it is not a secret and is embedded in the built app.
 
 1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
 2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it.
 3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
    - **Branding:** an app name and your support email.
    - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
-   - **Data access:** add the scope `https://www.googleapis.com/auth/gmail.readonly`.
+   - **Data access:** add the scope `https://www.googleapis.com/auth/gmail.modify`. If you set the app up earlier with `gmail.readonly`, add `gmail.modify` now; each account then reconnects once.
 4. Go to **Clients → Create client**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
@@ -47,9 +48,9 @@ The app uses the Google Identity Services token model with the `gmail.readonly` 
 
 Things to know:
 
-- `gmail.readonly` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
+- `gmail.modify` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
 - Google issues access tokens that last **one hour** and no refresh token to browser apps without a backend. The app refreshes the token on your next click or key press shortly before it expires (the Google popup opens and closes by itself while you're signed in to Google). If that's not possible, a bar offers a one-click **Reconnect**. On touch devices the popup would open as a new tab, so there the bar appears a few minutes before expiry instead.
-- Reading mail here does **not** mark it as read in Gmail (the app only has read-only access).
+- A message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read.
 
 ## Testing on a phone
 
@@ -81,6 +82,9 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 | <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message            |
 | <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                     |
 | <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail |
+| <kbd>a</kbd>                                                                | Archive the message or selection       |
+| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                  |
+| <kbd>z</kbd>                                                                | Undo the last action                   |
 | <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)              |
 | <kbd>?</kbd>                                                                | Show all shortcuts                     |
 
@@ -119,7 +123,7 @@ The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc862
 - `folder` — exclusive, one per message (Exchange, IMAP),
 - `view` — computed, like Gmail's "All Mail" or "Starred".
 
-An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations (coming with later features) are intents such as _archive_ or _move_ that each provider translates into its own API calls.
+An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses.
 
 ### What is stored where
 

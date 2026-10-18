@@ -6,7 +6,7 @@ import { useUi } from "../../state/context";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { IconButton } from "../common/IconButton";
 
-const GROUP_ORDER = ["Message list", "Reading", "Go to", "General"];
+const GROUP_ORDER = ["Message list", "Actions", "Reading", "Go to", "General"];
 const groupRank = (group: string) => {
   const index = GROUP_ORDER.indexOf(group);
   return index === -1 ? GROUP_ORDER.length : index;

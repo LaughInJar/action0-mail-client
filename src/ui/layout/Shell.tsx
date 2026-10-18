@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
 import { useRoute, useUi } from "../../state/context";
+import { useActionCommands } from "../actions/useActionCommands";
+import { useMailActions } from "../actions/useMailActions";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
@@ -10,6 +12,7 @@ import { Welcome } from "../welcome/Welcome";
 import { Drawer } from "./Drawer";
 import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
+import { ToastHost } from "./ToastHost";
 import { useBreakpoint } from "./useBreakpoint";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useNavigationDefaults } from "./useNavigationDefaults";
@@ -32,6 +35,8 @@ function MailApp() {
   useNavigationDefaults(breakpoint);
   useListController(breakpoint);
   useGlobalCommands();
+  const actions = useMailActions();
+  useActionCommands(actions);
 
   useEffect(() => {
     if (breakpoint !== "medium") setDrawerOpen(false);
@@ -104,6 +109,7 @@ function MailApp() {
       <ReconnectBar />
       <div className="flex min-h-0 flex-1">{content}</div>
       <ShortcutHelp />
+      <ToastHost onUndo={actions.undo} />
     </div>
   );
 }

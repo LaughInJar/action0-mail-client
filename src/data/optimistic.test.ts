@@ -1,0 +1,253 @@
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import {
+  asCursor,
+  asMailboxId,
+  asMessageId,
+  type MessageId,
+} from "../core/ids";
+import type { Mailbox, MessageSummary } from "../core/model";
+import type { ProviderCapabilities } from "../core/provider";
+import {
+  belongsTo,
+  patchCounts,
+  patchList,
+  planChanges,
+  type MessageListData,
+} from "./optimistic";
+
+const box = (id: string, extra: Partial<Mailbox> = {}): Mailbox => ({
+  id: asMailboxId(id),
+  name: id,
+  kind: "label",
+  selectable: true,
+  hidden: false,
+  ...extra,
+});
+
+const inbox = box("inbox", { role: "inbox", counts: { unread: 2, total: 3 } });
+const work = box("work", { counts: { unread: 1, total: 2 } });
+const spam = box("spam", { role: "junk" });
+const all = box("all", { kind: "view", role: "all" });
+const starred = box("starred", {
+  kind: "view",
+  role: "flagged",
+  counts: { unread: 0, total: 1 },
+});
+const archiveFolder = box("archive", {
+  kind: "folder",
+  role: "archive",
+  counts: { unread: 0, total: 0 },
+});
+const mailboxes = [inbox, work, spam, all, starred, archiveFolder];
+
+const labels: ProviderCapabilities = {
+  mailboxKinds: ["label", "view"],
+  archive: true,
+  settableFlags: ["seen", "flagged"],
+};
+const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
+
+function message(
+  id: string,
+  minutesAgo: number,
+  mailboxIds: string[],
+  seen = true,
+  flagged = false,
+): MessageSummary {
+  return {
+    id: asMessageId(id),
+    mailboxIds: mailboxIds.map(asMailboxId),
+    to: [],
+    subject: id,
+    snippet: "",
+    receivedAt: new Date(
+      Date.parse("2026-10-18T12:00:00Z") - minutesAgo * 60_000,
+    ).toISOString(),
+    flags: { seen, flagged },
+    hasAttachments: false,
+  };
+}
+
+const m1 = message("m1", 1, ["inbox", "work"], false);
+const m2 = message("m2", 2, ["inbox"], true, true);
+const m3 = message("m3", 3, ["inbox"], false);
+const m4 = message("m4", 4, ["spam"], false);
+const ids = (...names: string[]) => names.map(asMessageId);
+
+function list(items: MessageSummary[], nextCursor?: string): MessageListData {
+  return {
+    pages: [
+      { items, ...(nextCursor ? { nextCursor: asCursor(nextCursor) } : {}) },
+    ],
+    pageParams: [undefined],
+  };
+}
+const rowIds = (data: MessageListData): MessageId[] =>
+  data.pages.flatMap((p) => p.items.map((i) => i.id));
+
+describe("planChanges", () => {
+  it("archive drops the inbox membership and skips messages outside the inbox", () => {
+    const changes = planChanges(
+      { kind: "archive", ids: ids("m1", "m4", "missing") },
+      [m1, m4],
+      mailboxes,
+      labels,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.after.mailboxIds).toEqual(["work"]);
+  });
+
+  it("archive moves to the archive folder for folder-based providers", () => {
+    const [change] = planChanges(
+      { kind: "archive", ids: ids("m3") },
+      [m3],
+      mailboxes,
+      folders,
+    );
+    expect(change?.after.mailboxIds).toEqual(["archive"]);
+    const [back] = planChanges(
+      { kind: "unarchive", ids: ids("m3") },
+      [change!.after],
+      mailboxes,
+      folders,
+    );
+    expect(back?.after.mailboxIds).toEqual(["inbox"]);
+  });
+
+  it("set-flags only reports messages whose flags change", () => {
+    const changes = planChanges(
+      { kind: "set-flags", ids: ids("m1", "m2"), flags: { seen: true } },
+      [m1, m2],
+      mailboxes,
+      labels,
+    );
+    expect(changes.map((c) => c.id)).toEqual(["m1"]);
+    expect(changes[0]?.after.flags).toEqual({ seen: true, flagged: false });
+  });
+});
+
+describe("belongsTo", () => {
+  it("uses membership for labels and the flag for the starred view", () => {
+    expect(belongsTo(inbox, m1)).toBe(true);
+    expect(belongsTo(spam, m1)).toBe(false);
+    expect(belongsTo(all, m4)).toBe(true);
+    expect(belongsTo(starred, m2)).toBe(true);
+    expect(belongsTo(starred, m1)).toBe(false);
+  });
+});
+
+describe("patchList", () => {
+  const archiveM1 = planChanges(
+    { kind: "archive", ids: ids("m1") },
+    [m1],
+    mailboxes,
+    labels,
+  );
+
+  it("removes archived rows from the inbox but keeps them in labels and All Mail", () => {
+    expect(rowIds(patchList(list([m1, m2, m3]), inbox, archiveM1))).toEqual([
+      "m2",
+      "m3",
+    ]);
+    const inWork = patchList(list([m1]), work, archiveM1);
+    expect(rowIds(inWork)).toEqual(["m1"]);
+    expect(inWork.pages[0]?.items[0]?.mailboxIds).toEqual(["work"]);
+    expect(rowIds(patchList(list([m1, m2]), all, archiveM1))).toEqual([
+      "m1",
+      "m2",
+    ]);
+  });
+
+  it("re-inserts restored rows at their date position", () => {
+    const archived = patchList(list([m1, m2, m3]), inbox, archiveM1);
+    const [restore] = planChanges(
+      { kind: "unarchive", ids: ids("m2") },
+      [m2],
+      mailboxes,
+      labels,
+    );
+    expect(restore).toBeUndefined(); // m2 is still in the inbox: nothing to do
+    const back = planChanges(
+      { kind: "unarchive", ids: ids("m1") },
+      [archiveM1[0]!.after],
+      mailboxes,
+      labels,
+    );
+    expect(rowIds(patchList(archived, inbox, back))).toEqual([
+      "m1",
+      "m2",
+      "m3",
+    ]);
+  });
+
+  it("doesn't append restored rows beyond the loaded pages", () => {
+    const old = message("old", 999, ["work"]);
+    const back = planChanges(
+      { kind: "unarchive", ids: ids("old") },
+      [old],
+      mailboxes,
+      labels,
+    );
+    expect(rowIds(patchList(list([m1], "more"), inbox, back))).toEqual(["m1"]);
+    expect(rowIds(patchList(list([m1]), inbox, back))).toEqual(["m1", "old"]);
+  });
+
+  it("updates flags in place", () => {
+    const read = planChanges(
+      { kind: "set-flags", ids: ids("m3"), flags: { seen: true } },
+      [m3],
+      mailboxes,
+      labels,
+    );
+    expect(
+      patchList(list([m3]), inbox, read).pages[0]?.items[0]?.flags.seen,
+    ).toBe(true);
+  });
+});
+
+describe("patchCounts", () => {
+  it("adjusts unread and total counts for membership and read changes", () => {
+    const changes = [
+      ...planChanges(
+        { kind: "archive", ids: ids("m1") },
+        [m1],
+        mailboxes,
+        labels,
+      ),
+      ...planChanges(
+        { kind: "set-flags", ids: ids("m3"), flags: { seen: true } },
+        [m3],
+        mailboxes,
+        labels,
+      ),
+    ];
+    const patched = patchCounts(mailboxes, changes);
+    expect(patched.find((m) => m.id === inbox.id)?.counts).toEqual({
+      unread: 0,
+      total: 2,
+    });
+    // m1 stays in Work and stays unread.
+    expect(patched.find((m) => m.id === work.id)).toBe(work);
+  });
+
+  it("never goes below zero", () => {
+    const unstar = planChanges(
+      { kind: "set-flags", ids: ids("m2"), flags: { flagged: false } },
+      [m2],
+      mailboxes,
+      labels,
+    );
+    const patched = patchCounts(
+      [
+        box("starred", {
+          kind: "view",
+          role: "flagged",
+          counts: { unread: 0, total: 0 },
+        }),
+      ],
+      unstar,
+    );
+    expect(patched[0]?.counts).toEqual({ unread: 0, total: 0 });
+  });
+});

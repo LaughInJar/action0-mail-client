@@ -8,6 +8,7 @@ import {
   focusAt,
   focusOnly,
   moveFocus,
+  nextAfterRemoval,
   selectRange,
   toggle,
   type SelectionState,
@@ -79,5 +80,22 @@ describe("selection", () => {
     );
     expect(state.focusedId).toBe(c);
     expect(state.selectedIds.size).toBe(0);
+  });
+});
+
+describe("nextAfterRemoval", () => {
+  const set = (...items: string[]) => new Set(items.map(asMessageId));
+
+  it("takes the next message below the last removed one", () => {
+    expect(nextAfterRemoval(ids, set("b"))).toBe("c");
+    expect(nextAfterRemoval(ids, set("b", "c"))).toBe("d");
+    expect(nextAfterRemoval(ids, set("a", "c"))).toBe("d");
+  });
+
+  it("falls back to the one above at the end, and to nothing when all are gone", () => {
+    expect(nextAfterRemoval(ids, set("e"))).toBe("d");
+    expect(nextAfterRemoval(ids, set("d", "e"))).toBe("c");
+    expect(nextAfterRemoval(ids, set("a", "b", "c", "d", "e"))).toBeNull();
+    expect(nextAfterRemoval(ids, set("x"))).toBeNull();
   });
 });

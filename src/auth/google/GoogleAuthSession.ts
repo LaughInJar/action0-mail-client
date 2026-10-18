@@ -130,9 +130,13 @@ export class GoogleAuthSession implements AuthSession {
     );
   }
 
+  /** Unexpired, and granted every required scope (older tokens may lack newer scopes). */
   #hasUsableToken(): boolean {
     const token = this.#options.tokenStore.load();
-    return !!token && token.expiresAt - this.#now() > EXPIRY_MARGIN_MS;
+    if (!token || token.expiresAt - this.#now() <= EXPIRY_MARGIN_MS)
+      return false;
+    const granted = new Set(token.scope.split(" "));
+    return this.#options.scope.split(" ").every((scope) => granted.has(scope));
   }
 
   #gisPeek() {

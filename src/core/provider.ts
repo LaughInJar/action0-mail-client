@@ -3,18 +3,23 @@ import type {
   Mailbox,
   MailboxKind,
   Message,
+  MessageFlags,
   MessageSummary,
   Page,
 } from "./model";
 
 /**
  * What a provider supports. The UI checks capabilities instead of branching
- * on the provider type. Write capabilities (archive, move, add label, ...)
+ * on the provider type. Further write capabilities (move, add label, ...)
  * are added together with the features that need them.
  */
 export interface ProviderCapabilities {
   /** Mailbox kinds this account uses. Gmail: `label` and `view`. Exchange: `folder`. */
   readonly mailboxKinds: readonly MailboxKind[];
+  /** Supports {@link MailProvider.archive} and {@link MailProvider.unarchive}. */
+  readonly archive: boolean;
+  /** Flags that {@link MailProvider.setFlags} can change. */
+  readonly settableFlags: readonly (keyof MessageFlags)[];
 }
 
 /** Parameters of {@link MailProvider.listMessages}. */
@@ -24,6 +29,15 @@ export interface ListMessagesQuery {
   readonly cursor?: Cursor;
   /** Maximum number of messages to return. */
   readonly limit: number;
+}
+
+/** Result of a write operation. */
+export interface MutationResult {
+  /**
+   * Messages whose id changed because they moved (IMAP UIDs are per
+   * folder). Callers replace old ids with new ones. Absent for Gmail.
+   */
+  readonly idMap?: ReadonlyMap<MessageId, MessageId>;
 }
 
 /**
@@ -55,4 +69,26 @@ export interface MailProvider {
     attachmentId: AttachmentId,
     signal?: AbortSignal,
   ): Promise<Blob>;
+
+  /**
+   * Takes messages out of the inbox. Gmail removes the `INBOX` label;
+   * folder-based providers move them to the archive-role folder.
+   */
+  archive(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Puts archived messages back into the inbox (used for undo). */
+  unarchive(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Sets flags on messages; flags that are left out stay unchanged. */
+  setFlags(
+    ids: readonly MessageId[],
+    flags: Partial<MessageFlags>,
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
 }

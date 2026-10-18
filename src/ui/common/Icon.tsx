@@ -2,7 +2,7 @@ import type { ReactNode, SVGProps } from "react";
 
 /*
  * Icon shapes adapted from Feather Icons (https://feathericons.com),
- * MIT License, Copyright (c) 2013-2023 Cole Bemis.
+ * MIT License, Copyright (c) 2013-2023 Cole Bemis. "mail-open" is our own.
  */
 const PATHS = {
   inbox: (
@@ -99,6 +99,13 @@ const PATHS = {
     <>
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
       <polyline points="22,6 12,13 2,6" />
+    </>
+  ),
+  "mail-open": (
+    <>
+      <polyline points="3 9 12 3 21 9" />
+      <path d="M3 9v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9" />
+      <polyline points="3 9 12 15 21 9" />
     </>
   ),
   plus: (

@@ -215,3 +215,67 @@ describe("GmailProvider.getAttachment", () => {
     expect(await blob.text()).toBe("GIF");
   });
 });
+
+describe("GmailProvider writes", () => {
+  function captureBatchModify() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        bodies.push(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return bodies;
+  }
+  const ids = (...names: string[]) => names.map(asMessageId);
+
+  it("archives by removing INBOX and unarchives by adding it", async () => {
+    const bodies = captureBatchModify();
+    const gmail = provider();
+    await expect(gmail.archive(ids("a", "b"))).resolves.toEqual({});
+    await gmail.unarchive(ids("a"));
+    expect(bodies).toEqual([
+      { ids: ["a", "b"], removeLabelIds: ["INBOX"] },
+      { ids: ["a"], addLabelIds: ["INBOX"] },
+    ]);
+  });
+
+  it("maps seen and flagged to the UNREAD and STARRED labels", async () => {
+    const bodies = captureBatchModify();
+    const gmail = provider();
+    await gmail.setFlags(ids("a"), { seen: true });
+    await gmail.setFlags(ids("a"), { seen: false, flagged: true });
+    await gmail.setFlags(ids("a"), { flagged: false });
+    expect(bodies).toEqual([
+      { ids: ["a"], removeLabelIds: ["UNREAD"] },
+      { ids: ["a"], addLabelIds: ["UNREAD", "STARRED"] },
+      { ids: ["a"], removeLabelIds: ["STARRED"] },
+    ]);
+  });
+
+  it("splits large batches and skips empty ones", async () => {
+    const bodies = captureBatchModify();
+    const many = Array.from({ length: 2500 }, (_, i) => asMessageId(`m${i}`));
+    await provider().archive(many);
+    expect((bodies as { ids: string[] }[]).map((b) => b.ids.length)).toEqual([
+      1000, 1000, 500,
+    ]);
+    await provider().archive([]);
+    await provider().setFlags(ids("a"), {});
+    expect(bodies).toHaveLength(3);
+  });
+
+  it("reports write failures as MailErrors", async () => {
+    server.use(
+      http.post(url("messages/batchModify"), () =>
+        HttpResponse.json(
+          { error: { message: "Invalid label" } },
+          { status: 400 },
+        ),
+      ),
+    );
+    await expect(provider().archive(ids("a"))).rejects.toMatchObject({
+      code: "provider",
+    });
+  });
+});

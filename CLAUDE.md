@@ -92,3 +92,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
 - **Tooling versions:** TypeScript 6.0.x, not 7, because typescript-eslint only supports versions below 6.1. Upgrade once it supports 7. ESLint 10 with eslint-plugin-jsx-a11y; an npm `overrides` entry accepts jsx-a11y's outdated peer range (it was verified to work on ESLint 10). Remove the override once jsx-a11y declares ESLint 10 support. ESLint 9 is end of life.
 - **Go-to shortcuts:** `g` then the first letter of the mailbox (`g i`, `g s`, `g d`, `g a` for All Mail). `a` on its own is reserved for archive. Rationale: one consistent scheme; sequences don't collide with single keys.
 - **Branch workflow:** `main` is protected (required CI check `check`, changes only via pull requests, admins included). Each feature gets its own branch and PR; the user merges after CI passes. The very first commit went to `main` directly to bootstrap the repo.
+- **Feature 2 (archive + read/unread) decisions:**
+  - Gmail accounts switch to the `gmail.modify` scope; read-only tokens trigger a one-click reconnect.
+  - Opening a message marks it read after it has been on screen for 1.5 s.
+  - After archiving, the cursor moves to the next message below, or the one above at the end of the list.
+  - Shortcuts: `a` archive, `Shift+I` mark read, `Shift+U` mark unread, `z` undo.
+  - Write operations are optimistic with rollback, and show an undo toast.

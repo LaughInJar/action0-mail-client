@@ -7,10 +7,12 @@ import { errorMessage } from "../common/errorMessage";
 import { IconButton } from "../common/IconButton";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import type { Breakpoint } from "../layout/useBreakpoint";
+import { useMailActions } from "../actions/useMailActions";
 import { listKeyOf } from "../messages/useListController";
 import { AttachmentList } from "./AttachmentList";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
+import { useMarkReadOnView } from "./useMarkReadOnView";
 
 /** Column (c): the focused message, or a summary of the multi-selection. */
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
@@ -78,6 +80,12 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   const subjectId = useId();
   const { data: message, error, refetch } = useMessage(accountId, messageId);
   const { data: mailboxes } = useMailboxes(accountId);
+  const actions = useMailActions();
+  useMarkReadOnView(message, (id) => {
+    actions.setSeen(true, { ids: [id], silent: true });
+  });
+  const inbox = mailboxes?.find((mailbox) => mailbox.role === "inbox");
+  const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
 
   let content;
   if (message) {
@@ -113,15 +121,43 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {onBack && (
-        <div className="flex items-center border-b border-zinc-200 px-2 py-1 dark:border-zinc-800">
+      <div
+        role="group"
+        aria-label="Message actions"
+        className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800"
+      >
+        {onBack && (
           <IconButton
             label="Back to messages"
             icon="arrow-left"
             onClick={onBack}
           />
-        </div>
-      )}
+        )}
+        <div className="flex-1" />
+        {actions.canArchive && (
+          <IconButton
+            label={inInbox ? "Archive (a)" : "Not in the Inbox"}
+            icon="archive"
+            disabled={!inInbox}
+            onClick={() => {
+              actions.archive([messageId]);
+            }}
+          />
+        )}
+        {actions.canSetSeen && message && (
+          <IconButton
+            label={
+              message.flags.seen
+                ? "Mark as unread (Shift+U)"
+                : "Mark as read (Shift+I)"
+            }
+            icon={message.flags.seen ? "mail" : "mail-open"}
+            onClick={() => {
+              actions.setSeen(!message.flags.seen, { ids: [messageId] });
+            }}
+          />
+        )}
+      </div>
       <div
         id={READER_SCROLL_ID}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"

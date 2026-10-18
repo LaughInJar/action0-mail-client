@@ -30,7 +30,7 @@ const RATE_LIMIT_REASONS = new Set([
 ]);
 
 /**
- * Thin, typed GET client for the Gmail REST API.
+ * Thin, typed client for the Gmail REST API.
  *
  * - Adds the bearer token from the {@link AuthSession}.
  * - Limits concurrency, because Gmail enforces per-user quotas.
@@ -68,16 +68,44 @@ export class GmailHttp {
         url.searchParams.set(key, String(value));
       }
     }
-    return this.#limit(() => this.#request<T>(url, signal));
+    return this.#limit(() => this.#request<T>(url, "GET", undefined, signal));
   }
 
-  async #request<T>(url: URL, signal: AbortSignal | undefined): Promise<T> {
+  /**
+   * POSTs a JSON body to `path` and returns the parsed JSON response
+   * (`undefined` for 204 No Content). Only use it for idempotent operations,
+   * because failed attempts are retried.
+   */
+  post<T = undefined>(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const url = new URL(path, GMAIL_API_BASE);
+    return this.#limit(() =>
+      this.#request<T>(url, "POST", JSON.stringify(body), signal),
+    );
+  }
+
+  async #request<T>(
+    url: URL,
+    method: "GET" | "POST",
+    payload: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       const token = await this.#auth.getAccessToken();
       let response: Response;
       try {
         response = await this.#fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(payload === undefined
+              ? {}
+              : { "Content-Type": "application/json" }),
+          },
+          ...(payload === undefined ? {} : { body: payload }),
           ...(signal ? { signal } : {}),
         });
       } catch (cause) {
@@ -89,7 +117,11 @@ export class GmailHttp {
         throw new MailError("network", "Could not reach Gmail.", { cause });
       }
 
-      if (response.ok) return (await response.json()) as T;
+      if (response.ok) {
+        // Some endpoints (batchModify) answer with an empty body.
+        const text = await response.text();
+        return (text === "" ? undefined : JSON.parse(text)) as T;
+      }
 
       const body = await readErrorBody(response);
       const message = body.error?.message ?? response.statusText;

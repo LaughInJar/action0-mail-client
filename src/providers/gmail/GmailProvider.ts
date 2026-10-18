@@ -1,9 +1,16 @@
 import { isMailError } from "../../core/errors";
 import { asCursor, type AttachmentId, type MessageId } from "../../core/ids";
-import type { Mailbox, Message, MessageSummary, Page } from "../../core/model";
+import type {
+  Mailbox,
+  Message,
+  MessageFlags,
+  MessageSummary,
+  Page,
+} from "../../core/model";
 import type {
   ListMessagesQuery,
   MailProvider,
+  MutationResult,
   ProviderCapabilities,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
@@ -22,10 +29,21 @@ import type {
 /** Mailboxes whose messages `messages.list` excludes unless asked explicitly. */
 const SPAM_TRASH = new Set(["SPAM", "TRASH"]);
 
-/** {@link MailProvider} for Gmail, using the REST API (read-only scope). */
+/** `messages.batchModify` accepts at most this many ids per call. */
+export const BATCH_MODIFY_LIMIT = 1000;
+
+/** Label changes of one `batchModify` call. */
+interface LabelChange {
+  readonly addLabelIds?: readonly string[];
+  readonly removeLabelIds?: readonly string[];
+}
+
+/** {@link MailProvider} for Gmail, using the REST API (`gmail.modify` scope). */
 export class GmailProvider implements MailProvider {
   readonly capabilities: ProviderCapabilities = {
     mailboxKinds: ["label", "view"],
+    archive: true,
+    settableFlags: ["seen", "flagged"],
   };
   readonly #http: GmailHttp;
 
@@ -120,6 +138,64 @@ export class GmailProvider implements MailProvider {
       signal,
     );
     return new Blob([decodeBase64Url(attachment.data)]);
+  }
+
+  /** Gmail archives by removing the `INBOX` label. */
+  archive(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#modify(ids, { removeLabelIds: ["INBOX"] }, signal);
+  }
+
+  unarchive(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#modify(ids, { addLabelIds: ["INBOX"] }, signal);
+  }
+
+  /** `seen` and `flagged` are the `UNREAD` and `STARRED` labels. */
+  setFlags(
+    ids: readonly MessageId[],
+    flags: Partial<MessageFlags>,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const add: string[] = [];
+    const remove: string[] = [];
+    if (flags.seen !== undefined) (flags.seen ? remove : add).push("UNREAD");
+    if (flags.flagged !== undefined)
+      (flags.flagged ? add : remove).push("STARRED");
+    return this.#modify(
+      ids,
+      { addLabelIds: add, removeLabelIds: remove },
+      signal,
+    );
+  }
+
+  /** Applies a label change in `batchModify` chunks. Ids never change in Gmail. */
+  async #modify(
+    ids: readonly MessageId[],
+    change: LabelChange,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const body = {
+      ...(change.addLabelIds?.length
+        ? { addLabelIds: change.addLabelIds }
+        : {}),
+      ...(change.removeLabelIds?.length
+        ? { removeLabelIds: change.removeLabelIds }
+        : {}),
+    };
+    if (ids.length === 0 || Object.keys(body).length === 0) return {};
+    for (let start = 0; start < ids.length; start += BATCH_MODIFY_LIMIT) {
+      await this.#http.post(
+        "messages/batchModify",
+        { ids: ids.slice(start, start + BATCH_MODIFY_LIMIT), ...body },
+        signal,
+      );
+    }
+    return {};
   }
 
   #fetchFull(id: MessageId, signal?: AbortSignal): Promise<GmailMessage> {

@@ -6,7 +6,7 @@ import type { GoogleOAuth2 } from "./gis";
 import { GoogleAuthSession } from "./GoogleAuthSession";
 import { sessionTokenStore } from "./tokenStore";
 
-const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const NOW = 1_000_000;
 
 type Outcome =
@@ -148,5 +148,34 @@ describe("GoogleAuthSession", () => {
     expect(revoked).toEqual(["token-1"]);
     expect(session.status).toBe("signed-out");
     expect(storage.length).toBe(0);
+  });
+
+  it("treats stored tokens without the required scope as expired", () => {
+    const storage = new MemoryStorage();
+    const store = sessionTokenStore("gmail:jane@example.com", storage);
+    // A token from before scopes were recorded, and one with a narrower scope.
+    storage.setItem(
+      "a0.token.gmail:jane@example.com",
+      JSON.stringify({ accessToken: "old", expiresAt: NOW + 3_000_000 }),
+    );
+    expect(setup([], storage).session.status).toBe("expired");
+    store.save({
+      accessToken: "readonly",
+      expiresAt: NOW + 3_000_000,
+      scope: "https://www.googleapis.com/auth/gmail.readonly",
+    });
+    expect(setup([], storage).session.status).toBe("expired");
+    store.save({
+      accessToken: "ok",
+      expiresAt: NOW + 3_000_000,
+      scope: `openid ${SCOPE}`,
+    });
+    expect(setup([], storage).session.status).toBe("signed-in");
+  });
+
+  it("stores the granted scopes with the token", async () => {
+    const { session, storage } = setup();
+    await session.signIn();
+    expect(storage.dump()).toContain(SCOPE);
   });
 });

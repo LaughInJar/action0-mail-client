@@ -51,6 +51,7 @@ export function requestGoogleToken(
           resolve({
             accessToken: response.access_token,
             expiresAt: now() + Number(response.expires_in) * 1000,
+            scope: response.scope,
           });
         }
       },

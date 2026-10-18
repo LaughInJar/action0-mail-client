@@ -119,3 +119,28 @@ function range(
   const [low, high] = start <= end ? [start, end] : [end, start];
   return orderedIds.slice(low, high + 1);
 }
+
+/**
+ * Where the cursor goes when `removed` messages leave the list: the first
+ * remaining message below the lowest removed one, otherwise the nearest one
+ * above it, otherwise nothing.
+ */
+export function nextAfterRemoval(
+  orderedIds: readonly MessageId[],
+  removed: ReadonlySet<MessageId>,
+): MessageId | null {
+  const indices = orderedIds.flatMap((id, index) =>
+    removed.has(id) ? [index] : [],
+  );
+  const last = indices.at(-1);
+  if (last === undefined) return null;
+  for (let i = last + 1; i < orderedIds.length; i++) {
+    const id = orderedIds[i];
+    if (id !== undefined && !removed.has(id)) return id;
+  }
+  for (let i = last - 1; i >= 0; i--) {
+    const id = orderedIds[i];
+    if (id !== undefined && !removed.has(id)) return id;
+  }
+  return null;
+}
