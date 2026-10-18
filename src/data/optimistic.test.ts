@@ -9,6 +9,8 @@ import {
 import type { Mailbox, MessageSummary } from "../core/model";
 import type { ProviderCapabilities } from "../core/provider";
 import {
+  isolatingMailboxes,
+  applyServerChanges,
   belongsTo,
   patchCounts,
   patchList,
@@ -427,5 +429,77 @@ describe("trash, spam and deletion", () => {
       deleted,
     );
     expect(counted[0]?.counts).toEqual({ unread: 0, total: 0 });
+  });
+});
+
+describe("applyServerChanges", () => {
+  const isolating = isolatingMailboxes(mailboxes);
+  const fresh = message("m0", 0, ["inbox"], false);
+
+  it("puts new mail at its date position and updates rows in place", () => {
+    const read = { ...m3, flags: { seen: true, flagged: false } };
+    const next = applyServerChanges(
+      list([m1, m2, m3]),
+      inbox,
+      [
+        { kind: "added", message: fresh },
+        { kind: "updated", message: read },
+      ],
+      isolating,
+    );
+    expect(rowIds(next)).toEqual(["m0", "m1", "m2", "m3"]);
+    expect(next.pages[0]?.items[3]?.flags.seen).toBe(true);
+  });
+
+  it("drops rows that left the mailbox or are gone, and keeps Spam apart", () => {
+    const archived = { ...m1, mailboxIds: [asMailboxId("work")] };
+    const spammed = { ...m2, mailboxIds: [asMailboxId("spam")] };
+    const next = applyServerChanges(
+      list([m1, m2, m3]),
+      inbox,
+      [
+        { kind: "updated", message: archived },
+        { kind: "updated", message: spammed },
+        { kind: "removed", id: asMessageId("m3") },
+      ],
+      isolating,
+    );
+    expect(rowIds(next)).toEqual([]);
+    expect(
+      rowIds(
+        applyServerChanges(
+          list([m1]),
+          all,
+          [{ kind: "updated", message: spammed }],
+          isolating,
+        ),
+      ),
+    ).toEqual(["m1"]);
+  });
+
+  it("keeps the order of oldest-first lists and stays within loaded pages", () => {
+    expect(
+      rowIds(
+        applyServerChanges(
+          list([m3, m2, m1]),
+          inbox,
+          [{ kind: "added", message: fresh }],
+          isolating,
+          "oldest",
+        ),
+      ),
+    ).toEqual(["m3", "m2", "m1", "m0"]);
+    // Newer mail beyond what's loaded of an oldest-first list waits for paging.
+    expect(
+      rowIds(
+        applyServerChanges(
+          list([m3, m2], "more"),
+          inbox,
+          [{ kind: "added", message: fresh }],
+          isolating,
+          "oldest",
+        ),
+      ),
+    ).toEqual(["m3", "m2"]);
   });
 });

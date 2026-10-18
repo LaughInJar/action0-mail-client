@@ -5,6 +5,7 @@ import type {
   DraftId,
   MailboxId,
   MessageId,
+  SyncToken,
 } from "./ids";
 import type {
   EmailAddress,
@@ -68,6 +69,24 @@ export interface ListMessagesQuery {
   readonly cursor?: Cursor;
   /** Maximum number of messages to return. */
   readonly limit: number;
+}
+
+/** One change to an account's messages, as {@link MailProvider.changesSince} reports it. */
+export type MailChange =
+  /** A message arrived (or was created, e.g. sent or drafted). */
+  | { readonly kind: "added"; readonly message: MessageSummary }
+  /** Its mailboxes or flags changed. */
+  | { readonly kind: "updated"; readonly message: MessageSummary }
+  /** It's gone for good. */
+  | { readonly kind: "removed"; readonly id: MessageId };
+
+/** Result of {@link MailProvider.changesSince}. */
+export interface ChangeSet {
+  /** Pass this to the next call. */
+  readonly token: SyncToken;
+  /** Too many changes, or the token was too old: reload everything instead. */
+  readonly reset: boolean;
+  readonly changes: readonly MailChange[];
 }
 
 /** Result of a write operation. */
@@ -230,4 +249,13 @@ export interface MailProvider {
     query: string,
     signal?: AbortSignal,
   ): Promise<readonly EmailAddress[]>;
+
+  /**
+   * What changed since `token` (including the app's own writes). Without a
+   * token, returns just a starting token and no changes.
+   */
+  changesSince(
+    token: SyncToken | undefined,
+    signal?: AbortSignal,
+  ): Promise<ChangeSet>;
 }

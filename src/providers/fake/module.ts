@@ -2,7 +2,7 @@ import type { ProviderModule } from "../../accounts/types";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
-import { createDemoData, DEMO_EMAIL } from "./demoData";
+import { createDemoArrival, createDemoData, DEMO_EMAIL } from "./demoData";
 import { FakeMailProvider, type FakeMailData } from "./FakeMailProvider";
 
 /** The demo account. */
@@ -18,12 +18,18 @@ export interface DemoModuleOptions {
   readonly latencyMs?: number;
   /** Replaces the generated demo content (used by tests). */
   readonly data?: () => FakeMailData;
+  /** A new message arrives this often (ms); `false` for none. */
+  readonly arrivalEveryMs?: number | false;
+  /** Clock for arrivals (tests). */
+  readonly now?: () => number;
 }
 
 /** Provider module of the demo account: in-memory data, no sign-in. */
 export function createDemoModule({
   latencyMs = 150,
   data = createDemoData,
+  arrivalEveryMs = 2 * 60_000,
+  now,
 }: DemoModuleOptions = {}): ProviderModule {
   return {
     type: "demo",
@@ -31,6 +37,15 @@ export function createDemoModule({
     connect: () =>
       Promise.resolve({ account: DEMO_ACCOUNT, auth: new StaticAuthSession() }),
     restore: () => new StaticAuthSession(),
-    createProvider: () => new FakeMailProvider(data(), { latencyMs }),
+    createProvider: () =>
+      new FakeMailProvider(data(), {
+        latencyMs,
+        ...(now ? { now } : {}),
+        ...(arrivalEveryMs === false
+          ? {}
+          : {
+              arrivals: { everyMs: arrivalEveryMs, create: createDemoArrival },
+            }),
+      }),
   };
 }

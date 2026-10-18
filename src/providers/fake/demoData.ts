@@ -629,3 +629,27 @@ export function createDemoData(now = Date.now()): FakeMailData {
     contacts: PEOPLE.filter((person) => !person.address.includes("noreply")),
   };
 }
+
+/**
+ * The `count`th message that "arrives" while the demo is open: unread, in
+ * the Inbox, from one of the demo people.
+ */
+export function createDemoArrival(now: number, count: number): Message {
+  const [subject, snippet] = TOPICS[count % TOPICS.length] ?? ["Hello", "Hi"];
+  const from = PEOPLE[count % PEOPLE.length] ?? ME;
+  return buildMessage(
+    {
+      key: `arrival-${String(count)}-${String(now)}`,
+      from,
+      subject,
+      snippet,
+      minutesAgo: 0,
+      mailboxIds: [M.inbox],
+      seen: false,
+      body: {
+        text: `${snippet}.\n\nThis message just arrived in the demo.\n\n${from.name ?? from.address}`,
+      },
+    },
+    now,
+  );
+}
