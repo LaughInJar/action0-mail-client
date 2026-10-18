@@ -8,18 +8,26 @@ import { useCallback } from "react";
 import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import { MailError } from "../core/errors";
-import type { AccountId, MailboxId, MessageId } from "../core/ids";
+import type { AccountId, MailboxId, MessageId, ThreadId } from "../core/ids";
 import { runIntent, type MailIntent } from "../core/intents";
-import type { Mailbox, Message, MessageSummary } from "../core/model";
+import type {
+  Mailbox,
+  Message,
+  MessageSummary,
+  Thread,
+  ThreadSummary,
+} from "../core/model";
 import { listSpecOfKey, queryKeys } from "./keys";
 import {
   isolatingMailboxes,
   patchCounts,
   patchList,
   patchMessage,
+  patchThreadList,
   planChanges,
   type MessageChange,
   type MessageListData,
+  type ThreadListData,
 } from "./optimistic";
 
 /** Variables of {@link useApplyIntent}. */
@@ -46,6 +54,81 @@ const listsKey = (accountId: AccountId): QueryKey => [
   "messages",
 ];
 
+/** All cached conversation lists of an account. */
+export const threadListsKey = (accountId: AccountId): QueryKey => [
+  ...queryKeys.account(accountId),
+  "threads",
+];
+
+/** All cached complete conversations of an account. */
+const threadsKey = (accountId: AccountId): QueryKey => [
+  ...queryKeys.account(accountId),
+  "thread",
+];
+
+/** Most conversations remembered for bringing rows back on undo. */
+const MAX_REMEMBERED_THREADS = 500;
+
+/** Conversations as last seen in a list, per query client (for undo). */
+const rememberedThreads = new WeakMap<
+  QueryClient,
+  Map<ThreadId, ThreadSummary>
+>();
+
+/** Remembers the listed conversations of an account and returns all remembered ones. */
+function rememberThreads(
+  queryClient: QueryClient,
+  accountId: AccountId,
+): ReadonlyMap<ThreadId, ThreadSummary> {
+  let memory = rememberedThreads.get(queryClient);
+  if (!memory) {
+    memory = new Map();
+    rememberedThreads.set(queryClient, memory);
+  }
+  for (const [, data] of queryClient.getQueriesData<ThreadListData>({
+    queryKey: threadListsKey(accountId),
+  }))
+    for (const page of data?.pages ?? [])
+      for (const thread of page.items) {
+        memory.delete(thread.id);
+        memory.set(thread.id, thread);
+      }
+  for (const id of memory.keys()) {
+    if (memory.size <= MAX_REMEMBERED_THREADS) break;
+    memory.delete(id);
+  }
+  return memory;
+}
+
+/**
+ * Every message of the conversations that contain the given messages (as
+ * far as the cache knows them); messages of unknown conversations stand
+ * for themselves.
+ */
+export function threadMessageIds(
+  queryClient: QueryClient,
+  accountId: AccountId,
+  ids: readonly MessageId[],
+): MessageId[] {
+  const threads = [
+    ...queryClient
+      .getQueriesData<ThreadListData>({ queryKey: threadListsKey(accountId) })
+      .flatMap(([, data]) => data?.pages.flatMap((page) => page.items) ?? []),
+    ...queryClient
+      .getQueriesData<Thread>({ queryKey: threadsKey(accountId) })
+      .flatMap(([, thread]) => (thread ? [thread] : [])),
+  ];
+  const result = new Set<MessageId>();
+  for (const id of ids) {
+    const thread = threads.find((candidate) =>
+      candidate.messages.some((message) => message.id === id),
+    );
+    if (thread) for (const message of thread.messages) result.add(message.id);
+    else result.add(id);
+  }
+  return [...result];
+}
+
 /** The latest cached summaries of the given messages (lists first, then full messages). */
 export function cachedSummaries(
   queryClient: QueryClient,
@@ -64,6 +147,21 @@ export function cachedSummaries(
       }
     }
   }
+  // Messages inside conversations: listed ones, then opened ones.
+  for (const [, data] of queryClient.getQueriesData<ThreadListData>({
+    queryKey: threadListsKey(accountId),
+  }))
+    for (const page of data?.pages ?? [])
+      for (const thread of page.items)
+        for (const message of thread.messages)
+          if (wanted.has(message.id) && !found.has(message.id))
+            found.set(message.id, message);
+  for (const [, thread] of queryClient.getQueriesData<Thread>({
+    queryKey: threadsKey(accountId),
+  }))
+    for (const message of thread?.messages ?? [])
+      if (wanted.has(message.id) && !found.has(message.id))
+        found.set(message.id, message);
   for (const id of wanted) {
     if (found.has(id)) continue;
     const message = queryClient.getQueryData<Message>(
@@ -143,6 +241,36 @@ function applyChanges(
         patchList(data, mailbox, changes, isolating, spec.order),
       );
   }
+  const known = rememberThreads(queryClient, accountId);
+  for (const [key, data] of queryClient.getQueriesData<ThreadListData>({
+    queryKey: threadListsKey(accountId),
+  })) {
+    const spec = listSpecOfKey(key);
+    const mailbox = mailboxes.find(
+      (candidate) => candidate.id === spec?.mailboxId,
+    );
+    if (data && spec && mailbox)
+      queryClient.setQueryData(
+        key,
+        patchThreadList(data, mailbox, changes, isolating, spec.order, known),
+      );
+  }
+  const byId = new Map(changes.map((change) => [change.id, change]));
+  queryClient.setQueriesData<Thread>(
+    { queryKey: threadsKey(accountId) },
+    (thread) => {
+      if (!thread?.messages.some((message) => byId.has(message.id)))
+        return thread;
+      return {
+        ...thread,
+        messages: thread.messages.flatMap((message) => {
+          const change = byId.get(message.id);
+          if (!change) return [message];
+          return change.deleted === true ? [] : [patchMessage(message, change)];
+        }),
+      };
+    },
+  );
   for (const change of changes) {
     queryClient.setQueryData<Message>(
       queryKeys.message(accountId, change.id),
@@ -186,6 +314,7 @@ export function useApplyIntent() {
       // Stop in-flight refetches from overwriting the optimistic state.
       await Promise.all([
         queryClient.cancelQueries({ queryKey: listsKey(accountId) }),
+        queryClient.cancelQueries({ queryKey: threadListsKey(accountId) }),
         queryClient.cancelQueries({ queryKey: queryKeys.mailboxes(accountId) }),
       ]);
       const snapshot = queryClient.getQueriesData({
@@ -200,6 +329,9 @@ export function useApplyIntent() {
         queryClient.setQueryData(key, data);
       // Other writes may have overlapped with this one; get the truth.
       void queryClient.invalidateQueries({ queryKey: listsKey(accountId) });
+      void queryClient.invalidateQueries({
+        queryKey: threadListsKey(accountId),
+      });
     },
     onSettled: (_data, _error, { accountId }) =>
       Promise.all([
@@ -208,6 +340,12 @@ export function useApplyIntent() {
         }),
         queryClient.invalidateQueries({
           queryKey: listsKey(accountId),
+          predicate: (query) =>
+            listSpecOfKey(query.queryKey)?.search !== undefined,
+          refetchType: "none",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: threadListsKey(accountId),
           predicate: (query) =>
             listSpecOfKey(query.queryKey)?.search !== undefined,
           refetchType: "none",
@@ -259,20 +397,23 @@ export function useEmptyMailbox() {
     onMutate: async ({ accountId, mailboxId }) => {
       // Every list of the mailbox, searched ones included.
       const lists = queryKeys.messages(accountId, mailboxId);
+      const threadLists = queryKeys.threads(accountId, mailboxId);
       await queryClient.cancelQueries({ queryKey: lists });
+      await queryClient.cancelQueries({ queryKey: threadLists });
       const snapshot = queryClient.getQueriesData({
         queryKey: queryKeys.account(accountId),
       });
-      queryClient.setQueriesData<MessageListData>(
-        { queryKey: lists },
-        (data) =>
-          data
-            ? {
-                pages: [{ items: [] }],
-                pageParams: data.pageParams.slice(0, 1),
-              }
-            : data,
-      );
+      for (const queryKey of [lists, threadLists])
+        queryClient.setQueriesData<MessageListData | ThreadListData>(
+          { queryKey },
+          (data) =>
+            data
+              ? {
+                  pages: [{ items: [] }],
+                  pageParams: data.pageParams.slice(0, 1),
+                }
+              : data,
+        );
       queryClient.setQueryData<readonly Mailbox[]>(
         queryKeys.mailboxes(accountId),
         (mailboxes) =>
@@ -295,6 +436,9 @@ export function useEmptyMailbox() {
         }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.messages(accountId, mailboxId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.threads(accountId, mailboxId),
         }),
       ]),
   });

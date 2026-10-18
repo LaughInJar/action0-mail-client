@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { EmailAddress, Mailbox, Message } from "../../core/model";
 import { displayName, formatFullDate } from "../common/format";
 import { Icon } from "../common/Icon";
@@ -6,7 +7,10 @@ import { Icon } from "../common/Icon";
 export interface MessageHeaderProps {
   readonly message: Message;
   readonly mailboxes: readonly Mailbox[] | undefined;
-  readonly subjectId: string;
+  /** DOM id of the subject heading; without it there is no subject (in a conversation, it's shown once on top). */
+  readonly subjectId?: string;
+  /** Shown after the date (e.g. a conversation message's own buttons). */
+  readonly trailing?: ReactNode;
   /** For mailing lists: unsubscribe (asks first), or whether that's done. */
   readonly unsubscribe?: {
     readonly done: boolean;
@@ -19,6 +23,7 @@ export function MessageHeader({
   message,
   mailboxes,
   subjectId,
+  trailing,
   unsubscribe,
 }: MessageHeaderProps) {
   const labels = (mailboxes ?? []).filter(
@@ -29,14 +34,18 @@ export function MessageHeader({
   );
 
   return (
-    <header className="space-y-3 border-b border-zinc-200 px-4 py-4 sm:px-6 dark:border-zinc-800">
-      <h1
-        id={subjectId}
-        className="text-lg font-semibold break-words sm:text-xl"
-      >
-        {message.subject || "(no subject)"}
-      </h1>
-      {labels.length > 0 && (
+    <header
+      className={`space-y-3 px-4 sm:px-6 ${subjectId === undefined ? "pt-3 pb-2" : "border-b border-zinc-200 py-4 dark:border-zinc-800"}`}
+    >
+      {subjectId !== undefined && (
+        <h1
+          id={subjectId}
+          className="text-lg font-semibold break-words sm:text-xl"
+        >
+          {message.subject || "(no subject)"}
+        </h1>
+      )}
+      {subjectId !== undefined && labels.length > 0 && (
         <ul aria-label="Labels" className="flex flex-wrap gap-1.5">
           {labels.map((label) => (
             <li
@@ -88,6 +97,11 @@ export function MessageHeader({
             >
               {formatFullDate(message.receivedAt)}
             </time>
+            {trailing && (
+              <span className="-my-2 flex shrink-0 items-center self-center">
+                {trailing}
+              </span>
+            )}
           </div>
           <AddressLine label="To" addresses={message.to} />
           <AddressLine label="Cc" addresses={message.cc} />

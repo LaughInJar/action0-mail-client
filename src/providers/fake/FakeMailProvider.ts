@@ -10,6 +10,7 @@ import {
   asThreadId,
   type DraftId,
   type SyncToken,
+  type ThreadId,
   type AttachmentId,
   type MailboxId,
   type MessageId,
@@ -24,6 +25,8 @@ import type {
   MessageSummary,
   Page,
   Sender,
+  Thread,
+  ThreadSummary,
 } from "../../core/model";
 import type {
   ChangeSet,
@@ -99,6 +102,7 @@ export class FakeMailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: [],
+    threads: true,
     senders: true,
     editSignatures: true,
   };
@@ -196,6 +200,78 @@ export class FakeMailProvider implements MailProvider {
       items,
       ...(next < all.length ? { nextCursor: asCursor(String(next)) } : {}),
     };
+  }
+
+  /**
+   * Like Gmail: conversations with a (matching) message in the mailbox,
+   * ordered by their newest message outside Spam and Trash (in Spam and
+   * Trash: their newest one there), so a reply moves its conversation up.
+   */
+  async listThreads(
+    { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
+    signal?: AbortSignal,
+  ): Promise<Page<ThreadSummary>> {
+    await this.#delay(signal);
+    const offset = cursor ? Number(cursor) : 0;
+    const words = foldText(search ?? "")
+      .split(/\s+/)
+      .filter(Boolean);
+    const matching = this.#messagesIn(mailboxId).filter((message) => {
+      const text = foldText(searchableText(message));
+      return words.every((word) => text.includes(word));
+    });
+    const threadIds = [...new Set(matching.map(threadOf))];
+    const isolating = this.#isolating();
+    const inIsolating = isolating.has(mailboxId);
+    const newest = (id: ThreadId) =>
+      this.#messages
+        .filter(
+          (message) =>
+            threadOf(message) === id &&
+            (inIsolating
+              ? message.mailboxIds.includes(mailboxId)
+              : !message.mailboxIds.some((m) => isolating.has(m))),
+        )
+        .reduce(
+          (latest, message) =>
+            message.receivedAt > latest ? message.receivedAt : latest,
+          "",
+        );
+    const sorted = threadIds
+      .map((id) => ({ id, date: newest(id) }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (order === "oldest") sorted.reverse();
+    const next = offset + limit;
+    return {
+      items: sorted.slice(offset, next).map(({ id }) => ({
+        id,
+        messages: this.#threadMessages(id).map(toSummary),
+      })),
+      ...(next < sorted.length ? { nextCursor: asCursor(String(next)) } : {}),
+    };
+  }
+
+  async getThread(id: ThreadId, signal?: AbortSignal): Promise<Thread> {
+    await this.#delay(signal);
+    const messages = this.#threadMessages(id);
+    if (messages.length === 0)
+      throw new MailError("not-found", `No thread ${id}`, { status: 404 });
+    return { id, messages };
+  }
+
+  /** A conversation's messages, oldest first. */
+  #threadMessages(id: ThreadId): Message[] {
+    return this.#messages
+      .filter((message) => threadOf(message) === id)
+      .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+  }
+
+  #isolating(): ReadonlySet<MailboxId> {
+    return new Set(
+      this.#mailboxes
+        .filter((m) => m.role === "junk" || m.role === "trash")
+        .map((m) => m.id),
+    );
   }
 
   async getMessage(id: MessageId, signal?: AbortSignal): Promise<Message> {
@@ -816,6 +892,11 @@ export class FakeMailProvider implements MailProvider {
     if (this.#latencyMs > 0) await sleep(this.#latencyMs, signal);
     signal?.throwIfAborted();
   }
+}
+
+/** The conversation of a message (one of its own if it has none). */
+function threadOf(message: MessageSummary): ThreadId {
+  return message.threadId ?? asThreadId(`t-${message.id}`);
 }
 
 function toSummary(message: Message): MessageSummary {

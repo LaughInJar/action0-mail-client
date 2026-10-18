@@ -58,6 +58,7 @@ const labels: ProviderCapabilities = {
   maxAttachmentBytes: 25 * 1024 * 1024,
   manageMailboxes: true,
   mailboxColors: [],
+  threads: true,
   senders: true,
   editSignatures: true,
 };

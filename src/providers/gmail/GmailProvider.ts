@@ -11,12 +11,14 @@ import {
   asDraftId,
   asMessageId,
   asSyncToken,
+  asThreadId,
   type AttachmentId,
   type Cursor,
   type DraftId,
   type MailboxId,
   type MessageId,
   type SyncToken,
+  type ThreadId,
 } from "../../core/ids";
 import type {
   EmailAddress,
@@ -24,6 +26,8 @@ import type {
   MailboxColor,
   Message,
   Sender,
+  Thread,
+  ThreadSummary,
   MessageFlags,
   MessageSummary,
   Page,
@@ -60,6 +64,8 @@ import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
 import { getHeader } from "./mime";
 import type {
   GmailListSendAsResponse,
+  GmailListThreadsResponse,
+  GmailThread,
   GmailAttachment,
   GmailDraft,
   GmailHistoryResponse,
@@ -172,6 +178,16 @@ function listFilter(
   };
 }
 
+/** What `#listAllIds` lists. */
+type ListedKind = "messages" | "threads";
+
+/** Messages (or summaries) by date, oldest first. */
+function oldestFirst<T extends { readonly receivedAt: string }>(
+  items: readonly T[],
+): T[] {
+  return [...items].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+}
+
 /** More changes than this at once: callers reload instead. */
 const MAX_CHANGES = 100;
 
@@ -204,6 +220,7 @@ export class GmailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: GMAIL_LABEL_COLORS,
+    threads: true,
     senders: true,
     editSignatures: true,
   };
@@ -215,7 +232,7 @@ export class GmailProvider implements MailProvider {
   /** Id lists of oldest-first listings, by cursor key (see `#listOldest`). */
   readonly #snapshots = new Map<
     string,
-    { readonly filterKey: string; readonly ids: readonly MessageId[] }
+    { readonly filterKey: string; readonly ids: readonly string[] }
   >();
 
   /**
@@ -263,7 +280,14 @@ export class GmailProvider implements MailProvider {
   ): Promise<Page<MessageSummary>> {
     const filter = listFilter(mailboxId, search);
     if (order === "oldest")
-      return this.#listOldest(filter, cursor, limit, signal);
+      return this.#listOldest(
+        "messages",
+        filter,
+        cursor,
+        limit,
+        (ids) => this.#summaries(ids, signal),
+        signal,
+      );
 
     const list = await this.#http.get<GmailListMessagesResponse>(
       "messages",
@@ -279,6 +303,47 @@ export class GmailProvider implements MailProvider {
         ? { nextCursor: asCursor(list.nextPageToken) }
         : {}),
     };
+  }
+
+  async listThreads(
+    { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
+    signal?: AbortSignal,
+  ): Promise<Page<ThreadSummary>> {
+    const filter = listFilter(mailboxId, search);
+    const load = (ids: readonly string[]) => this.#threadSummaries(ids, signal);
+    if (order === "oldest")
+      return this.#listOldest("threads", filter, cursor, limit, load, signal);
+    const list = await this.#http.get<GmailListThreadsResponse>(
+      "threads",
+      { ...filter, maxResults: limit, pageToken: cursor },
+      signal,
+    );
+    return {
+      items: await load((list.threads ?? []).map(({ id }) => id)),
+      ...(list.nextPageToken
+        ? { nextCursor: asCursor(list.nextPageToken) }
+        : {}),
+    };
+  }
+
+  async getThread(id: ThreadId, signal?: AbortSignal): Promise<Thread> {
+    const thread = await this.#http.get<GmailThread>(
+      `threads/${encodeURIComponent(id)}`,
+      { format: "full" },
+      signal,
+    );
+    const messages = await Promise.all(
+      (thread.messages ?? []).map(async (message) => {
+        if (message.payload)
+          await this.#hydrateLargeTextParts(
+            asMessageId(message.id),
+            message.payload,
+            signal,
+          );
+        return toMessage(message);
+      }),
+    );
+    return { id: asThreadId(thread.id), messages: oldestFirst(messages) };
   }
 
   async saveDraft(
@@ -743,23 +808,26 @@ export class GmailProvider implements MailProvider {
   /**
    * Oldest first. Gmail only lists newest first, so this lists every matching
    * id (500 per request, ids only), reverses them and pages through that
-   * snapshot. Cursors are `<snapshot>:<offset>`. The last few snapshots stay
-   * in memory; one that's gone (e.g. after a reload) is listed again.
+   * snapshot, loading the items of one page with `load`. Cursors are
+   * `<snapshot>:<offset>`. The last few snapshots stay in memory; one that's
+   * gone (e.g. after a reload) is listed again.
    */
-  async #listOldest(
+  async #listOldest<T>(
+    kind: ListedKind,
     filter: ListFilter,
     cursor: Cursor | undefined,
     limit: number,
+    load: (ids: readonly string[]) => Promise<T[]>,
     signal?: AbortSignal,
-  ): Promise<Page<MessageSummary>> {
-    const filterKey = JSON.stringify(filter);
+  ): Promise<Page<T>> {
+    const filterKey = JSON.stringify([kind, filter]);
     const [cursorKey = "", cursorOffset = "0"] = cursor?.split(":") ?? [];
     const offset = Number(cursorOffset) || 0;
     const snapshot = this.#snapshots.get(cursorKey);
     let key = cursorKey;
     let ids = snapshot?.filterKey === filterKey ? snapshot.ids : undefined;
     if (!ids) {
-      ids = (await this.#listAllIds(filter, signal)).reverse();
+      ids = (await this.#listAllIds(filter, signal, kind)).reverse();
       key = crypto.randomUUID();
       this.#snapshots.set(key, { filterKey, ids });
       for (const old of this.#snapshots.keys()) {
@@ -769,28 +837,55 @@ export class GmailProvider implements MailProvider {
     }
     const next = offset + limit;
     return {
-      items: await this.#summaries(ids.slice(offset, next), signal),
+      items: await load(ids.slice(offset, next)),
       ...(next < ids.length ? { nextCursor: asCursor(`${key}:${next}`) } : {}),
     };
   }
 
-  /** Every message id that `filter` selects, newest first. */
+  /** Every message (or thread) id that `filter` selects, newest first. */
   async #listAllIds(
     filter: ListFilter,
     signal?: AbortSignal,
-  ): Promise<MessageId[]> {
-    const ids: MessageId[] = [];
+    kind: ListedKind = "messages",
+  ): Promise<string[]> {
+    const ids: string[] = [];
     let pageToken: string | undefined;
     do {
-      const page = await this.#http.get<GmailListMessagesResponse>(
-        "messages",
-        { ...filter, maxResults: 500, pageToken },
-        signal,
-      );
-      ids.push(...(page.messages ?? []).map(({ id }) => asMessageId(id)));
+      const page = await this.#http.get<
+        GmailListMessagesResponse & GmailListThreadsResponse
+      >(kind, { ...filter, maxResults: 500, pageToken }, signal);
+      ids.push(...(page[kind] ?? []).map(({ id }) => id));
       pageToken = page.nextPageToken;
     } while (pageToken !== undefined);
     return ids;
+  }
+
+  /** Conversations with all their messages (summaries, oldest first). */
+  async #threadSummaries(
+    ids: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<ThreadSummary[]> {
+    const threads = await Promise.all(
+      ids.map((id) =>
+        this.#http
+          .get<GmailThread>(
+            `threads/${encodeURIComponent(id)}`,
+            { format: "metadata", metadataHeaders: SUMMARY_HEADERS },
+            signal,
+          )
+          // Deleted between list and get: skip it rather than failing the page.
+          .catch((error: unknown) => {
+            if (isMailError(error, "not-found")) return undefined;
+            throw error;
+          }),
+      ),
+    );
+    return threads
+      .filter((thread): thread is GmailThread => thread !== undefined)
+      .map((thread) => ({
+        id: asThreadId(thread.id),
+        messages: oldestFirst((thread.messages ?? []).map(toMessageSummary)),
+      }));
   }
 
   /** Summaries of the given messages, in the same order. */
@@ -978,10 +1073,12 @@ export class GmailProvider implements MailProvider {
     if (!SPAM_TRASH.has(mailboxId)) {
       throw new MailError("provider", "Only Trash and Spam can be emptied.");
     }
-    const ids = await this.#listAllIds(
-      { labelIds: [mailboxId], includeSpamTrash: true },
-      signal,
-    );
+    const ids = (
+      await this.#listAllIds(
+        { labelIds: [mailboxId], includeSpamTrash: true },
+        signal,
+      )
+    ).map(asMessageId);
     await this.deleteForever(ids, signal);
     return { deleted: ids.length };
   }

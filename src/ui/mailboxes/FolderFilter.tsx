@@ -50,6 +50,7 @@ export function FolderFilter() {
             mailboxId: asMailboxId(mailboxId),
           },
           store.getState().listOrder,
+          store.getState().settings.conversations,
         );
         focusWhenReady(MESSAGE_LIST_ID, {
           accept: (element) => element.dataset.listKey === key,

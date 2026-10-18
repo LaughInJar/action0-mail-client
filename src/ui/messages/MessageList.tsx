@@ -7,11 +7,15 @@ import {
   type DragEvent,
   type MouseEvent,
 } from "react";
-import type { AccountId, MessageId } from "../../core/ids";
-import type { Mailbox, MessageSummary } from "../../core/model";
+import { useAccountHandle } from "../../accounts/context";
+import type { AccountId, MailboxId, MessageId } from "../../core/ids";
+import type { Mailbox } from "../../core/model";
+import type { ListRow } from "../../data/listRows";
+import { useSenders } from "../../data/senders";
 import { useUi, useUiStore } from "../../state/context";
 import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
+import { rowView } from "./rowView";
 import { useLongPress } from "./useLongPress";
 
 /** The row of a message (ids are opaque, so no CSS selector built from them). */
@@ -32,8 +36,13 @@ export interface MessageListProps {
   readonly accountId: AccountId;
   /** Rows can be dragged onto the tree (not inside Trash/Spam). */
   readonly allowDrag: boolean;
-  readonly items: readonly MessageSummary[];
+  /** Messages, or conversations. */
+  readonly rows: readonly ListRow[];
   readonly mailbox: Mailbox | undefined;
+  /** Spam and Trash: their messages show only there. */
+  readonly isolating: ReadonlySet<MailboxId>;
+  /** The drafts mailbox (a conversation's drafts show as "Draft"). */
+  readonly drafts: MailboxId | undefined;
   /** Accessible name; defaults to "Messages in <mailbox>". */
   readonly label?: string;
   /** Identifies the list (see `listKeyOf`), exposed as `data-list-key`. */
@@ -43,6 +52,11 @@ export interface MessageListProps {
   readonly fetchNextPage: () => void;
   /** Shows a message (plain click or tap). */
   readonly onOpen: (id: MessageId) => void;
+  /**
+   * Enter opens the row too (phones, Drafts); elsewhere the row is open
+   * already and Enter goes to the app's shortcuts (e.g. a conversation).
+   */
+  readonly enterOpens: boolean;
   /** Toggles the star of one message (click on a row's star). Omit if starring isn't supported. */
   readonly onToggleStar?: (id: MessageId) => void;
 }
@@ -74,14 +88,17 @@ function dragBadge(text: string): HTMLElement {
 export function MessageList({
   accountId,
   allowDrag,
-  items,
+  rows,
   mailbox,
+  isolating,
+  drafts,
   label,
   listKey,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
   onOpen,
+  enterOpens,
   onToggleStar,
 }: MessageListProps) {
   const coarse = useCoarsePointer();
@@ -89,7 +106,22 @@ export function MessageList({
   const focusedId = useUi((state) => state.focusedId);
   const compact = useUi((state) => state.settings.density === "compact");
   const selectedIds = useUi((state) => state.selectedIds);
-  const ids = useMemo(() => items.map((item) => item.id), [items]);
+  const ids = useMemo(() => rows.map((row) => row.id), [rows]);
+  // "me" in a conversation's senders: the account's addresses.
+  const email = useAccountHandle(accountId)?.account.email;
+  const { data: senders } = useSenders(accountId);
+  const views = useMemo(() => {
+    const mine = new Set(
+      [email ?? "", ...(senders ?? []).map((sender) => sender.address)].map(
+        (address) => address.toLowerCase(),
+      ),
+    );
+    const showRecipients =
+      mailbox?.role === "sent" || mailbox?.role === "drafts";
+    return rows.map((row) =>
+      rowView(row, { mailbox, isolating, mine, showRecipients, drafts }),
+    );
+  }, [rows, mailbox, isolating, email, senders, drafts]);
   const pointerType = useRef("mouse");
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -212,7 +244,6 @@ export function MessageList({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const selectionMode = selectedIds.size > 0;
-  const showRecipients = mailbox?.role === "sent" || mailbox?.role === "drafts";
 
   return (
     <div className="relative h-full">
@@ -252,7 +283,7 @@ export function MessageList({
         onKeyDown={(event) => {
           // Enter opens like a click; all other keys go to the global keymap.
           const focused = store.getState().focusedId;
-          if (event.key === "Enter" && focused !== null) {
+          if (event.key === "Enter" && enterOpens && focused !== null) {
             event.preventDefault();
             onOpen(focused);
           }
@@ -272,17 +303,16 @@ export function MessageList({
         onScroll={onScroll}
         className="relative h-full overflow-y-auto overscroll-contain [overflow-anchor:none] focus:outline-none"
       >
-        {items.map((summary, index) => {
-          const focused = summary.id === focusedId;
+        {views.map((view, index) => {
+          const focused = view.id === focusedId;
           return (
             <MessageRow
-              key={summary.id}
+              key={view.id}
               domId={rowDomId(index)}
-              summary={summary}
+              view={view}
               focused={focused}
-              selected={selectionMode ? selectedIds.has(summary.id) : focused}
+              selected={selectionMode ? selectedIds.has(view.id) : focused}
               selectionMode={selectionMode}
-              showRecipients={showRecipients}
               draggable={allowDrag && !coarse}
               starrable={onToggleStar !== undefined}
               compact={compact}

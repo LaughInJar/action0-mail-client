@@ -3,13 +3,16 @@ import { useMemo } from "react";
 import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { AccountId, MailboxId, SyncToken } from "../core/ids";
-import type { Mailbox, Message, MessageSummary } from "../core/model";
+import type { Mailbox, Message, MessageSummary, Thread } from "../core/model";
 import type { ChangeSet } from "../core/provider";
 import { listSpecOfKey, queryKeys } from "./keys";
 import {
   applyServerChanges,
+  applyServerChangesToThreads,
   isolatingMailboxes,
+  threadIdOf,
   type MessageListData,
+  type ThreadListData,
 } from "./optimistic";
 
 /** New mail found by a check: unread Inbox messages not sent by the account itself. */
@@ -87,6 +90,49 @@ export function createMailSync(
           applyServerChanges(data, mailbox, set.changes, isolating, spec.order),
         );
     }
+    for (const [key, data] of queryClient.getQueriesData<ThreadListData>({
+      queryKey: [...account, "threads"],
+    })) {
+      const spec = listSpecOfKey(key);
+      if (!data || !spec) continue;
+      if (spec.search !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: key, exact: true });
+        continue;
+      }
+      const mailbox = mailboxes.find((m) => m.id === spec.mailboxId);
+      if (mailbox)
+        queryClient.setQueryData(
+          key,
+          applyServerChangesToThreads(
+            data,
+            mailbox,
+            set.changes,
+            isolating,
+            spec.order,
+          ),
+        );
+    }
+    // Open conversations with a change reload (new messages appear at the end).
+    const changedThreads = new Set(
+      set.changes.flatMap((change) =>
+        change.kind === "removed" ? [] : [threadIdOf(change.message)],
+      ),
+    );
+    const removed = new Set(
+      set.changes.flatMap((change) =>
+        change.kind === "removed" ? [change.id] : [],
+      ),
+    );
+    for (const [key, thread] of queryClient.getQueriesData<Thread>({
+      queryKey: [...account, "thread"],
+    }))
+      if (
+        thread &&
+        (changedThreads.has(thread.id) ||
+          thread.messages.some((message) => removed.has(message.id)))
+      )
+        void queryClient.invalidateQueries({ queryKey: key, exact: true });
+
     for (const change of set.changes) {
       if (change.kind === "removed") continue;
       const { id, mailboxIds, flags } = change.message;

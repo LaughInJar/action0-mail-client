@@ -111,6 +111,25 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
           <SettingsSection id="settings-reading" title="Reading">
             <ChoiceGroup
+              legend="Conversation view"
+              value={settings.conversations ? "on" : "off"}
+              onChange={(value) => {
+                update({ conversations: value === "on" });
+              }}
+              choices={[
+                {
+                  value: "off",
+                  label: "Off",
+                  hint: "One row per message",
+                },
+                {
+                  value: "on",
+                  label: "On",
+                  hint: "Replies are grouped with the mail they answer, in one row",
+                },
+              ]}
+            />
+            <ChoiceGroup
               legend="Mark as read"
               value={settings.markRead}
               onChange={set("markRead")}

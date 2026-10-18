@@ -1,12 +1,28 @@
 import type { Mailbox } from "../../core/model";
 import type { MessageOrder } from "../../core/provider";
-import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
+import { useMemo } from "react";
+import { useAccountHandle } from "../../accounts/context";
+import {
+  findMailbox,
+  useMailboxes,
+  useMessageList,
+  useThreadList,
+} from "../../data/hooks";
+import { messageRows, threadRows } from "../../data/listRows";
+import { isolatingMailboxes } from "../../data/optimistic";
 import type { ListSpec } from "../../data/keys";
 import { useRoute, useUi } from "../../state/context";
 import type { Route } from "../../state/router";
 
-/** Identifies the list a route shows in an order (focus and selection belong to it). */
-export const listKeyOf = (route: Route, order: MessageOrder): string | null =>
+/**
+ * Identifies the list a route shows in an order, as messages or
+ * conversations (focus and selection belong to it).
+ */
+export const listKeyOf = (
+  route: Route,
+  order: MessageOrder,
+  conversations: boolean,
+): string | null =>
   route
     ? JSON.stringify([
         route.accountId,
@@ -14,6 +30,7 @@ export const listKeyOf = (route: Route, order: MessageOrder): string | null =>
         route.search?.text.trim() ?? "",
         route.search?.everywhere ?? false,
         order,
+        conversations,
       ])
     : null;
 
@@ -43,23 +60,60 @@ export function listSpecOf(
     : { mailboxId: scope, search: search.text.trim(), order };
 }
 
-/** The list being shown: what it is, its messages and the account's mailboxes. */
+/**
+ * The list being shown: what it is, its rows (messages, or conversations
+ * in conversation view) and the account's mailboxes.
+ */
 export function useCurrentList() {
   const route = useRoute();
   const order = useUi((state) => state.listOrder);
+  const wantsConversations = useUi((state) => state.settings.conversations);
+  const supportsThreads =
+    useAccountHandle(route?.accountId)?.provider.capabilities.threads === true;
   const { data: mailboxes } = useMailboxes(route?.accountId);
   const spec = listSpecOf(route, order, mailboxes);
-  const list = useMessageList(route?.accountId, spec);
+  const scope = findMailbox(mailboxes, spec?.mailboxId);
+  // Drafts open one by one in the composer, so they stay single messages.
+  const conversations =
+    wantsConversations && supportsThreads && scope?.role !== "drafts";
+  const messageList = useMessageList(
+    route?.accountId,
+    conversations ? undefined : spec,
+  );
+  const threadList = useThreadList(
+    route?.accountId,
+    conversations ? spec : undefined,
+  );
+  const isolating = useMemo(
+    () => isolatingMailboxes(mailboxes ?? []),
+    [mailboxes],
+  );
+  const threads = threadList.data;
+  const messages = messageList.data;
+  const rows = useMemo(
+    () =>
+      conversations
+        ? threads && threadRows(threads, scope, isolating)
+        : messages && messageRows(messages),
+    [conversations, threads, messages, scope, isolating],
+  );
+  const list = conversations ? threadList : messageList;
   return {
     route,
     order,
     spec,
+    /** The query behind the rows (loading state, paging). */
     list,
+    /** The rows, once loaded. */
+    rows,
+    /** Rows are conversations. */
+    conversations,
     mailboxes,
+    isolating,
     /** The mailbox in the URL (where a search started). */
     mailbox: findMailbox(mailboxes, route?.mailboxId),
     /** The mailbox being listed: the one in the URL, or All Mail when searching everywhere. */
-    scope: findMailbox(mailboxes, spec?.mailboxId),
-    listKey: listKeyOf(route, order),
+    scope,
+    listKey: listKeyOf(route, order, wantsConversations),
   };
 }

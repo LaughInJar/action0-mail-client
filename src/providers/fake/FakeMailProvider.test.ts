@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { isMailError } from "../../core/errors";
-import { asAttachmentId, asMessageId, type Cursor } from "../../core/ids";
+import {
+  asAttachmentId,
+  asMessageId,
+  asThreadId,
+  type Cursor,
+} from "../../core/ids";
 import { createDemoArrival, createDemoData, DEMO_MAILBOX } from "./demoData";
 import { FakeMailProvider } from "./FakeMailProvider";
 
@@ -453,5 +458,54 @@ describe("FakeMailProvider senders", () => {
     await expect(
       fake.updateSignature("team@example.com", "x"),
     ).rejects.toMatchObject({ code: "unavailable" });
+  });
+});
+
+describe("FakeMailProvider threads", () => {
+  it("groups the Inbox into conversations, with your replies inside", async () => {
+    const fake = provider();
+    const page = await fake.listThreads({
+      mailboxId: DEMO_MAILBOX.inbox,
+      limit: 10,
+    });
+    const trip = page.items.find((thread) => thread.id === "t-trip");
+    expect(trip?.messages.map((m) => m.id)).toEqual([
+      "trip-1",
+      "trip-2",
+      "trip-3",
+    ]);
+    const full = await fake.getThread(asThreadId("t-trip"));
+    expect(full.messages[2]?.attachments[0]?.filename).toBe("tickets.pdf");
+  });
+
+  it("moves a conversation up when you answer it", async () => {
+    const fake = provider();
+    const ids = async () =>
+      (
+        await fake.listThreads({ mailboxId: DEMO_MAILBOX.inbox, limit: 10 })
+      ).items.map((thread) => thread.id);
+    expect((await ids()).indexOf(asThreadId("t-trip"))).toBeGreaterThan(0);
+    const { id } = await fake.saveDraft({
+      to: [{ address: "anna.berger@example.org" }],
+      cc: [],
+      bcc: [],
+      subject: "Re: Trip to Lake Como",
+      html: "<p>Great!</p>",
+      text: "Great!",
+      attachments: [],
+      threading: { threadId: asThreadId("t-trip"), references: [] },
+    });
+    await fake.sendDraft({
+      id,
+      to: [{ address: "anna.berger@example.org" }],
+      cc: [],
+      bcc: [],
+      subject: "Re: Trip to Lake Como",
+      html: "<p>Great!</p>",
+      text: "Great!",
+      attachments: [],
+      threading: { threadId: asThreadId("t-trip"), references: [] },
+    });
+    expect((await ids())[0]).toBe("t-trip");
   });
 });

@@ -311,13 +311,17 @@ interface MessageSeed {
   readonly body: MessageBody;
   readonly attachments?: readonly AttachmentInfo[];
   readonly unsubscribe?: Unsubscribe;
+  /** The conversation (by default one of its own). */
+  readonly thread?: string;
+  /** For replies: the Message-ID it answers (key of that message). */
+  readonly inReplyTo?: string;
 }
 
 function buildMessage(seed: MessageSeed, now: number): Message {
   const attachments = seed.attachments ?? [];
   return {
     id: asMessageId(seed.key),
-    threadId: asThreadId(`t-${seed.key}`),
+    threadId: asThreadId(`t-${seed.thread ?? seed.key}`),
     mailboxIds: seed.mailboxIds,
     from: seed.from,
     to: seed.to ?? [ME],
@@ -325,7 +329,8 @@ function buildMessage(seed: MessageSeed, now: number): Message {
     bcc: [],
     replyTo: [],
     internetMessageId: `<${seed.key}@demo.example>`,
-    references: [],
+    references:
+      seed.inReplyTo === undefined ? [] : [`<${seed.inReplyTo}@demo.example>`],
     ...(seed.unsubscribe ? { unsubscribe: seed.unsubscribe } : {}),
     subject: seed.subject,
     snippet: seed.snippet,
@@ -461,6 +466,53 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
       mail: { to: "unsubscribe@news.example", subject: "Unsubscribe" },
       page: "https://news.example/unsubscribe?u=demo",
     },
+  },
+  // A conversation: Anna asks, you answer (Sent), Anna books.
+  {
+    key: "trip-1",
+    thread: "trip",
+    from: PEOPLE[0] ?? ME,
+    subject: "Trip to Lake Como",
+    snippet:
+      "Shall we book the train for Friday? The 8:20 gets us there by noon.",
+    minutesAgo: 60 * 72,
+    mailboxIds: [M.inbox, M.personal],
+    body: {
+      text: "Hi!\n\nShall we book the train for Friday? The 8:20 gets us there by noon.\n\nAnna",
+    },
+  },
+  {
+    key: "trip-2",
+    thread: "trip",
+    inReplyTo: "trip-1",
+    from: ME,
+    to: [PEOPLE[0] ?? ME],
+    subject: "Re: Trip to Lake Como",
+    snippet: "Sounds good, Friday works for me.",
+    minutesAgo: 60 * 50,
+    mailboxIds: [M.sent],
+    body: { text: "Sounds good, Friday works for me.\n\nDemo" },
+  },
+  {
+    key: "trip-3",
+    thread: "trip",
+    inReplyTo: "trip-2",
+    from: PEOPLE[0] ?? ME,
+    subject: "Re: Trip to Lake Como",
+    snippet: "Booked! The tickets are attached.",
+    minutesAgo: 60 * 5.5,
+    mailboxIds: [M.inbox, M.personal],
+    body: {
+      text: "Booked! The tickets are attached.\n\nSee you on Friday,\nAnna",
+    },
+    attachments: [
+      {
+        id: asAttachmentId("tickets"),
+        filename: "tickets.pdf",
+        mimeType: "application/pdf",
+        size: 602,
+      },
+    ],
   },
   {
     key: "club-news",
@@ -691,6 +743,7 @@ export function createDemoData(now = Date.now()): FakeMailData {
       "invoice/invoice-pdf",
       new Blob([INVOICE_PDF], { type: "application/pdf" }),
     ],
+    ["trip-3/tickets", new Blob([INVOICE_PDF], { type: "application/pdf" })],
   ]);
   return {
     mailboxes: MAILBOXES,
