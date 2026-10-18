@@ -78,13 +78,13 @@ export class GmailHttp {
    */
   post<T = undefined>(
     path: string,
-    body: unknown,
+    body?: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
     const url = new URL(path, GMAIL_API_BASE);
-    return this.#limit(() =>
-      this.#request<T>(url, "POST", JSON.stringify(body), signal),
-    );
+    // Some endpoints (messages.trash) require an empty body.
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    return this.#limit(() => this.#request<T>(url, "POST", payload, signal));
   }
 
   async #request<T>(

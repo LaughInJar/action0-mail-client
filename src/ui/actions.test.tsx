@@ -70,9 +70,10 @@ describe("archive", () => {
   it("explains when there is nothing to archive", async () => {
     const { user } = renderApp({ hash: demoHash("spam", "spam-1") });
     await subject("You have won!!!");
+    // Inside Spam the toolbar offers "Not spam" and "Delete forever" instead.
     expect(
-      screen.getByRole("button", { name: "Not in the Inbox" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /Archive/ }),
+    ).not.toBeInTheDocument();
     await user.keyboard("a");
     expect(
       await toastText("Not in the Inbox, nothing to archive."),

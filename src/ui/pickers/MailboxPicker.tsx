@@ -20,14 +20,9 @@ export function MailboxPickerHost() {
 
 type LabelState = "on" | "off" | "mixed";
 
-/** Mailboxes that can be targets: assignable, selectable, and not Spam/Trash (separate feature). */
+/** Mailboxes that can be targets (Spam and Trash only for moving, via the role filter below). */
 function isTarget(mailbox: Mailbox): boolean {
-  return (
-    mailbox.assignable &&
-    mailbox.selectable &&
-    mailbox.role !== "junk" &&
-    mailbox.role !== "trash"
-  );
+  return mailbox.assignable && mailbox.selectable;
 }
 
 /** "Work / Clients" for nested mailboxes. */
@@ -304,7 +299,15 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
                   </span>
                 ) : (
                   <Icon
-                    name={mailbox.role === "inbox" ? "inbox" : "tag"}
+                    name={
+                      mailbox.role === "inbox"
+                        ? "inbox"
+                        : mailbox.role === "trash"
+                          ? "trash"
+                          : mailbox.role === "junk"
+                            ? "alert"
+                            : "tag"
+                    }
                     className="size-4 shrink-0 text-zinc-500"
                     style={
                       mailbox.color

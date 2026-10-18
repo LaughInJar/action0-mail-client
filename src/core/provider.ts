@@ -24,6 +24,12 @@ export interface ProviderCapabilities {
   readonly move: boolean;
   /** Supports {@link MailProvider.setLabels}: memberships can be added and removed freely. */
   readonly labels: boolean;
+  /** Supports {@link MailProvider.trash} and {@link MailProvider.untrash}. */
+  readonly trash: boolean;
+  /** Supports {@link MailProvider.reportSpam} and {@link MailProvider.notSpam}. */
+  readonly spam: boolean;
+  /** Supports {@link MailProvider.deleteForever} and {@link MailProvider.emptyMailbox}. */
+  readonly deleteForever: boolean;
 }
 
 /** Parameters of {@link MailProvider.listMessages}. */
@@ -116,4 +122,43 @@ export interface MailProvider {
     },
     signal?: AbortSignal,
   ): Promise<MutationResult>;
+
+  /** Moves messages to the trash. They then appear in no other mailbox. */
+  trash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Takes messages out of the trash, back where they were (Gmail) or into the inbox. */
+  untrash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Reports messages as spam: into the junk mailbox, out of the inbox. */
+  reportSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Not spam after all: out of the junk mailbox, into the inbox. */
+  notSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Deletes messages permanently. Cannot be undone. */
+  deleteForever(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /**
+   * Deletes every message in a trash- or junk-role mailbox permanently.
+   * Rejects for any other mailbox.
+   */
+  emptyMailbox(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly deleted: number }>;
 }

@@ -4,7 +4,7 @@ import {
   type StateStorage,
 } from "zustand/middleware";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { AccountId, MessageId } from "../core/ids";
+import type { AccountId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary } from "../core/model";
 import * as selection from "./selection";
@@ -36,6 +36,25 @@ export interface PickerState {
   readonly ids: readonly MessageId[];
 }
 
+/** A destructive action waiting for the user's confirmation. */
+export interface ConfirmState {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel: string;
+  readonly action:
+    | {
+        readonly kind: "delete-forever";
+        readonly accountId: AccountId;
+        readonly ids: readonly MessageId[];
+      }
+    | {
+        readonly kind: "empty";
+        readonly accountId: AccountId;
+        readonly mailboxId: MailboxId;
+        readonly name: string;
+      };
+}
+
 /** UI state that isn't server data and isn't in the URL. */
 export interface UiState extends selection.SelectionState {
   /** `${accountId}/${mailboxId}` of the list that focus and selection belong to. */
@@ -52,6 +71,7 @@ export interface UiState extends selection.SelectionState {
   readonly toast: Toast | null;
   readonly dragging: DragState | null;
   readonly picker: PickerState | null;
+  readonly confirm: ConfirmState | null;
 }
 
 /** State transitions. */
@@ -87,6 +107,7 @@ export interface UiActions {
   readonly dismissToast: (id: number) => void;
   readonly setDragging: (dragging: DragState | null) => void;
   readonly setPicker: (picker: PickerState | null) => void;
+  readonly setConfirm: (confirm: ConfirmState | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -143,6 +164,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           toast: null,
           dragging: null,
           picker: null,
+          confirm: null,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -212,6 +234,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setPicker: (picker) => {
             set({ picker });
+          },
+          setConfirm: (confirm) => {
+            set({ confirm });
           },
         };
       },

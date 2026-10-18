@@ -343,3 +343,89 @@ describe("GmailProvider move and labels", () => {
     ).rejects.toMatchObject({ code: "provider" });
   });
 });
+
+describe("GmailProvider trash, spam and deletion", () => {
+  const ids = (...names: string[]) => names.map(asMessageId);
+
+  it("trashes and restores with one empty-bodied request per message", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(url("messages/:id/:action"), async ({ params, request }) => {
+        expect(await request.text()).toBe("");
+        expect(request.headers.get("Content-Type")).toBeNull();
+        calls.push(`${String(params.action)} ${String(params.id)}`);
+        return HttpResponse.json({ id: params.id });
+      }),
+    );
+    await provider().trash(ids("a", "b"));
+    await provider().untrash(ids("a"));
+    expect(calls.sort()).toEqual(["trash a", "trash b", "untrash a"]);
+  });
+
+  it("reports spam and not spam with batchModify", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        bodies.push(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await provider().reportSpam(ids("a"));
+    await provider().notSpam(ids("a"));
+    expect(bodies).toEqual([
+      { ids: ["a"], addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] },
+      { ids: ["a"], addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] },
+    ]);
+  });
+
+  it("deletes forever in chunks of 1000", async () => {
+    const sizes: number[] = [];
+    server.use(
+      http.post(url("messages/batchDelete"), async ({ request }) => {
+        sizes.push(((await request.json()) as { ids: string[] }).ids.length);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await provider().deleteForever(
+      Array.from({ length: 1500 }, (_, i) => asMessageId(`m${i}`)),
+    );
+    expect(sizes).toEqual([1000, 500]);
+  });
+
+  it("empties Trash by listing every page and deleting all of it", async () => {
+    const deleted: string[] = [];
+    let listParams: URLSearchParams | undefined;
+    server.use(
+      http.get(url("messages"), ({ request }) => {
+        listParams = new URL(request.url).searchParams;
+        return listParams.get("pageToken") === "2"
+          ? HttpResponse.json({ messages: [{ id: "c", threadId: "t" }] })
+          : HttpResponse.json({
+              messages: [
+                { id: "a", threadId: "t" },
+                { id: "b", threadId: "t" },
+              ],
+              nextPageToken: "2",
+            });
+      }),
+      http.post(url("messages/batchDelete"), async ({ request }) => {
+        deleted.push(...((await request.json()) as { ids: string[] }).ids);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      provider().emptyMailbox(asMailboxId("TRASH")),
+    ).resolves.toEqual({ deleted: 3 });
+    expect(deleted).toEqual(["a", "b", "c"]);
+    expect(listParams?.get("includeSpamTrash")).toBe("true");
+    expect(listParams?.getAll("labelIds")).toEqual(["TRASH"]);
+  });
+
+  it("refuses to empty anything but Trash and Spam", async () => {
+    await expect(
+      provider().emptyMailbox(asMailboxId("INBOX")),
+    ).rejects.toMatchObject({
+      code: "provider",
+    });
+  });
+});

@@ -18,9 +18,11 @@ export function AppProviders({
 }) {
   const { registry, commands, queryClient, persistOptions } = services;
 
-  // One keyboard listener for the whole app.
+  // One keyboard listener for the whole app. An open modal dialog owns the
+  // keyboard: no Delete behind a confirmation, no j/k behind a picker.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       commands.handleKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -62,5 +64,12 @@ export function AppProviders({
     </PersistQueryClientProvider>
   ) : (
     <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+  );
+}
+
+/** True while a modal dialog is shown (closed drawers are `inert`). */
+function isModalOpen(): boolean {
+  return Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
+    (dialog) => dialog.closest("[inert]") === null,
   );
 }

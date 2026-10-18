@@ -122,6 +122,51 @@ describe("inverseOf", () => {
   });
 });
 
+describe("inverseOf for trash, spam and deletion", () => {
+  it("restores trash with untrash and has nothing to undo after deleting forever", () => {
+    const a = summary("a", ["inbox"]);
+    const trashed = [change(a, { mailboxIds: [box("inbox"), box("trash")] })];
+    expect(
+      inverseOf({ kind: "trash", ids: ids("a") }, trashed, labels),
+    ).toEqual([{ kind: "untrash", ids: ["a"] }]);
+    expect(
+      inverseOf({ kind: "untrash", ids: ids("a") }, trashed, labels),
+    ).toEqual([{ kind: "trash", ids: ["a"] }]);
+    expect(
+      inverseOf(
+        { kind: "delete-forever", ids: ids("a") },
+        [{ ...trashed[0]!, deleted: true }],
+        labels,
+      ),
+    ).toEqual([]);
+  });
+
+  it("undoes a spam report exactly, even for messages that weren't in the Inbox", () => {
+    const a = summary("a", ["inbox", "work"]);
+    const b = summary("b", ["work"]);
+    const changes = [
+      change(a, { mailboxIds: [box("work"), box("spam")] }),
+      change(b, { mailboxIds: [box("work"), box("spam")] }),
+    ];
+    expect(
+      inverseOf({ kind: "report-spam", ids: ids("a", "b") }, changes, labels),
+    ).toEqual([
+      { kind: "set-labels", ids: ["a"], add: ["inbox"], remove: ["spam"] },
+      { kind: "set-labels", ids: ["b"], add: [], remove: ["spam"] },
+    ]);
+  });
+
+  it("moves back for folder providers", () => {
+    const a = summary("a", ["projects"]);
+    const changes = [change(a, { mailboxIds: [box("junk")] })];
+    expect(
+      inverseOf({ kind: "report-spam", ids: ids("a") }, changes, {
+        labels: false,
+      }),
+    ).toEqual([{ kind: "move", ids: ["a"], from: "junk", to: "projects" }]);
+  });
+});
+
 describe("runIntent", () => {
   it("dispatches to the provider method", async () => {
     const archive = vi.fn(() => Promise.resolve({}));

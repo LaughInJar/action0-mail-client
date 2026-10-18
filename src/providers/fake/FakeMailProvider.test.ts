@@ -127,4 +127,33 @@ describe("FakeMailProvider", () => {
       DEMO_MAILBOX.inbox,
     ]);
   });
+
+  it("hides trashed and spam messages from other lists, and empties Trash", async () => {
+    const fake = provider();
+    const plain = asMessageId("plain-text");
+    await fake.trash([plain]);
+    const personal = await fake.listMessages({
+      mailboxId: DEMO_MAILBOX.personal,
+      limit: 500,
+    });
+    expect(personal.items.some((m) => m.id === plain)).toBe(false);
+    const trash = await fake.listMessages({
+      mailboxId: DEMO_MAILBOX.trash,
+      limit: 500,
+    });
+    expect(trash.items.map((m) => m.id)).toContain(plain);
+
+    await expect(fake.emptyMailbox(DEMO_MAILBOX.trash)).resolves.toEqual({
+      deleted: 2,
+    });
+    expect(
+      isMailError(
+        await fake.getMessage(plain).catch((e: unknown) => e),
+        "not-found",
+      ),
+    ).toBe(true);
+    await expect(fake.emptyMailbox(DEMO_MAILBOX.inbox)).rejects.toMatchObject({
+      code: "provider",
+    });
+  });
 });

@@ -8,11 +8,12 @@ import { useCallback } from "react";
 import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import { MailError } from "../core/errors";
-import type { AccountId, MessageId } from "../core/ids";
+import type { AccountId, MailboxId, MessageId } from "../core/ids";
 import { runIntent, type MailIntent } from "../core/intents";
 import type { Mailbox, Message, MessageSummary } from "../core/model";
 import { queryKeys } from "./keys";
 import {
+  isolatingMailboxes,
   patchCounts,
   patchList,
   patchMessage,
@@ -127,16 +128,17 @@ function applyChanges(
   accountId: AccountId,
   changes: readonly MessageChange[],
 ): void {
-  const mailboxes =
-    queryClient.getQueryData<readonly Mailbox[]>(
-      queryKeys.mailboxes(accountId),
-    ) ?? [];
+  const mailboxes = cachedMailboxes(queryClient, accountId);
+  const isolating = isolatingMailboxes(mailboxes);
   for (const [key, data] of queryClient.getQueriesData<MessageListData>({
     queryKey: listsKey(accountId),
   })) {
     const mailbox = mailboxes.find((candidate) => candidate.id === key[3]);
     if (data && mailbox)
-      queryClient.setQueryData(key, patchList(data, mailbox, changes));
+      queryClient.setQueryData(
+        key,
+        patchList(data, mailbox, changes, isolating),
+      );
   }
   for (const change of changes) {
     queryClient.setQueryData<Message>(
@@ -197,5 +199,86 @@ export function useApplyIntent() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.mailboxes(accountId),
       }),
+  });
+}
+
+/** The cached mailbox list of an account (empty if not loaded). */
+function cachedMailboxes(
+  queryClient: QueryClient,
+  accountId: AccountId,
+): readonly Mailbox[] {
+  return (
+    queryClient.getQueryData<readonly Mailbox[]>(
+      queryKeys.mailboxes(accountId),
+    ) ?? []
+  );
+}
+
+/** Variables of {@link useEmptyMailbox}. */
+export interface EmptyMailboxVariables {
+  readonly accountId: AccountId;
+  readonly mailboxId: MailboxId;
+}
+
+/**
+ * Permanently deletes everything in Trash or Spam. The list empties right
+ * away and comes back if the provider refuses. Can't be undone, so callers
+ * confirm first.
+ */
+export function useEmptyMailbox() {
+  const queryClient = useQueryClient();
+  const registry = useAccountRegistry();
+
+  return useMutation({
+    mutationFn: ({ accountId, mailboxId }: EmptyMailboxVariables) => {
+      const handle = registry.get(accountId);
+      if (!handle) {
+        return Promise.reject(
+          new MailError(
+            "auth-required",
+            "This account is no longer connected.",
+          ),
+        );
+      }
+      return handle.provider.emptyMailbox(mailboxId);
+    },
+    onMutate: async ({ accountId, mailboxId }) => {
+      const listKey = queryKeys.messages(accountId, mailboxId);
+      await queryClient.cancelQueries({ queryKey: listKey });
+      const snapshot = queryClient.getQueriesData({
+        queryKey: queryKeys.account(accountId),
+      });
+      queryClient.setQueryData<MessageListData>(listKey, (data) =>
+        data
+          ? {
+              pages: [{ items: [] }],
+              pageParams: data.pageParams.slice(0, 1),
+            }
+          : data,
+      );
+      queryClient.setQueryData<readonly Mailbox[]>(
+        queryKeys.mailboxes(accountId),
+        (mailboxes) =>
+          mailboxes?.map((mailbox) =>
+            mailbox.id === mailboxId && mailbox.counts
+              ? { ...mailbox, counts: { unread: 0, total: 0 } }
+              : mailbox,
+          ),
+      );
+      return { snapshot };
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.snapshot ?? [])
+        queryClient.setQueryData(key, data);
+    },
+    onSettled: (_data, _error, { accountId, mailboxId }) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.mailboxes(accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.messages(accountId, mailboxId),
+        }),
+      ]),
   });
 }
