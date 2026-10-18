@@ -36,7 +36,7 @@ export function ToastHost({ onUndo }: { onUndo: () => void }) {
           }`}
         >
           <span className="min-w-0">{toast.message}</span>
-          {toast.undo && (
+          {(toast.undo ?? toast.restoreDraft) && (
             <button
               type="button"
               onClick={onUndo}

@@ -25,7 +25,7 @@ export function AppProviders({
   // keyboard: no Delete behind a confirmation, no j/k behind a picker.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isModalOpen()) return;
+      if (isModalOpen() || ownsKeys(event.target)) return;
       commands.handleKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -73,6 +73,13 @@ export function AppProviders({
 }
 
 /** True while a modal dialog is shown (closed drawers are `inert`). */
+/** Inside an element with `data-own-keys` (the composer), single keys are text, not shortcuts. */
+function ownsKeys(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element && target.closest("[data-own-keys]") !== null
+  );
+}
+
 function isModalOpen(): boolean {
   return Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
     (dialog) => dialog.closest("[inert]") === null,

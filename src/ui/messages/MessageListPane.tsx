@@ -9,6 +9,8 @@ import { useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
+import { useComposeActions } from "../composer/useComposeActions";
+import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { ListToolbar } from "./ListToolbar";
@@ -33,15 +35,22 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const { fetchNextPage } = list;
   const actions = useMailActions();
 
+  const compose = useComposeActions();
+  const isDrafts = scope?.role === "drafts" && compose.canCompose;
   const onOpen = useCallback(
     (id: MessageId) => {
       store.getState().focusOnly(id);
+      // Drafts open in the composer.
+      if (isDrafts) {
+        compose.editDraft(id);
+        return;
+      }
       const current = router.getRoute();
       // On phones the reader is its own screen, reachable with Back.
       if (breakpoint === "narrow" && current)
         router.navigate({ ...current, messageId: id });
     },
-    [breakpoint, router, store],
+    [breakpoint, router, store, isDrafts, compose],
   );
   const loadMore = useCallback(() => {
     void fetchNextPage();
@@ -167,6 +176,13 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
             )}
           </div>
         )}
+        {breakpoint === "medium" && compose.canCompose && (
+          <IconButton
+            label="Compose (c)"
+            icon="pencil"
+            onClick={compose.compose}
+          />
+        )}
         <IconButton
           label="Refresh"
           icon="refresh"
@@ -207,6 +223,16 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         </div>
       )}
       <div className="min-h-0 flex-1">{body}</div>
+      {breakpoint === "narrow" && compose.canCompose && (
+        <button
+          type="button"
+          aria-label="Compose"
+          onClick={compose.compose}
+          className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 grid size-14 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg"
+        >
+          <Icon name="pencil" className="size-6" />
+        </button>
+      )}
     </div>
   );
 }

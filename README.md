@@ -2,13 +2,14 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search (features 1–5).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing (features 1–6).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
 - Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
 - Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
+- Write, reply, reply all and forward in a composer docked at the bottom right (full screen on phones). Basic formatting, address suggestions from your Google contacts, drafts that save themselves, and 30 seconds to take a sent mail back.
 - Search as you type, in the current folder or everywhere. Gmail's search operators work (`from:`, `has:attachment`, `before:2026/01/01`, …). The search is part of the URL, so Back and reloading keep it.
 - Sort the list by date, newest or oldest first.
 - Filter the folder tree by name, to find a label quickly.
@@ -29,14 +30,14 @@ Open <http://localhost:5173/?demo> to start with the demo account. To read your 
 
 ## Setting up Google sign-in
 
-The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
+The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. For address suggestions it also asks for read access to your contacts (`contacts.readonly`, `contacts.other.readonly`); that part is optional. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
 
 1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
-2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it.
+2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it. Do the same for the **People API** (address suggestions from your contacts).
 3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
    - **Branding:** an app name and your support email.
    - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
-   - **Data access:** add the scope `https://mail.google.com/`. If you set the app up earlier with `gmail.readonly` or `gmail.modify`, add this one; each account then reconnects once.
+   - **Data access:** add the scopes `https://mail.google.com/`, `https://www.googleapis.com/auth/contacts.readonly` and `https://www.googleapis.com/auth/contacts.other.readonly`. If you set the app up earlier with fewer scopes, add the missing ones; each account then reconnects once.
 4. Go to **Clients → Create client**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
@@ -70,6 +71,7 @@ Google shows these errors in its own window, so the app can't see them; the wiza
 | **Access blocked: … has not completed the Google verification process** | Your address isn't a test user. Add it under **Audience → Test users**.                                                                                                                                                                                                        |
 | A message about your **organization** or **administrator**              | Your Google Workspace admin blocks unverified apps. Only they can allow it.                                                                                                                                                                                                    |
 | The popup doesn't open                                                  | The browser blocked it. Allow popups for the site and click again.                                                                                                                                                                                                             |
+| Address suggestions only come from recent mail                          | The composer says why: either the **People API** isn't enabled in your Google Cloud project (enable it, wait a few minutes), or contacts access was declined in the Google window (sign out and add the account again to be asked once more).                                  |
 
 ## Testing on a phone
 
@@ -103,6 +105,10 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 | <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail                    |
 | <kbd>/</kbd>                                                                | Search mail (Enter or ↓: to the results, Esc: end search) |
 | <kbd>g</kbd> then <kbd>f</kbd>                                              | Filter folders (Enter opens the first match)              |
+| <kbd>c</kbd>                                                                | Write a new mail                                          |
+| <kbd>r</kbd> / <kbd>Shift</kbd> + <kbd>r</kbd> / <kbd>f</kbd>               | Reply / reply all / forward                               |
+| <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (Mac: <kbd>⌘</kbd> + <kbd>Enter</kbd>)   | Send (in the composer; <kbd>z</kbd> takes it back)        |
+| <kbd>Esc</kbd> in the composer                                              | Close it; the draft is kept                               |
 | <kbd>a</kbd>                                                                | Archive the message or selection                          |
 | <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                                     |
 | <kbd>z</kbd>                                                                | Undo the last action                                      |
@@ -121,18 +127,21 @@ With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click togg
 
 ```
 src/
-  core/        Domain model, MailProvider interface, errors. No dependencies.
+  core/        Domain model, MailProvider interface, errors, reply rules. No dependencies.
   auth/        AuthSession interface; google/ = Google Identity Services token client
   providers/
     gmail/     Gmail REST adapter: HTTP client (retries, concurrency limit),
-               label mapping, MIME parsing, mappers
+               label mapping, MIME parsing, mappers, drafts, People API
+    mime/      Builds outgoing MIME messages (shared by raw-message adapters)
     fake/      In-memory provider: tests and the demo account
   accounts/    Account registry: one auth session + provider per account
-  data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy
+  data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy;
+               draft saving and sending
+  compose/     Outgoing mail HTML: quoting, plain-text version, composer content
   state/       UI state (Zustand): focus, selection, layout; hash router
   keyboard/    Central shortcut registry
   security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
-  ui/          React components: layout, mailboxes, messages, reader, help
+  ui/          React components: layout, mailboxes, messages, reader, composer, help
   app/         Composition root: wires providers, registry, cache and UI together
 ```
 
@@ -154,11 +163,11 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 
 ### What is stored where
 
-| Where          | What                                                                                             | How long                            |
-| -------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| Memory         | Message bodies, inline images, which messages may load remote images                             | Until reload                        |
-| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory) | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order               | Until sign-out                      |
+| Where          | What                                                                                                                                                                        | How long                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing (it saves to the account's Drafts, never to browser storage); contact suggestions | Until reload                        |
+| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                            | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order                                                                                          | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

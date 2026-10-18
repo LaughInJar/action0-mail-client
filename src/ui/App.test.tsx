@@ -45,7 +45,7 @@ describe("three-column view", () => {
     const names = within(tree)
       .getAllByRole("treeitem")
       .map((item) =>
-        item.textContent.replace(/\d+|,| unread| drafts/g, "").trim(),
+        item.textContent.replace(/\d+|,| unread| drafts?/g, "").trim(),
       );
     expect(names).toEqual([
       "demo@example.com",

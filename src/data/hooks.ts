@@ -21,7 +21,7 @@ import { queryKeys, type ListSpec } from "./keys";
 export const PAGE_SIZE = 50;
 
 /** The account's handle, but only while its session can make requests. */
-function useReadyHandle(
+export function useReadyHandle(
   accountId: AccountId | undefined,
 ): AccountHandle | undefined {
   const handle = useAccountHandle(accountId);

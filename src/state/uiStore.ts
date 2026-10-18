@@ -4,7 +4,8 @@ import {
   type StateStorage,
 } from "zustand/middleware";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { AccountId, MailboxId, MessageId } from "../core/ids";
+import type { ComposerContent } from "../compose/session";
+import type { AccountId, DraftId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary } from "../core/model";
 import type { MessageOrder } from "../core/provider";
@@ -13,8 +14,12 @@ import * as selection from "./selection";
 /** A short notification at the bottom of the screen, optionally undoable. */
 export interface Toast {
   readonly id: number;
+  /** When it was shown (epoch ms); `z` undoes the most recent action. */
+  readonly createdAt: number;
   readonly message: string;
   readonly tone: "info" | "error";
+  /** A discarded draft that "Undo" brings back. */
+  readonly restoreDraft?: ComposerSession;
   /** Intents that revert the action the toast reports. */
   readonly undo?: {
     readonly accountId: AccountId;
@@ -56,6 +61,47 @@ export interface ConfirmState {
       };
 }
 
+/** How a composer was started. */
+export type ComposerKind = "new" | "reply" | "reply-all" | "forward" | "draft";
+
+/** A mail being written. Memory only, never persisted. */
+export interface ComposerSession extends ComposerContent {
+  /** Identifies this session; every opened mail gets a new one. */
+  readonly key: number;
+  readonly accountId: AccountId;
+  readonly kind: ComposerKind;
+  /** The saved draft, once there is one. */
+  readonly draftId?: DraftId;
+  readonly showCcBcc: boolean;
+  readonly window: "docked" | "minimized" | "expanded";
+  /** Field that gets focus when the composer opens. */
+  readonly focus: "to" | "body";
+  /** Bumped by every edit of the content. */
+  readonly revision: number;
+  /** The revision saved as the draft (equal to `revision`: nothing to save). */
+  readonly savedRevision: number;
+  readonly saving: boolean;
+  readonly saveError?: string;
+}
+
+/**
+ * What {@link UiActions.openComposer} needs; the rest gets defaults. Pass
+ * the `key` of an earlier session to continue it (undo send, undo discard),
+ * and `dirty` if its content still needs saving.
+ */
+export type ComposerInit = Pick<ComposerSession, "accountId" | "kind"> &
+  Partial<
+    Omit<ComposerSession, "revision" | "savedRevision" | "saving" | "saveError">
+  > & { readonly dirty?: boolean };
+
+/** A sent mail waiting out its undo period. */
+export interface PendingSend {
+  readonly id: number;
+  readonly session: ComposerSession;
+  readonly queuedAt: number;
+  readonly sendAt: number;
+}
+
 /** UI state that isn't server data and isn't in the URL. */
 export interface UiState extends selection.SelectionState {
   /** Identifies the list that focus and selection belong to (mailbox, search and order). */
@@ -79,6 +125,10 @@ export interface UiState extends selection.SelectionState {
   readonly confirm: ConfirmState | null;
   /** The Add account dialog is open. */
   readonly addAccountOpen: boolean;
+  /** The open composer. */
+  readonly composer: ComposerSession | null;
+  /** Sent mails within their undo period, oldest first. */
+  readonly pendingSends: readonly PendingSend[];
 }
 
 /** State transitions. */
@@ -111,13 +161,38 @@ export interface UiActions {
   readonly setDrawerOpen: (open: boolean) => void;
   readonly setHelpOpen: (open: boolean) => void;
   /** Shows a toast, replacing the current one. */
-  readonly showToast: (toast: Omit<Toast, "id">) => void;
+  readonly showToast: (toast: Omit<Toast, "id" | "createdAt">) => void;
   /** Hides the toast with this id (if it is still the current one). */
   readonly dismissToast: (id: number) => void;
   readonly setDragging: (dragging: DragState | null) => void;
   readonly setPicker: (picker: PickerState | null) => void;
   readonly setConfirm: (confirm: ConfirmState | null) => void;
   readonly setAddAccountOpen: (open: boolean) => void;
+  /** Opens a composer (replacing any open one) and returns its session. */
+  readonly openComposer: (init: ComposerInit) => ComposerSession;
+  /**
+   * Changes the composer with this key. `edit` marks a content change that
+   * needs saving.
+   */
+  readonly updateComposer: (
+    key: number,
+    patch: Partial<
+      ComposerContent & Pick<ComposerSession, "showCcBcc" | "window" | "focus">
+    >,
+    edit: boolean,
+  ) => void;
+  readonly markComposerSaving: (key: number) => void;
+  /** A save of `revision` finished (or failed, with `error`). */
+  readonly markComposerSaved: (
+    key: number,
+    result: { revision: number; draftId: DraftId } | { error: string },
+  ) => void;
+  /** Closes the composer (if it is still the one with `key`). */
+  readonly closeComposer: (key: number) => void;
+  /** Moves the composer into the send queue. */
+  readonly queueSend: (key: number, delayMs: number) => PendingSend | undefined;
+  /** Removes a pending send (sent, failed or undone) and returns it. */
+  readonly takePendingSend: (id: number) => PendingSend | undefined;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -158,7 +233,8 @@ interface PersistedUi {
 export function createUiStore(storage: Storage | undefined): UiStore {
   return createStore<UiState & UiActions>()(
     persist(
-      (set) => {
+      (set, get) => {
+        let sequence = 0;
         const update = (
           fn: (state: selection.SelectionState) => selection.SelectionState,
         ) => {
@@ -179,6 +255,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           picker: null,
           confirm: null,
           addAccountOpen: false,
+          composer: null,
+          pendingSends: [],
 
           enterList: (listKey, focusedId) => {
             set({
@@ -244,7 +322,13 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             set({ helpOpen });
           },
           showToast: (toast) => {
-            set((s) => ({ toast: { ...toast, id: (s.toast?.id ?? 0) + 1 } }));
+            set((s) => ({
+              toast: {
+                ...toast,
+                id: (s.toast?.id ?? 0) + 1,
+                createdAt: Date.now(),
+              },
+            }));
           },
           dismissToast: (id) => {
             set((s) => (s.toast?.id === id ? { toast: null } : {}));
@@ -260,6 +344,90 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setAddAccountOpen: (addAccountOpen) => {
             set({ addAccountOpen });
+          },
+          openComposer: ({ dirty = false, key, ...init }) => {
+            const session: ComposerSession = {
+              to: [],
+              cc: [],
+              bcc: [],
+              subject: "",
+              body: "",
+              forwarded: [],
+              showCcBcc: false,
+              window: "docked",
+              focus: "to",
+              ...init,
+              key: key ?? ++sequence,
+              revision: dirty ? 1 : 0,
+              savedRevision: 0,
+              saving: false,
+            };
+            set({ composer: session });
+            return session;
+          },
+          updateComposer: (key, patch, edit) => {
+            set((s) =>
+              s.composer?.key === key
+                ? {
+                    composer: {
+                      ...s.composer,
+                      ...patch,
+                      revision: s.composer.revision + (edit ? 1 : 0),
+                    },
+                  }
+                : {},
+            );
+          },
+          markComposerSaving: (key) => {
+            set((s) =>
+              s.composer?.key === key
+                ? { composer: { ...s.composer, saving: true } }
+                : {},
+            );
+          },
+          markComposerSaved: (key, result) => {
+            set((s) => {
+              if (s.composer?.key !== key) return {};
+              const { saveError, ...rest } = s.composer;
+              return {
+                composer:
+                  "error" in result
+                    ? { ...rest, saving: false, saveError: result.error }
+                    : {
+                        ...rest,
+                        saving: false,
+                        draftId: result.draftId,
+                        savedRevision: Math.max(
+                          rest.savedRevision,
+                          result.revision,
+                        ),
+                      },
+              };
+            });
+          },
+          closeComposer: (key) => {
+            set((s) => (s.composer?.key === key ? { composer: null } : {}));
+          },
+          queueSend: (key, delayMs) => {
+            const { composer, pendingSends } = get();
+            if (composer?.key !== key) return undefined;
+            const now = Date.now();
+            const pending: PendingSend = {
+              id: ++sequence,
+              session: composer,
+              queuedAt: now,
+              sendAt: now + delayMs,
+            };
+            set({ composer: null, pendingSends: [...pendingSends, pending] });
+            return pending;
+          },
+          takePendingSend: (id) => {
+            const pending = get().pendingSends.find((p) => p.id === id);
+            if (pending)
+              set((s) => ({
+                pendingSends: s.pendingSends.filter((p) => p.id !== id),
+              }));
+            return pending;
           },
         };
       },

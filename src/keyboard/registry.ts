@@ -172,7 +172,9 @@ function isEditable(target: EventTarget | null): boolean {
   if (
     tag === "textarea" ||
     tag === "select" ||
-    element.isContentEditable === true
+    element.isContentEditable === true ||
+    // Rich text editors; also where isContentEditable isn't implemented.
+    element.getAttribute("contenteditable") === "true"
   )
     return true;
   return (

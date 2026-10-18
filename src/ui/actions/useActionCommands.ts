@@ -1,12 +1,11 @@
 import { useMemo } from "react";
 import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
-import { useUiStore } from "../../state/context";
+import type { Undo } from "./useUndo";
 import type { MailActions } from "./useMailActions";
 
-/** Keyboard shortcuts for mail actions. */
-export function useActionCommands(actions: MailActions): void {
-  const store = useUiStore();
+/** Keyboard shortcuts for mail actions; `undo` is the app's combined undo. */
+export function useActionCommands(actions: MailActions, undo: Undo): void {
   const commands = useMemo((): Command[] => {
     const group = "Actions";
     const hasTargets = () => actions.targets().length > 0;
@@ -109,12 +108,10 @@ export function useActionCommands(actions: MailActions): void {
         group,
         description: "Undo",
         keys: ["z"],
-        when: () => store.getState().toast?.undo !== undefined,
-        run: () => {
-          actions.undo();
-        },
+        when: undo.canUndo,
+        run: undo.undo,
       },
     ];
-  }, [actions, store]);
+  }, [actions, undo]);
   useCommands(commands);
 }

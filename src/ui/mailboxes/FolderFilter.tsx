@@ -81,6 +81,7 @@ export function FolderFilter() {
       <input
         ref={inputRef}
         id={FOLDER_FILTER_ID}
+        data-initial-focus=""
         type="search"
         aria-label="Filter folders"
         placeholder="Filter folders"

@@ -3,6 +3,12 @@ import { useAccounts } from "../../accounts/context";
 import { useRoute, useUi } from "../../state/context";
 import { useActionCommands } from "../actions/useActionCommands";
 import { useMailActions } from "../actions/useMailActions";
+import { useUndo } from "../actions/useUndo";
+import { ComposerHost } from "../composer/ComposerHost";
+import { SendQueueBar } from "../composer/SendQueueBar";
+import { useComposeActions } from "../composer/useComposeActions";
+import { useComposeCommands } from "../composer/useComposeCommands";
+import { useComposerEffects } from "../composer/useComposerEffects";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
@@ -39,7 +45,11 @@ function MailApp() {
   useListController(breakpoint);
   useGlobalCommands(breakpoint);
   const actions = useMailActions();
-  useActionCommands(actions);
+  const compose = useComposeActions();
+  useComposerEffects(breakpoint, compose);
+  useComposeCommands(compose);
+  const undo = useUndo(actions, compose);
+  useActionCommands(actions, undo);
 
   useEffect(() => {
     if (breakpoint !== "medium") setDrawerOpen(false);
@@ -115,7 +125,9 @@ function MailApp() {
       <MailboxPickerHost />
       <ConfirmHost />
       <AddAccountDialog />
-      <ToastHost onUndo={actions.undo} />
+      <ComposerHost breakpoint={breakpoint} actions={compose} />
+      <SendQueueBar actions={compose} />
+      <ToastHost onUndo={undo.undo} />
     </div>
   );
 }

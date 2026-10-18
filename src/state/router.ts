@@ -18,15 +18,20 @@ export interface RouteSearch {
 
 /**
  * Navigation state kept in the URL hash:
- * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]]`, or `null`
- * for `#/` (on phones: the folder tree). With a search, `mailboxId` is the
- * mailbox it was started from.
+ * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]][&compose=…]`,
+ * or `null` for `#/` (on phones: the folder tree). With a search,
+ * `mailboxId` is the mailbox it was started from.
  */
 export type Route = {
   readonly accountId: AccountId;
   readonly mailboxId: MailboxId;
   readonly messageId?: MessageId;
   readonly search?: RouteSearch;
+  /**
+   * A full-screen composer is open (tablets and phones), so Back closes it:
+   * `new`, or the id of its draft so a reload can reopen it. Opaque.
+   */
+  readonly compose?: string;
 } | null;
 
 /** Parses a location hash. Unknown or partial hashes become `null`. */
@@ -38,6 +43,7 @@ export function parseHash(hash: string): Route {
   if (!account || !mailbox || segments.length > 3) return null;
   const params = new URLSearchParams(query);
   const text = params.get("q") ?? "";
+  const compose = params.get("compose");
   return {
     accountId: asAccountId(account),
     mailboxId: asMailboxId(mailbox),
@@ -45,6 +51,7 @@ export function parseHash(hash: string): Route {
     ...(text.trim()
       ? { search: { text, everywhere: params.get("in") === "all" } }
       : {}),
+    ...(compose ? { compose } : {}),
   };
 }
 
@@ -55,11 +62,15 @@ export function formatRoute(route: Route): string {
     (segment): segment is NonNullable<typeof segment> => segment !== undefined,
   );
   const path = segments.map((segment) => encodeURIComponent(segment));
-  const { search } = route;
-  if (!search?.text.trim()) return `#/${path.join("/")}`;
-  const params = new URLSearchParams({ q: search.text });
-  if (search.everywhere) params.set("in", "all");
-  return `#/${path.join("/")}?${params.toString()}`;
+  const { search, compose } = route;
+  const params = new URLSearchParams();
+  if (search?.text.trim()) {
+    params.set("q", search.text);
+    if (search.everywhere) params.set("in", "all");
+  }
+  if (compose) params.set("compose", compose);
+  const query = params.toString();
+  return `#/${path.join("/")}${query ? `?${query}` : ""}`;
 }
 
 /** True if both routes show the same list: mailbox and search (ignoring the message). */

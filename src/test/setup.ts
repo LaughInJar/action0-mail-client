@@ -6,6 +6,10 @@ import { afterEach } from "vitest";
 if (typeof Element !== "undefined") {
   Element.prototype.scrollIntoView = () => undefined;
   Element.prototype.scrollBy = () => undefined;
+  // ProseMirror (the composer's editor) measures the selection.
+  const noRects = () => Object.assign([], { item: () => null }) as DOMRectList;
+  Range.prototype.getClientRects = noRects;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
 }
 
 afterEach(() => {

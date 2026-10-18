@@ -18,6 +18,8 @@ export interface SafeHtmlFrameProps {
   /** Complete document from `buildMailDocument()` (sanitized, with CSP). */
   readonly srcDoc: string;
   readonly title: string;
+  /** Pass key presses inside the mail on to the app's shortcuts (default true). */
+  readonly shortcuts?: boolean;
 }
 
 /**
@@ -25,7 +27,11 @@ export interface SafeHtmlFrameProps {
  * content, so the reader pane scrolls as one. Wide mails are zoomed out to
  * fit the pane. Key presses inside the mail still reach the app's shortcuts.
  */
-export function SafeHtmlFrame({ srcDoc, title }: SafeHtmlFrameProps) {
+export function SafeHtmlFrame({
+  srcDoc,
+  title,
+  shortcuts = true,
+}: SafeHtmlFrameProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const registry = useCommandRegistry();
   const [height, setHeight] = useState(160);
@@ -68,7 +74,7 @@ export function SafeHtmlFrame({ srcDoc, title }: SafeHtmlFrameProps) {
       observer?.observe(frame);
       observer?.observe(doc.body);
       const onKeyDown = (event: KeyboardEvent) => {
-        registry.handleKeyDown(event);
+        if (shortcuts) registry.handleKeyDown(event);
       };
       doc.addEventListener("keydown", onKeyDown);
       fit();
@@ -84,7 +90,7 @@ export function SafeHtmlFrame({ srcDoc, title }: SafeHtmlFrameProps) {
       frame.removeEventListener("load", attach);
       detach?.();
     };
-  }, [registry]);
+  }, [registry, shortcuts]);
 
   return (
     <iframe

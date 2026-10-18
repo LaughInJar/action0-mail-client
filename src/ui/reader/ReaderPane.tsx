@@ -11,6 +11,11 @@ import type { Breakpoint } from "../layout/useBreakpoint";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
 import { listKeyOf } from "../messages/useCurrentList";
+import { Icon } from "../common/Icon";
+import {
+  useComposeActions,
+  type ComposeActions,
+} from "../composer/useComposeActions";
 import { AttachmentList } from "./AttachmentList";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
@@ -87,6 +92,10 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   });
   const inbox = mailboxes?.find((mailbox) => mailbox.role === "inbox");
   const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
+  const compose = useComposeActions();
+  const drafts = mailboxes?.find((mailbox) => mailbox.role === "drafts");
+  const isDraft =
+    !!message && !!drafts && message.mailboxIds.includes(drafts.id);
 
   let content;
   if (message) {
@@ -99,6 +108,13 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
         />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList message={message} />
+        {compose.canCompose && (
+          <AnswerButtons
+            compose={compose}
+            messageId={message.id}
+            isDraft={isDraft}
+          />
+        )}
       </article>
     );
   } else if (error) {
@@ -135,6 +151,44 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           />
         )}
         <div className="flex-1" />
+        {message && compose.canCompose && (
+          <>
+            {isDraft ? (
+              <IconButton
+                label="Edit draft"
+                icon="pencil"
+                onClick={() => {
+                  compose.editDraft(message.id);
+                }}
+              />
+            ) : (
+              <>
+                <IconButton
+                  label="Reply (r)"
+                  icon="reply"
+                  onClick={() => {
+                    compose.reply(message.id, "reply");
+                  }}
+                />
+                <IconButton
+                  label="Reply all (Shift+R)"
+                  icon="reply-all"
+                  onClick={() => {
+                    compose.reply(message.id, "reply-all");
+                  }}
+                />
+                <IconButton
+                  label="Forward (f)"
+                  icon="forward"
+                  onClick={() => {
+                    compose.forward(message.id);
+                  }}
+                />
+              </>
+            )}
+            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+          </>
+        )}
         {message && (
           <MailActionButtons
             actions={actions}
@@ -149,6 +203,69 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
       >
         {content}
       </div>
+    </div>
+  );
+}
+
+/** Big Reply / Reply all / Forward buttons below the message (touch friendly). */
+function AnswerButtons({
+  compose,
+  messageId,
+  isDraft,
+}: {
+  compose: ComposeActions;
+  messageId: MessageId;
+  isDraft: boolean;
+}) {
+  const button =
+    "flex items-center gap-2 rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
+  if (isDraft)
+    return (
+      <div className="flex flex-wrap gap-2 px-4 pt-2 pb-6 sm:px-6">
+        <button
+          type="button"
+          className={button}
+          onClick={() => {
+            compose.editDraft(messageId);
+          }}
+        >
+          <Icon name="pencil" className="size-4" />
+          Edit draft
+        </button>
+      </div>
+    );
+  return (
+    <div className="flex flex-wrap gap-2 px-4 pt-2 pb-6 sm:px-6">
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          compose.reply(messageId, "reply");
+        }}
+      >
+        <Icon name="reply" className="size-4" />
+        Reply
+      </button>
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          compose.reply(messageId, "reply-all");
+        }}
+      >
+        <Icon name="reply-all" className="size-4" />
+        Reply all
+      </button>
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          compose.forward(messageId);
+        }}
+      >
+        <Icon name="forward" className="size-4" />
+        Forward
+      </button>
     </div>
   );
 }
