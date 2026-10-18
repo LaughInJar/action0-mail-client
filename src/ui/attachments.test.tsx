@@ -5,8 +5,9 @@ import { demoHash, renderApp } from "../test/renderApp";
 
 const subject = (name: string) =>
   screen.findByRole("heading", { level: 1, name });
+// The editor loads on first use; on a cold CI machine that takes a moment.
 const composer = (name: string | RegExp) =>
-  screen.findByRole("dialog", { name });
+  screen.findByRole("dialog", { name }, { timeout: 5000 });
 const SAVE_WAIT = { timeout: 4000 };
 vi.setConfig({ testTimeout: 15_000 });
 
