@@ -32,9 +32,24 @@ export interface ProviderCapabilities {
   readonly deleteForever: boolean;
 }
 
-/** Parameters of {@link MailProvider.listMessages}. */
+/** Date order of a message list. */
+export type MessageOrder = "newest" | "oldest";
+
+/**
+ * Parameters of {@link MailProvider.listMessages}.
+ *
+ * Searching "everywhere" means searching the account's mailbox with the role
+ * `all` (Gmail: All Mail); accounts without one can only search a mailbox.
+ */
 export interface ListMessagesQuery {
   readonly mailboxId: MailboxId;
+  /**
+   * Only messages that match, in the provider's search syntax (Gmail: its
+   * search operators). Plain words work with every provider. Omit for all.
+   */
+  readonly search?: string;
+  /** Date order; defaults to `"newest"`. */
+  readonly order?: MessageOrder;
   /** Cursor from the previous page; omit for the first page. */
   readonly cursor?: Cursor;
   /** Maximum number of messages to return. */
@@ -64,7 +79,7 @@ export interface MailProvider {
   /** All mailboxes of the account, including hidden ones, in display order. */
   listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]>;
 
-  /** Messages in a mailbox, newest first. */
+  /** Messages in a mailbox (optionally only matching ones), by date. */
   listMessages(
     query: ListMessagesQuery,
     signal?: AbortSignal,

@@ -2,7 +2,7 @@ import type { InfiniteData } from "@tanstack/react-query";
 import type { Cursor, MailboxId } from "../core/ids";
 import type { MailIntent, MessageChange } from "../core/intents";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
-import type { ProviderCapabilities } from "../core/provider";
+import type { MessageOrder, ProviderCapabilities } from "../core/provider";
 
 /** Cached shape of a message list (an infinite query). */
 export type MessageListData = InfiniteData<
@@ -230,13 +230,14 @@ function staysIn(
 /**
  * Applies changes to a cached message list: updates rows, removes rows that
  * no longer belong to the mailbox, and re-inserts rows that came back (undo)
- * at their date position, as far as the loaded pages reach.
+ * at their date position in `order`, as far as the loaded pages reach.
  */
 export function patchList(
   data: MessageListData,
   mailbox: Mailbox,
   changes: readonly MessageChange[],
   isolating: ReadonlySet<MailboxId> = new Set(),
+  order: MessageOrder = "newest",
 ): MessageListData {
   const byId = new Map(changes.map((change) => [change.id, change]));
   let pages: Page<MessageSummary>[] = data.pages.map((page) => ({
@@ -267,7 +268,7 @@ export function patchList(
         !belongsTo(mailbox, change.before, isolating),
     )
     .map((change) => change.after);
-  for (const row of returning) pages = insertByDate(pages, row);
+  for (const row of returning) pages = insertByDate(pages, row, order);
 
   return { ...data, pages };
 }
@@ -275,18 +276,21 @@ export function patchList(
 function insertByDate(
   pages: Page<MessageSummary>[],
   row: MessageSummary,
+  order: MessageOrder,
 ): Page<MessageSummary>[] {
+  const comesAfter = (item: MessageSummary) =>
+    order === "newest"
+      ? item.receivedAt < row.receivedAt
+      : item.receivedAt > row.receivedAt;
   for (const [pageIndex, page] of pages.entries()) {
-    const index = page.items.findIndex(
-      (item) => item.receivedAt < row.receivedAt,
-    );
+    const index = page.items.findIndex(comesAfter);
     if (index !== -1) {
       const items = [...page.items];
       items.splice(index, 0, row);
       return pages.map((p, i) => (i === pageIndex ? { ...p, items } : p));
     }
   }
-  // Older than everything loaded: append only if there's nothing more to load.
+  // Past everything loaded: append only if there's nothing more to load.
   const last = pages.at(-1);
   if (!last || last.nextCursor !== undefined) return pages;
   return pages.map((p, i) =>

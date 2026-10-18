@@ -6,20 +6,21 @@ import {
   type MailIntent,
   type MessageChange,
 } from "../../core/intents";
-import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
+import { findMailbox } from "../../data/hooks";
 import {
   useApplyIntent,
   useEmptyMailbox,
   usePreviewIntent,
 } from "../../data/mutations";
 import { belongsTo, isolatingMailboxes } from "../../data/optimistic";
-import { useRoute, useRouter, useUiStore } from "../../state/context";
+import { useRouter, useUiStore } from "../../state/context";
+import { listRoute } from "../../state/router";
 import { nextAfterRemoval } from "../../state/selection";
 import type { ConfirmState, PickerState } from "../../state/uiStore";
 import type { Mailbox } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
-import { listKeyOf } from "../messages/useListController";
+import { useCurrentList } from "../messages/useCurrentList";
 
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
@@ -91,13 +92,17 @@ const count = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
  * optimistically and reports it in an undoable toast.
  */
 export function useMailActions(): MailActions {
-  const route = useRoute();
+  const {
+    route,
+    list: { data: items },
+    mailboxes,
+    scope: mailbox,
+    listKey,
+  } = useCurrentList();
   const router = useRouter();
   const store = useUiStore();
   const breakpoint = useBreakpoint();
   const handle = useAccountHandle(route?.accountId);
-  const { data: mailboxes } = useMailboxes(route?.accountId);
-  const { data: items } = useMessageList(route?.accountId, route?.mailboxId);
   const preview = usePreviewIntent();
   // mutateAsync, not mutate: the promise settles even when the calling
   // component (picker, confirmation, reader) unmounts first, so error toasts
@@ -108,7 +113,6 @@ export function useMailActions(): MailActions {
 
   return useMemo((): MailActions => {
     const orderedIds = (items ?? []).map((item) => item.id);
-    const mailbox = findMailbox(mailboxes, route?.mailboxId);
     const isolating = isolatingMailboxes(mailboxes ?? []);
     const view = mailbox?.role;
     const roleOf = (id: MailboxId) => findMailbox(mailboxes, id)?.role;
@@ -162,7 +166,7 @@ export function useMailActions(): MailActions {
         breakpoint === "narrow" &&
         route.messageId !== undefined
       ) {
-        const list = { accountId: route.accountId, mailboxId: route.mailboxId };
+        const list = listRoute(route);
         router.navigate(next === null ? list : { ...list, messageId: next }, {
           replace: true,
         });
@@ -287,7 +291,12 @@ export function useMailActions(): MailActions {
         if (!capabilities?.move) return;
         const name = nameOf(to);
         perform(
-          { kind: "move", ids: ids(explicit), from: route.mailboxId, to },
+          {
+            kind: "move",
+            ids: ids(explicit),
+            from: mailbox?.id ?? route.mailboxId,
+            to,
+          },
           {
             done: (n) => `Moved ${count(n)} to ${name}`,
             failure: "Couldn’t move",
@@ -389,7 +398,9 @@ export function useMailActions(): MailActions {
       },
 
       requestEmpty: () => {
-        if (!route || !mailbox || !capabilities?.deleteForever) return;
+        // Emptying deletes everything, so not from a search's results.
+        if (!route || route.search || !mailbox || !capabilities?.deleteForever)
+          return;
         if (view !== "trash" && view !== "junk") return;
         store.getState().setConfirm({
           title: `Empty ${mailbox.name}?`,
@@ -417,7 +428,7 @@ export function useMailActions(): MailActions {
           );
           return;
         }
-        store.getState().enterList(listKeyOf(route) ?? "", null);
+        store.getState().enterList(listKey ?? "", null);
         empty({
           accountId: action.accountId,
           mailboxId: action.mailboxId,
@@ -460,6 +471,8 @@ export function useMailActions(): MailActions {
     capabilities,
     empty,
     items,
+    listKey,
+    mailbox,
     mailboxes,
     preview,
     route,

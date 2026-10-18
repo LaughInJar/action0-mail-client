@@ -187,6 +187,33 @@ describe("patchList", () => {
     ]);
   });
 
+  it("re-inserts restored rows at their place in an oldest-first list", () => {
+    const archiveM2 = planChanges(
+      { kind: "archive", ids: ids("m2") },
+      [m2],
+      mailboxes,
+      labels,
+    );
+    const oldestFirst = list([m3, m2, m1]);
+    const archived = patchList(
+      oldestFirst,
+      inbox,
+      archiveM2,
+      new Set(),
+      "oldest",
+    );
+    expect(rowIds(archived)).toEqual(["m3", "m1"]);
+    const back = planChanges(
+      { kind: "unarchive", ids: ids("m2") },
+      [archiveM2[0]!.after],
+      mailboxes,
+      labels,
+    );
+    expect(
+      rowIds(patchList(archived, inbox, back, new Set(), "oldest")),
+    ).toEqual(["m3", "m2", "m1"]);
+  });
+
   it("doesn't append restored rows beyond the loaded pages", () => {
     const old = message("old", 999, ["work"]);
     const back = planChanges(

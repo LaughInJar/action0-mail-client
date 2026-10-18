@@ -20,6 +20,7 @@ import type {
   ProviderCapabilities,
 } from "../../core/provider";
 import { sleep } from "../../lib/sleep";
+import { foldText } from "../../lib/text";
 
 /** In-memory content of a fake account. */
 export interface FakeMailData {
@@ -40,8 +41,10 @@ export interface FakeMailProviderOptions {
 /**
  * {@link MailProvider} backed by in-memory data. Used by tests and by the demo
  * account. It follows the same rules as real providers: views are computed,
- * counts are derived from the messages, results are newest first, and
- * writes change what later reads return. It behaves like a label-based
+ * counts are derived from the messages, results are sorted by date, and
+ * writes change what later reads return. Search matches plain words
+ * (case- and accent-insensitive) in subject, sender, recipients and snippet;
+ * there are no search operators. It behaves like a label-based
  * provider (Gmail): archiving removes the inbox membership.
  */
 export class FakeMailProvider implements MailProvider {
@@ -86,12 +89,19 @@ export class FakeMailProvider implements MailProvider {
   }
 
   async listMessages(
-    { mailboxId, cursor, limit }: ListMessagesQuery,
+    { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
     await this.#delay(signal);
     const offset = cursor ? Number(cursor) : 0;
-    const all = this.#messagesIn(mailboxId);
+    const words = foldText(search ?? "")
+      .split(/\s+/)
+      .filter(Boolean);
+    const all = this.#messagesIn(mailboxId).filter((message) => {
+      const text = foldText(searchableText(message));
+      return words.every((word) => text.includes(word));
+    });
+    if (order === "oldest") all.reverse();
     const items = all.slice(offset, offset + limit).map(toSummary);
     const next = offset + limit;
     return {
@@ -336,4 +346,15 @@ function withMembership(
       ]),
     ],
   };
+}
+
+/** What a search looks at. */
+function searchableText(message: Message): string {
+  return [
+    message.subject,
+    message.snippet,
+    ...[message.from, ...message.to].flatMap((address) =>
+      address ? [address.name ?? "", address.address] : [],
+    ),
+  ].join(" ");
 }

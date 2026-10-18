@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { isMailError } from "../../core/errors";
-import { asAttachmentId, asMessageId } from "../../core/ids";
+import { asAttachmentId, asMessageId, type Cursor } from "../../core/ids";
 import { createDemoData, DEMO_MAILBOX } from "./demoData";
 import { FakeMailProvider } from "./FakeMailProvider";
 
@@ -25,6 +25,48 @@ describe("FakeMailProvider", () => {
       ...(first.nextCursor ? { cursor: first.nextCursor } : {}),
     });
     expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
+  });
+
+  it("searches plain words in subject, snippet and addresses", async () => {
+    const fake = provider();
+    const search = async (text: string) =>
+      (
+        await fake.listMessages({
+          mailboxId: DEMO_MAILBOX.all,
+          search: text,
+          limit: 500,
+        })
+      ).items.map((m) => m.subject);
+
+    expect(await search("WEEKEND packing")).toEqual([
+      "Packing list for the weekend",
+    ]);
+    expect(await search("billing@shop")).toContain("Your invoice 2026-1043");
+    expect(await search("Cafe")).toEqual(await search("café"));
+    // No operators: this is just text that doesn't occur.
+    expect(await search("from:billing")).toEqual([]);
+  });
+
+  it("lists oldest first on request, across pages", async () => {
+    const fake = provider();
+    const all = async (order: "newest" | "oldest") => {
+      const ids: string[] = [];
+      let cursor: Cursor | undefined;
+      do {
+        const page = await fake.listMessages({
+          mailboxId: DEMO_MAILBOX.all,
+          order,
+          limit: 50,
+          ...(cursor ? { cursor } : {}),
+        });
+        ids.push(...page.items.map((m) => m.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      return ids;
+    };
+    const newest = await all("newest");
+    expect(newest.length).toBeGreaterThan(100);
+    expect(await all("oldest")).toEqual([...newest].reverse());
   });
 
   it("returns summaries without bodies from list calls", async () => {

@@ -2,13 +2,16 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam (features 1–4).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search (features 1–5).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
 - Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
 - Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
+- Search as you type, in the current folder or everywhere. Gmail's search operators work (`from:`, `has:attachment`, `before:2026/01/01`, …). The search is part of the URL, so Back and reloading keep it.
+- Sort the list by date, newest or oldest first.
+- Filter the folder tree by name, to find a label quickly.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
@@ -98,6 +101,8 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 | <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                               |
 | <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                        |
 | <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail                    |
+| <kbd>/</kbd>                                                                | Search mail (Enter or ↓: to the results, Esc: end search) |
+| <kbd>g</kbd> then <kbd>f</kbd>                                              | Filter folders (Enter opens the first match)              |
 | <kbd>a</kbd>                                                                | Archive the message or selection                          |
 | <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                                     |
 | <kbd>z</kbd>                                                                | Undo the last action                                      |
@@ -149,11 +154,11 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 
 ### What is stored where
 
-| Where          | What                                                                   | How long                            |
-| -------------- | ---------------------------------------------------------------------- | ----------------------------------- |
-| Memory         | Message bodies, inline images, which messages may load remote images   | Until reload                        |
-| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache)      | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion | Until sign-out                      |
+| Where          | What                                                                                             | How long                            |
+| -------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images                             | Until reload                        |
+| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory) | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order               | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

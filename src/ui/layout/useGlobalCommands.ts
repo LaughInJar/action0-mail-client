@@ -5,6 +5,11 @@ import { useMailboxes } from "../../data/hooks";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
 import { useRoute, useRouter, useUiStore } from "../../state/context";
+import { listRoute } from "../../state/router";
+import { focusWhenReady } from "../common/focusWhenReady";
+import { FOLDER_FILTER_ID } from "../mailboxes/FolderFilter";
+import { SEARCH_FIELD_ID } from "../messages/ListToolbar";
+import type { Breakpoint } from "./useBreakpoint";
 
 /** Id of the scroll container of the reader, for the scroll shortcuts. */
 export const READER_SCROLL_ID = "reader-scroll";
@@ -16,8 +21,8 @@ const GO_TO: readonly (readonly [string, MailboxRole, string])[] = [
   ["g a", "all", "Go to All Mail"],
 ];
 
-/** Shortcuts that work everywhere: go-to, reader scrolling, help. */
-export function useGlobalCommands(): void {
+/** Shortcuts that work everywhere: go-to, search, reader scrolling, help. */
+export function useGlobalCommands(breakpoint: Breakpoint): void {
   const route = useRoute();
   const router = useRouter();
   const store = useUiStore();
@@ -54,6 +59,31 @@ export function useGlobalCommands(): void {
     return [
       ...goTo,
       {
+        id: "search.mail",
+        group: "Search",
+        description: "Search mail",
+        keys: ["/"],
+        when: () => router.getRoute() !== null,
+        run: () => {
+          const current = router.getRoute();
+          // Phones with the reader open: back to the list, which has the field.
+          if (breakpoint === "narrow" && current?.messageId !== undefined)
+            router.navigate(listRoute(current));
+          focusWhenReady(SEARCH_FIELD_ID);
+        },
+      },
+      {
+        id: "search.folders",
+        group: "Search",
+        description: "Filter folders",
+        keys: ["g f"],
+        run: () => {
+          if (breakpoint === "medium") store.getState().setDrawerOpen(true);
+          else if (breakpoint === "narrow") router.navigate(null);
+          focusWhenReady(FOLDER_FILTER_ID);
+        },
+      },
+      {
         id: "reader.page-down",
         group: "Reading",
         description: "Scroll the message down",
@@ -84,7 +114,7 @@ export function useGlobalCommands(): void {
         },
       },
     ];
-  }, [accountId, mailboxes, router, store]);
+  }, [accountId, breakpoint, mailboxes, router, store]);
 
   useCommands(commands);
 }

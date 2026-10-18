@@ -113,3 +113,7 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - When Google isn't configured, the wizard shows the Google Cloud checklist and accepts the client ID. It's stored as a setting in the browser; `VITE_GOOGLE_CLIENT_ID` still works and takes precedence.
   - Account types that don't exist yet (Exchange, IMAP) appear as greyed-out "coming later" cards.
   - After connecting, the new account's Inbox opens.
+- **Search decisions:**
+  - The left column has a folder/label filter (`g f`). Matches show with their parent mailboxes, and ↓/Enter/Esc work in the field.
+  - Mail search runs on the server (Gmail's `q`, operators included) as you type, about 0.4 s after the last keystroke. It searches the current folder, with a one-click switch to "Everywhere". `/` focuses the field. The search is part of the URL.
+  - The list sorts newest or oldest first, remembered per browser. Gmail only lists newest first, so "Oldest first" fetches all message ids first and then loads details page by page.

@@ -3,13 +3,14 @@ import type { AccountId, MessageId } from "../../core/ids";
 import { isMailError } from "../../core/errors";
 import { useMailboxes, useMessage } from "../../data/hooks";
 import { useRoute, useRouter, useUi } from "../../state/context";
+import { listRoute } from "../../state/router";
 import { errorMessage } from "../common/errorMessage";
 import { IconButton } from "../common/IconButton";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
-import { listKeyOf } from "../messages/useListController";
+import { listKeyOf } from "../messages/useCurrentList";
 import { AttachmentList } from "./AttachmentList";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
@@ -19,7 +20,10 @@ import { useMarkReadOnView } from "./useMarkReadOnView";
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const route = useRoute();
   const router = useRouter();
-  const listKey = listKeyOf(route);
+  const listKey = listKeyOf(
+    route,
+    useUi((state) => state.listOrder),
+  );
   const focusedId = useUi((state) =>
     state.listKey === listKey ? state.focusedId : null,
   );
@@ -35,11 +39,7 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
     breakpoint === "narrow"
       ? () => {
           if (router.canGoBack()) router.back();
-          else if (route)
-            router.navigate(
-              { accountId: route.accountId, mailboxId: route.mailboxId },
-              { replace: true },
-            );
+          else if (route) router.navigate(listRoute(route), { replace: true });
         }
       : undefined;
 

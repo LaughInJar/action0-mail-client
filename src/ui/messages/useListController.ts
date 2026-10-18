@@ -1,19 +1,15 @@
 import { useEffect, useMemo } from "react";
 import type { MessageId } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
-import { useMessageList } from "../../data/hooks";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
-import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
-import type { HashRouter, Route } from "../../state/router";
+import { useRouter, useUi, useUiStore } from "../../state/context";
+import { listRoute, type HashRouter } from "../../state/router";
 import type { UiStore } from "../../state/uiStore";
 import type { Breakpoint } from "../layout/useBreakpoint";
+import { listKeyOf, useCurrentList } from "./useCurrentList";
 
 const EMPTY: readonly MessageSummary[] = [];
-
-/** Identifies the list a route shows. */
-export const listKeyOf = (route: Route): string | null =>
-  route ? `${route.accountId}/${route.mailboxId}` : null;
 
 /**
  * Owns the message-list behavior that must work regardless of which panes
@@ -24,13 +20,11 @@ export const listKeyOf = (route: Route): string | null =>
  * - registers the list's keyboard commands.
  */
 export function useListController(breakpoint: Breakpoint): void {
-  const route = useRoute();
+  const { route, list, listKey } = useCurrentList();
   const router = useRouter();
   const store = useUiStore();
-  const list = useMessageList(route?.accountId, route?.mailboxId);
   const items = list.data ?? EMPTY;
   const ids = useMemo(() => items.map((item) => item.id), [items]);
-  const listKey = listKeyOf(route);
 
   // URL → store: switching lists resets the selection; a message in the URL gets focus.
   useEffect(() => {
@@ -55,7 +49,7 @@ export function useListController(breakpoint: Breakpoint): void {
       if (
         !current ||
         state.focusedId === null ||
-        state.listKey !== listKeyOf(current)
+        state.listKey !== listKeyOf(current, state.listOrder)
       )
         return;
       if (current.messageId === state.focusedId) return;
@@ -251,10 +245,7 @@ function createListCommands({
         const current = router.getRoute();
         if (router.canGoBack()) router.back();
         else if (current)
-          router.navigate(
-            { accountId: current.accountId, mailboxId: current.mailboxId },
-            { replace: true },
-          );
+          router.navigate(listRoute(current), { replace: true });
       },
     },
   ];

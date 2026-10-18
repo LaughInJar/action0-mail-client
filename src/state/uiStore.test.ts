@@ -5,7 +5,7 @@ import { MemoryStorage } from "../test/memoryStorage";
 import { COLUMN_LIMITS, createUiStore, UI_STATE_KEY } from "./uiStore";
 
 describe("uiStore persistence", () => {
-  it("persists only column widths and tree expansion, never mail-related state", () => {
+  it("persists only column widths, tree expansion and list order, never mail-related state", () => {
     const storage = new MemoryStorage();
     const store = createUiStore(storage);
     const {
@@ -14,8 +14,12 @@ describe("uiStore persistence", () => {
       enterList,
       toggle,
       allowRemoteContent,
+      setListOrder,
+      setFolderFilter,
     } = store.getState();
     setColumnWidth(0, 300);
+    setListOrder("oldest");
+    setFolderFilter("secret-filter");
     toggleNode("account:x");
     enterList("acct/inbox", asMessageId("secret-message-id"));
     toggle(asMessageId("selected-id"));
@@ -27,9 +31,10 @@ describe("uiStore persistence", () => {
     expect(persisted.state).toEqual({
       columnWidths: [300, COLUMN_LIMITS[1].initial],
       toggledNodes: ["account:x"],
+      listOrder: "oldest",
     });
     expect(storage.dump()).not.toMatch(
-      /secret-message-id|selected-id|allowed-id/,
+      /secret-message-id|selected-id|allowed-id|secret-filter/,
     );
   });
 
@@ -38,7 +43,11 @@ describe("uiStore persistence", () => {
     storage.setItem(
       UI_STATE_KEY,
       JSON.stringify({
-        state: { columnWidths: [5, 9999], toggledNodes: ["a", 3] },
+        state: {
+          columnWidths: [5, 9999],
+          toggledNodes: ["a", 3],
+          listOrder: "sideways",
+        },
         version: 1,
       }),
     );
@@ -48,6 +57,7 @@ describe("uiStore persistence", () => {
       COLUMN_LIMITS[1].max,
     ]);
     expect([...state.toggledNodes]).toEqual(["a"]);
+    expect(state.listOrder).toBe("newest");
 
     storage.setItem(UI_STATE_KEY, "not json");
     expect(createUiStore(storage).getState().columnWidths).toEqual([
