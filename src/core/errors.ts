@@ -4,10 +4,17 @@
  * - `not-found`: the message or mailbox no longer exists.
  * - `rate-limited`: the provider throttled us and retries ran out.
  * - `network`: the request never got a response.
+ * - `unavailable`: the account can't do this right now, e.g. an optional
+ *   service isn't enabled or its permission was declined.
  * - `provider`: any other error reported by the provider.
  */
 export type MailErrorCode =
-  "auth-required" | "not-found" | "rate-limited" | "network" | "provider";
+  | "auth-required"
+  | "not-found"
+  | "rate-limited"
+  | "network"
+  | "unavailable"
+  | "provider";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

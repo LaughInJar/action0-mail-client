@@ -1,5 +1,13 @@
-import type { AttachmentId, Cursor, MailboxId, MessageId } from "./ids";
+import type { Draft, DraftInput } from "./compose";
 import type {
+  AttachmentId,
+  Cursor,
+  DraftId,
+  MailboxId,
+  MessageId,
+} from "./ids";
+import type {
+  EmailAddress,
   Mailbox,
   MailboxKind,
   Message,
@@ -30,6 +38,10 @@ export interface ProviderCapabilities {
   readonly spam: boolean;
   /** Supports {@link MailProvider.deleteForever} and {@link MailProvider.emptyMailbox}. */
   readonly deleteForever: boolean;
+  /** Supports drafts and sending ({@link MailProvider.saveDraft} and friends). */
+  readonly compose: boolean;
+  /** Supports {@link MailProvider.searchContacts}. */
+  readonly contacts: boolean;
 }
 
 /** Date order of a message list. */
@@ -176,4 +188,44 @@ export interface MailProvider {
     mailboxId: MailboxId,
     signal?: AbortSignal,
   ): Promise<{ readonly deleted: number }>;
+
+  /**
+   * Creates a draft (no `id`) or replaces one with new content. Returns the
+   * draft's id and the id of its new message.
+   */
+  saveDraft(
+    draft: DraftInput,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }>;
+
+  /** The draft whose message this is (a row in the drafts mailbox), if any. */
+  draftIdOf(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<DraftId | undefined>;
+
+  /** A saved draft, to continue editing it. */
+  getDraft(id: DraftId, signal?: AbortSignal): Promise<Draft>;
+
+  /** Deletes a draft permanently. */
+  deleteDraft(id: DraftId, signal?: AbortSignal): Promise<void>;
+
+  /**
+   * Sends a draft with the given (final) content. The draft is gone
+   * afterwards; the sent message is in the sent mailbox.
+   */
+  sendDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }>;
+
+  /**
+   * People whose name or address matches `query`, best matches first (only
+   * if {@link ProviderCapabilities.contacts}). Rejects with `unavailable`
+   * when the account's contacts can't be read right now.
+   */
+  searchContacts(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<readonly EmailAddress[]>;
 }

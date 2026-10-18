@@ -1,11 +1,18 @@
+import type { Draft, DraftInput } from "../../core/compose";
 import { MailError } from "../../core/errors";
 import {
+  asAttachmentId,
   asCursor,
+  asDraftId,
+  asMessageId,
+  asThreadId,
+  type DraftId,
   type AttachmentId,
   type MailboxId,
   type MessageId,
 } from "../../core/ids";
 import type {
+  EmailAddress,
   Mailbox,
   MailboxRole,
   Message,
@@ -28,6 +35,10 @@ export interface FakeMailData {
   readonly messages: readonly Message[];
   /** Attachment content, keyed by `${messageId}/${attachmentId}`. */
   readonly attachments?: ReadonlyMap<string, Blob>;
+  /** The account's own address: sender of sent mail; mail to it arrives in the inbox. */
+  readonly me?: EmailAddress;
+  /** People for address suggestions; enables {@link MailProvider.searchContacts}. */
+  readonly contacts?: readonly EmailAddress[];
 }
 
 /** Options of {@link FakeMailProvider}. */
@@ -36,6 +47,8 @@ export interface FakeMailProviderOptions {
   readonly latencyMs?: number;
   /** Makes every write fail (to exercise rollback). Can also be toggled via {@link FakeMailProvider.failWrites}. */
   readonly failWrites?: boolean;
+  /** Makes contact searches fail as `unavailable` (like a disabled People API). */
+  readonly contactsUnavailable?: boolean;
 }
 
 /**
@@ -57,20 +70,36 @@ export class FakeMailProvider implements MailProvider {
     trash: true,
     spam: true,
     deleteForever: true,
+    compose: true,
+    contacts: false,
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
+  /** Set to make contact searches fail as `unavailable`. */
+  contactsUnavailable: boolean;
   readonly #mailboxes: readonly Mailbox[];
-  readonly #attachments: ReadonlyMap<string, Blob> | undefined;
+  readonly #attachments: Map<string, Blob>;
   readonly #latencyMs: number;
+  readonly #me: EmailAddress;
+  readonly #contacts: readonly EmailAddress[];
+  readonly #drafts = new Map<
+    DraftId,
+    { readonly input: DraftInput; readonly messageId: MessageId }
+  >();
+  #nextId = 1;
   #messages: Message[];
 
   constructor(data: FakeMailData, options: FakeMailProviderOptions = {}) {
     this.#mailboxes = data.mailboxes;
     this.#messages = [...data.messages];
-    this.#attachments = data.attachments;
+    this.#attachments = new Map(data.attachments);
+    this.#me = data.me ?? { address: "me@example.com" };
+    this.#contacts = data.contacts ?? [];
     this.#latencyMs = options.latencyMs ?? 0;
     this.failWrites = options.failWrites ?? false;
+    this.contactsUnavailable = options.contactsUnavailable ?? false;
+    if (data.contacts)
+      this.capabilities = { ...this.capabilities, contacts: true };
   }
 
   async listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]> {
@@ -124,7 +153,7 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<Blob> {
     await this.#delay(signal);
-    const blob = this.#attachments?.get(`${messageId}/${attachmentId}`);
+    const blob = this.#attachments.get(`${messageId}/${attachmentId}`);
     if (!blob)
       throw new MailError("not-found", `No attachment ${attachmentId}`, {
         status: 404,
@@ -272,17 +301,170 @@ export class FakeMailProvider implements MailProvider {
     return { deleted: ids.length };
   }
 
-  async #write(
-    ids: readonly MessageId[],
-    signal: AbortSignal | undefined,
-    update: (message: Message) => Message,
-  ): Promise<MutationResult> {
+  async saveDraft(
+    draft: DraftInput,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    await this.#refuseIfFailing(signal);
+    const id = draft.id ?? asDraftId(`draft-${String(this.#nextId++)}`);
+    const previous = this.#drafts.get(id);
+    if (draft.id !== undefined && !previous)
+      throw new MailError("not-found", `No draft ${id}`, { status: 404 });
+    // Like Gmail: every save is a new message.
+    const message = this.#composeMessage(draft, this.#roleIds("drafts"), true);
+    this.#messages = [
+      ...this.#messages.filter((m) => m.id !== previous?.messageId),
+      message,
+    ];
+    this.#drafts.set(id, { input: { ...draft, id }, messageId: message.id });
+    return { id, messageId: message.id };
+  }
+
+  async draftIdOf(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<DraftId | undefined> {
+    await this.#delay(signal);
+    for (const [id, draft] of this.#drafts)
+      if (draft.messageId === messageId) return id;
+    return undefined;
+  }
+
+  async getDraft(id: DraftId, signal?: AbortSignal): Promise<Draft> {
+    await this.#delay(signal);
+    const draft = this.#drafts.get(id);
+    const message = this.#messages.find((m) => m.id === draft?.messageId);
+    if (!draft || !message)
+      throw new MailError("not-found", `No draft ${id}`, { status: 404 });
+    return {
+      ...draft.input,
+      id,
+      messageId: message.id,
+      // The parts now belong to the draft's own message.
+      forwarded: message.attachments.map((attachment) => ({
+        messageId: message.id,
+        attachmentId: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        ...(attachment.contentId === undefined
+          ? {}
+          : { contentId: attachment.contentId }),
+      })),
+    };
+  }
+
+  async deleteDraft(id: DraftId, signal?: AbortSignal): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    const draft = this.#drafts.get(id);
+    if (!draft)
+      throw new MailError("not-found", `No draft ${id}`, { status: 404 });
+    this.#drafts.delete(id);
+    this.#messages = this.#messages.filter((m) => m.id !== draft.messageId);
+  }
+
+  async sendDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    await this.#refuseIfFailing(signal);
+    const saved = this.#drafts.get(draft.id);
+    if (!saved)
+      throw new MailError("not-found", `No draft ${draft.id}`, { status: 404 });
+    this.#drafts.delete(draft.id);
+    // Like Gmail, mail to yourself is one message in Sent and the Inbox.
+    const toMe = [...draft.to, ...draft.cc, ...draft.bcc].some(
+      (a) => a.address.toLowerCase() === this.#me.address.toLowerCase(),
+    );
+    const sent = this.#composeMessage(
+      draft,
+      [...this.#roleIds("sent"), ...(toMe ? this.#roleIds("inbox") : [])],
+      !toMe,
+    );
+    this.#messages = [
+      ...this.#messages.filter((m) => m.id !== saved.messageId),
+      sent,
+    ];
+    return { messageId: sent.id };
+  }
+
+  async searchContacts(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<readonly EmailAddress[]> {
+    await this.#delay(signal);
+    if (this.contactsUnavailable)
+      throw new MailError("unavailable", "Demo contacts are switched off.");
+    const needle = foldText(query.trim());
+    return this.#contacts
+      .filter((person) =>
+        foldText(`${person.name ?? ""} ${person.address}`).includes(needle),
+      )
+      .slice(0, 10);
+  }
+
+  /** A message made from draft content, with copies of its forwarded parts. */
+  #composeMessage(
+    draft: DraftInput,
+    mailboxIds: readonly MailboxId[],
+    seen: boolean,
+  ): Message {
+    const id = asMessageId(`m-${String(this.#nextId++)}`);
+    const attachments = draft.forwarded.map((part, index) => {
+      const attachmentId = asAttachmentId(`part-${String(index)}`);
+      const content =
+        part.content ??
+        this.#attachments.get(`${part.messageId}/${part.attachmentId}`);
+      if (content) this.#attachments.set(`${id}/${attachmentId}`, content);
+      return {
+        id: attachmentId,
+        filename: part.filename,
+        mimeType: part.mimeType,
+        size: part.size,
+        ...(part.contentId === undefined ? {} : { contentId: part.contentId }),
+      };
+    });
+    return {
+      id,
+      threadId: draft.threading?.threadId ?? asThreadId(`t-${id}`),
+      mailboxIds,
+      from: this.#me,
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      replyTo: [],
+      internetMessageId: `<${id}@demo.example>`,
+      references: draft.threading?.references ?? [],
+      subject: draft.subject,
+      snippet: draft.text.replace(/\s+/g, " ").trim().slice(0, 140),
+      receivedAt: new Date().toISOString(),
+      flags: { seen, flagged: false },
+      hasAttachments: attachments.some((a) => a.contentId === undefined),
+      body: { html: draft.html, text: draft.text },
+      attachments,
+    };
+  }
+
+  #roleIds(role: MailboxRole): MailboxId[] {
+    const id = this.#roleId(role);
+    return id === undefined ? [] : [id];
+  }
+
+  async #refuseIfFailing(signal: AbortSignal | undefined): Promise<void> {
     await this.#delay(signal);
     if (this.failWrites) {
       throw new MailError("provider", "The demo server refused the change.", {
         status: 500,
       });
     }
+  }
+
+  async #write(
+    ids: readonly MessageId[],
+    signal: AbortSignal | undefined,
+    update: (message: Message) => Message,
+  ): Promise<MutationResult> {
+    await this.#refuseIfFailing(signal);
     const targets = new Set(ids);
     this.#messages = this.#messages.map((message) =>
       targets.has(message.id) ? update(message) : message,
@@ -328,7 +510,16 @@ export class FakeMailProvider implements MailProvider {
 }
 
 function toSummary(message: Message): MessageSummary {
-  const { cc, bcc, replyTo, body, attachments, ...summary } = message;
+  const {
+    cc,
+    bcc,
+    replyTo,
+    internetMessageId,
+    references,
+    body,
+    attachments,
+    ...summary
+  } = message;
   return summary;
 }
 

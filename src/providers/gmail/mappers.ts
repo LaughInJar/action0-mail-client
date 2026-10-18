@@ -56,8 +56,21 @@ export function toMessage(message: GmailMessage): Message {
     cc: parseAddressList(getHeader(headers, "Cc")),
     bcc: parseAddressList(getHeader(headers, "Bcc")),
     replyTo: parseAddressList(getHeader(headers, "Reply-To")),
+    ...messageIdHeaders(headers),
     body,
     attachments,
+  };
+}
+
+/** `Message-ID` and `References`, normalized to `<id>` tokens. */
+function messageIdHeaders(
+  headers: Parameters<typeof getHeader>[0],
+): Pick<Message, "internetMessageId" | "references"> {
+  const ids = (value: string | undefined) => value?.match(/<[^<>\s]+>/g) ?? [];
+  const [own] = ids(getHeader(headers, "Message-ID"));
+  return {
+    ...(own === undefined ? {} : { internetMessageId: own }),
+    references: ids(getHeader(headers, "References")),
   };
 }
 
