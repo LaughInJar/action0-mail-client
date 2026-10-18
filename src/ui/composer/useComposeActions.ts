@@ -32,6 +32,7 @@ import type {
   UiStore,
 } from "../../state/uiStore";
 import { errorMessage } from "../common/errorMessage";
+import { useT, type I18n } from "../../i18n/context";
 
 /** Starting, saving, sending and discarding mails. */
 export interface ComposeActions {
@@ -72,6 +73,7 @@ export function saveSession(
   store: UiStore,
   sync: DraftSync,
   session: ComposerSession,
+  t: I18n,
 ): Promise<void> {
   if (session.revision <= session.savedRevision) return Promise.resolve();
   const { key, revision } = session;
@@ -81,11 +83,11 @@ export function saveSession(
       store.getState().markComposerSaved(key, { revision, draftId: id });
     },
     (error: unknown) => {
-      const message = errorMessage(error);
+      const message = errorMessage(error, t);
       store.getState().markComposerSaved(key, { error: message });
       if (store.getState().composer?.key !== key)
         store.getState().showToast({
-          message: `Couldn’t save the draft: ${message}`,
+          message: t.composer.couldntSave(message),
           tone: "error",
         });
     },
@@ -93,17 +95,22 @@ export function saveSession(
 }
 
 /** Sends a queued mail now (when its undo period ends, or on "Send now"). */
-export function sendQueued(store: UiStore, sync: DraftSync, id: number): void {
+export function sendQueued(
+  store: UiStore,
+  sync: DraftSync,
+  id: number,
+  t: I18n,
+): void {
   const pending = store.getState().takePendingSend(id);
   if (!pending) return;
   const { session } = pending;
   sync.send(session.key, session.accountId, session, session.draftId).then(
     () => {
-      store.getState().showToast({ message: "Message sent", tone: "info" });
+      store.getState().showToast({ message: t.composer.sent, tone: "info" });
     },
     (error: unknown) => {
       store.getState().showToast({
-        message: `Couldn’t send: ${errorMessage(error)} It’s in Drafts.`,
+        message: t.composer.couldntSend(errorMessage(error, t)),
         tone: "error",
       });
     },
@@ -116,6 +123,7 @@ export function useComposeActions(): ComposeActions {
   const store = useUiStore();
   const registry = useAccountRegistry();
   const sync = useDraftSync();
+  const t = useT();
   const accounts = useAccounts();
   const routeAccount = useRoute()?.accountId;
   const accountId = routeAccount ?? accounts[0]?.account.id;
@@ -124,6 +132,12 @@ export function useComposeActions(): ComposeActions {
       .capabilities.compose === true;
 
   const actions = useMemo((): Omit<ComposeActions, "canCompose"> => {
+    const c = t.composer;
+    const quoteTexts = {
+      ...c.quote,
+      locale: t.locale,
+      unknownSender: t.common.unknownSender,
+    };
     const currentAccount = (): AccountId | undefined =>
       router.getRoute()?.accountId ?? registry.list()[0]?.account.id;
     const canComposeIn = (accountId: AccountId | undefined) =>
@@ -132,7 +146,7 @@ export function useComposeActions(): ComposeActions {
 
     const fail = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
-        message: `${prefix}: ${errorMessage(error)}`,
+        message: `${prefix}: ${errorMessage(error, t)}`,
         tone: "error",
       });
     };
@@ -140,7 +154,7 @@ export function useComposeActions(): ComposeActions {
     /** Opens a composer, saving the open one first. */
     const open = (init: ComposerInit) => {
       const current = store.getState().composer;
-      if (current) void saveSession(store, sync, current);
+      if (current) void saveSession(store, sync, current, t);
       const session = store.getState().openComposer(init);
       // Load attachment bytes once; saves upload them again from memory.
       if (session.attachments.some((part) => !part.content)) {
@@ -174,7 +188,7 @@ export function useComposeActions(): ComposeActions {
     /** The full message and the account's senders, then `start` with them. */
     const withMessage = (
       messageId: MessageId,
-      action: string,
+      failure: string,
       start: (
         accountId: AccountId,
         message: Message,
@@ -187,7 +201,7 @@ export function useComposeActions(): ComposeActions {
         .then(([message, senders]) => {
           start(accountId, message, senders);
         })
-        .catch(fail(`Couldn’t ${action}`));
+        .catch(fail(failure));
     };
 
     /** Shows a saved draft in the composer (or the open composer, if it's that draft). */
@@ -257,54 +271,62 @@ export function useComposeActions(): ComposeActions {
       },
 
       reply: (messageId, mode) => {
-        withMessage(messageId, "reply", (accountId, message, senders) => {
-          const me = registry.get(accountId)?.account.email;
-          const mine = [
-            ...(me ? [me] : []),
-            ...senders.map((sender) => sender.address),
-          ];
-          const { to, cc } = replyRecipients(message, mode, mine);
-          open({
-            accountId,
-            kind: mode,
-            ...sendingAs(replyFrom(message, senders)),
-            to,
-            cc,
-            showCcBcc: cc.length > 0,
-            subject: replySubject(message.subject),
-            quote: replyQuote(message),
-            threading: threadingFor(message),
-            focus: "body",
-          });
-        });
+        withMessage(
+          messageId,
+          c.couldntReply,
+          (accountId, message, senders) => {
+            const me = registry.get(accountId)?.account.email;
+            const mine = [
+              ...(me ? [me] : []),
+              ...senders.map((sender) => sender.address),
+            ];
+            const { to, cc } = replyRecipients(message, mode, mine);
+            open({
+              accountId,
+              kind: mode,
+              ...sendingAs(replyFrom(message, senders)),
+              to,
+              cc,
+              showCcBcc: cc.length > 0,
+              subject: replySubject(message.subject),
+              quote: replyQuote(message, quoteTexts),
+              threading: threadingFor(message),
+              focus: "body",
+            });
+          },
+        );
       },
 
       forward: (messageId) => {
-        withMessage(messageId, "forward", (accountId, message, senders) => {
-          const inline = new Set(
-            referencedInlineImages(message).map((image) => image.id),
-          );
-          open({
-            accountId,
-            kind: "forward",
-            ...sendingAs(replyFrom(message, senders)),
-            subject: forwardSubject(message.subject),
-            quote: forwardQuote(message),
-            attachments: message.attachments
-              .filter(
-                (part) => part.contentId === undefined || inline.has(part.id),
-              )
-              .map((part) => {
-                const attachment = attachmentOf(message.id, part);
-                if (inline.has(part.id)) return attachment;
-                // A Content-ID that the body doesn't show makes it a file.
-                const { contentId, ...file } = attachment;
-                return file;
-              }),
-            threading: threadingFor(message),
-            focus: "to",
-          });
-        });
+        withMessage(
+          messageId,
+          c.couldntForward,
+          (accountId, message, senders) => {
+            const inline = new Set(
+              referencedInlineImages(message).map((image) => image.id),
+            );
+            open({
+              accountId,
+              kind: "forward",
+              ...sendingAs(replyFrom(message, senders)),
+              subject: forwardSubject(message.subject),
+              quote: forwardQuote(message, quoteTexts),
+              attachments: message.attachments
+                .filter(
+                  (part) => part.contentId === undefined || inline.has(part.id),
+                )
+                .map((part) => {
+                  const attachment = attachmentOf(message.id, part);
+                  if (inline.has(part.id)) return attachment;
+                  // A Content-ID that the body doesn't show makes it a file.
+                  const { contentId, ...file } = attachment;
+                  return file;
+                }),
+              threading: threadingFor(message),
+              focus: "to",
+            });
+          },
+        );
       },
 
       editDraft: (messageId) => {
@@ -315,7 +337,7 @@ export function useComposeActions(): ComposeActions {
           .then((draft) => {
             openDraft(accountId, draft);
           })
-          .catch(fail("Couldn’t open the draft"));
+          .catch(fail(c.couldntOpenDraft));
       },
 
       resumeDraft: (draftId) => {
@@ -326,13 +348,13 @@ export function useComposeActions(): ComposeActions {
           .then((draft) => {
             openDraft(accountId, draft);
           })
-          .catch(fail("Couldn’t open the draft"));
+          .catch(fail(c.couldntOpenDraft));
       },
 
       close: () => {
         const current = store.getState().composer;
         if (!current) return;
-        void saveSession(store, sync, current);
+        void saveSession(store, sync, current, t);
         store.getState().closeComposer(current.key);
       },
 
@@ -344,11 +366,11 @@ export function useComposeActions(): ComposeActions {
           current.draftId !== undefined || current.revision > 0;
         sync
           .discard(current.key, current.accountId, current.draftId)
-          .catch(fail("Couldn’t delete the draft"));
+          .catch(fail(c.couldntDeleteDraft));
         if (hadContent) {
           const { draftId, ...rest } = current;
           store.getState().showToast({
-            message: "Draft discarded",
+            message: c.draftDiscarded,
             tone: "info",
             restoreDraft: rest,
           });
@@ -374,7 +396,7 @@ export function useComposeActions(): ComposeActions {
             ? pendingSends.at(-1)
             : pendingSends.find((p) => p.id === id);
         if (!pending || !store.getState().takePendingSend(pending.id)) return;
-        if (composer) void saveSession(store, sync, composer);
+        if (composer) void saveSession(store, sync, composer, t);
         const { session } = pending;
         store.getState().openComposer({
           ...session,
@@ -385,7 +407,7 @@ export function useComposeActions(): ComposeActions {
       },
 
       sendNow: (id) => {
-        sendQueued(store, sync, id);
+        sendQueued(store, sync, id, t);
       },
 
       attachFiles: (files) => {
@@ -405,7 +427,10 @@ export function useComposeActions(): ComposeActions {
           files.reduce((sum, file) => sum + file.size, 0);
         if (total > max) {
           store.getState().showToast({
-            message: `Too big to attach: the mail would carry ${megabytes(total)}; the limit is ${megabytes(max)}.`,
+            message: c.tooBigToAttach(
+              megabytes(total, t.locale),
+              megabytes(max, t.locale),
+            ),
             tone: "error",
           });
           return;
@@ -426,7 +451,7 @@ export function useComposeActions(): ComposeActions {
 
       restoreDraft: (session) => {
         const current = store.getState().composer;
-        if (current) void saveSession(store, sync, current);
+        if (current) void saveSession(store, sync, current, t);
         store.getState().openComposer({
           ...session,
           dirty: true,
@@ -435,7 +460,7 @@ export function useComposeActions(): ComposeActions {
         });
       },
     };
-  }, [registry, router, store, sync]);
+  }, [registry, router, store, sync, t]);
 
   return useMemo(() => ({ ...actions, canCompose }), [actions, canCompose]);
 }

@@ -37,6 +37,12 @@ export interface AccountHandle {
   readonly provider: MailProvider;
 }
 
+/**
+ * What's wrong with an entered setting: nothing entered, a client secret
+ * instead of the client ID, a web address, or not the expected format.
+ */
+export type SetupProblem = "missing" | "secret" | "url" | "malformed";
+
 /** Where a provider setting comes from: the build (`.env.local`) or this browser. */
 export type SettingSource = "build" | "browser";
 
@@ -49,8 +55,8 @@ export interface ProviderSetup {
   /** The value in use and where it came from; a build value takes precedence. */
   readonly current: () =>
     { readonly value: string; readonly source: SettingSource } | undefined;
-  /** An error message for an invalid value, otherwise undefined. */
-  readonly validate: (value: string) => string | undefined;
+  /** What's wrong with a value, or undefined if it's fine. */
+  readonly validate: (value: string) => SetupProblem | undefined;
   /** Saves the value in this browser and (re-)registers the provider module. */
   readonly apply: (value: string) => void;
 }

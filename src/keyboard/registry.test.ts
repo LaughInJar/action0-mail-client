@@ -18,7 +18,14 @@ const press = (
 
 function command(id: string, keys: string[], extra: Partial<Command> = {}) {
   const run = vi.fn();
-  return { id, group: "Test", description: id, keys, run, ...extra };
+  return {
+    id,
+    group: "general" as const,
+    description: id,
+    keys,
+    run,
+    ...extra,
+  };
 }
 
 afterEach(() => {

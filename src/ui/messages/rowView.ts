@@ -3,6 +3,7 @@ import type { EmailAddress, Mailbox, MessageSummary } from "../../core/model";
 import type { ListRow } from "../../data/listRows";
 import { visibleMessages } from "../../data/optimistic";
 import { displayName, displayNames } from "../common/format";
+import type { I18n } from "../../i18n/context";
 
 /** What a row of the message list shows. */
 export interface RowView {
@@ -31,27 +32,31 @@ export interface RowContext {
   readonly showRecipients: boolean;
   /** The drafts mailbox: its messages in a conversation show as "Draft". */
   readonly drafts: MailboxId | undefined;
+  readonly t: I18n;
 }
 
-const firstName = (address: EmailAddress | undefined) =>
-  displayName(address).split(/\s+/)[0] ?? "";
+const firstName = (address: EmailAddress | undefined, unknown: string) =>
+  displayName(address, unknown).split(/\s+/)[0] ?? "";
 
 /** "Anna, me, Lukas"; long lists keep the first and the last two. */
 function senders(
   messages: readonly MessageSummary[],
   mine: ReadonlySet<string>,
+  t: I18n,
 ): string {
+  const me = t.common.me;
+  const unknown = t.common.unknownSender;
   const names: string[] = [];
   for (const message of messages) {
     const own =
       message.from !== undefined &&
       mine.has(message.from.address.toLowerCase());
-    const name = own ? "me" : firstName(message.from);
+    const name = own ? me : firstName(message.from, unknown);
     if (names.at(-1) !== name && !names.includes(name)) names.push(name);
   }
-  if (names.length === 1 && names[0] !== "me") {
+  if (names.length === 1 && names[0] !== me) {
     const only = messages.find((message) => message.from !== undefined);
-    return displayName(only?.from);
+    return displayName(only?.from, unknown);
   }
   return names.length > 3
     ? [names[0], "…", ...names.slice(-2)].join(", ")
@@ -65,8 +70,8 @@ export function rowView(row: ListRow, context: RowContext): RowView {
     return {
       id: row.id,
       who: context.showRecipients
-        ? `To: ${displayNames(summary.to) || "(no recipients)"}`
-        : displayName(summary.from),
+        ? `${context.t.common.to}: ${displayNames(summary.to) || context.t.common.noRecipients}`
+        : displayName(summary.from, context.t.common.unknownSender),
       draft: false,
       subject: summary.subject,
       snippet: summary.snippet,
@@ -87,7 +92,7 @@ export function rowView(row: ListRow, context: RowContext): RowView {
   const first = messages[0] ?? summary;
   return {
     id: row.id,
-    who: senders(sent.length > 0 ? sent : messages, context.mine),
+    who: senders(sent.length > 0 ? sent : messages, context.mine, context.t),
     ...(messages.length > 1 ? { count: messages.length } : {}),
     draft: messages.some(isDraft),
     subject: first.subject,

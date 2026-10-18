@@ -8,6 +8,7 @@ import { useUiStore } from "../../state/context";
 import type { ConfirmAction } from "../../state/uiStore";
 import { errorMessage } from "../common/errorMessage";
 import { displayName } from "../common/format";
+import { useT, type I18n } from "../../i18n/context";
 
 /** The confirmed action of an unsubscribe confirmation. */
 export type UnsubscribeAction = Extract<
@@ -40,20 +41,15 @@ function hostOf(url: string): string {
 }
 
 /** What the confirmation says will happen. */
-function confirmText(sender: string, unsubscribe: Unsubscribe) {
+function confirmText(sender: string, unsubscribe: Unsubscribe, t: I18n) {
+  const u = t.unsubscribe;
   if (unsubscribe.oneClick)
-    return {
-      message: `${sender} will be asked to stop sending you mail. This can’t be undone.`,
-      confirmLabel: "Unsubscribe",
-    };
+    return { message: u.oneClick(sender), confirmLabel: u.confirm };
   if (unsubscribe.mail)
-    return {
-      message: `An unsubscribe request will be mailed from your address to ${unsubscribe.mail.to}. This can’t be undone.`,
-      confirmLabel: "Unsubscribe",
-    };
+    return { message: u.byMail(unsubscribe.mail.to), confirmLabel: u.confirm };
   return {
-    message: `${sender}’s unsubscribe page (${hostOf(unsubscribe.page ?? "")}) opens in a new tab, where you finish unsubscribing.`,
-    confirmLabel: "Open page",
+    message: u.byPage(sender, hostOf(unsubscribe.page ?? "")),
+    confirmLabel: u.openPage,
   };
 }
 
@@ -62,8 +58,10 @@ export function useUnsubscribe(): UnsubscribeActions {
   const store = useUiStore();
   const registry = useAccountRegistry();
   const drafts = useDraftSync();
+  const t = useT();
 
   return useMemo((): UnsubscribeActions => {
+    const u = t.unsubscribe;
     const openPage = (url: string) => {
       window.open(url, "_blank", "noopener,noreferrer");
     };
@@ -72,10 +70,10 @@ export function useUnsubscribe(): UnsubscribeActions {
       request: (accountId, message) => {
         const { unsubscribe } = message;
         if (!unsubscribe) return;
-        const sender = displayName(message.from);
+        const sender = displayName(message.from, t.common.unknownSender);
         store.getState().setConfirm({
-          title: `Unsubscribe from ${sender}?`,
-          ...confirmText(sender, unsubscribe),
+          title: u.title(sender),
+          ...confirmText(sender, unsubscribe, t),
           action: {
             kind: "unsubscribe",
             accountId,
@@ -101,13 +99,13 @@ export function useUnsubscribe(): UnsubscribeActions {
         if (!oneClick && !canMail) {
           if (page) {
             openPage(page);
-            done(`Opened the unsubscribe page of ${sender}`);
+            done(u.pageOpened(sender));
           }
           return;
         }
 
         state.showToast({
-          message: `Unsubscribing from ${sender}…`,
+          message: u.working(sender),
           tone: "info",
         });
         const attempt = async () => {
@@ -115,7 +113,7 @@ export function useUnsubscribe(): UnsubscribeActions {
           if (oneClick && provider) {
             try {
               await provider.oneClickUnsubscribe(oneClick);
-              done(`Unsubscribed from ${sender}`);
+              done(u.done(sender));
               return;
             } catch (error) {
               failure = error;
@@ -136,7 +134,7 @@ export function useUnsubscribe(): UnsubscribeActions {
                 },
                 undefined,
               );
-              done(`Unsubscribe mail sent to ${mail.to}`);
+              done(u.mailSent(mail.to));
               return;
             } catch (error) {
               failure = error;
@@ -145,9 +143,9 @@ export function useUnsubscribe(): UnsubscribeActions {
           if (page) {
             // Too late for a popup: offer the page as a link instead.
             store.getState().showToast({
-              message: `Couldn’t unsubscribe from ${sender} automatically.`,
+              message: u.notAutomatic(sender),
               tone: "error",
-              link: { label: "Open their page", href: page },
+              link: { label: u.openTheirPage, href: page },
             });
             return;
           }
@@ -155,11 +153,11 @@ export function useUnsubscribe(): UnsubscribeActions {
         };
         attempt().catch((error: unknown) => {
           store.getState().showToast({
-            message: `Couldn’t unsubscribe from ${sender}: ${errorMessage(error)}`,
+            message: u.failed(sender, errorMessage(error, t)),
             tone: "error",
           });
         });
       },
     };
-  }, [drafts, registry, store]);
+  }, [drafts, registry, store, t]);
 }

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAccounts } from "../../accounts/context";
 import type { Mailbox } from "../../core/model";
 import { queryKeys } from "../../data/keys";
+import { useT } from "../../i18n/context";
 
 /** The title without unread mail. */
 export const APP_TITLE = "action0";
@@ -15,6 +16,7 @@ export const APP_TITLE = "action0";
 export function useDocumentTitle(): void {
   const queryClient = useQueryClient();
   const accounts = useAccounts();
+  const t = useT();
 
   useEffect(() => {
     const update = () => {
@@ -28,7 +30,7 @@ export function useDocumentTitle(): void {
         unread += inbox?.counts?.unread ?? 0;
       }
       const title = expired
-        ? `Reconnect – ${APP_TITLE}`
+        ? t.layout.titleReconnect(APP_TITLE)
         : unread > 0
           ? `(${String(unread)}) ${APP_TITLE}`
           : APP_TITLE;
@@ -42,5 +44,5 @@ export function useDocumentTitle(): void {
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [accounts, queryClient]);
+  }, [accounts, queryClient, t]);
 }

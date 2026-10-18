@@ -4,13 +4,15 @@ import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import { useRouter, useUiStore } from "../../state/context";
 import type { ComposeActions } from "./useComposeActions";
+import { useT } from "../../i18n/context";
 
 /** Shortcuts for writing: `c` compose, `r` reply, `Shift+R` reply all, `f` forward. */
 export function useComposeCommands(actions: ComposeActions): void {
   const store = useUiStore();
   const router = useRouter();
+  const t = useT();
   const commands = useMemo((): Command[] => {
-    const group = "Writing";
+    const group = "writing";
     /**
      * The message to answer: the one at the open conversation's cursor, else
      * the one shown in the reader (or under the cursor).
@@ -28,7 +30,7 @@ export function useComposeCommands(actions: ComposeActions): void {
       {
         id: "compose.new",
         group,
-        description: "Write a new mail",
+        description: t.shortcuts.compose,
         keys: ["c"],
         when: () => actions.canCompose,
         run: actions.compose,
@@ -36,7 +38,7 @@ export function useComposeCommands(actions: ComposeActions): void {
       {
         id: "compose.reply",
         group,
-        description: "Reply",
+        description: t.shortcuts.reply,
         keys: ["r"],
         when: canAnswer,
         run: withMessage((id) => {
@@ -46,7 +48,7 @@ export function useComposeCommands(actions: ComposeActions): void {
       {
         id: "compose.reply-all",
         group,
-        description: "Reply all",
+        description: t.shortcuts.replyAll,
         keys: ["shift+r"],
         when: canAnswer,
         run: withMessage((id) => {
@@ -56,12 +58,12 @@ export function useComposeCommands(actions: ComposeActions): void {
       {
         id: "compose.forward",
         group,
-        description: "Forward",
+        description: t.shortcuts.forward,
         keys: ["f"],
         when: canAnswer,
         run: withMessage(actions.forward),
       },
     ];
-  }, [actions, router, store]);
+  }, [actions, router, store, t]);
   useCommands(commands);
 }

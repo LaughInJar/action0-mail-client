@@ -43,6 +43,12 @@ export function requestGoogleToken(
             new MailError(
               "auth-required",
               `Google sign-in failed: ${response.error_description || response.error}`,
+              {
+                reason: "signInFailed",
+                params: {
+                  detail: response.error_description || response.error,
+                },
+              },
             ),
           );
         } else if (
@@ -52,6 +58,7 @@ export function requestGoogleToken(
             new MailError(
               "auth-required",
               "The requested access was not granted. Please allow it in the Google dialog.",
+              { reason: "accessNotGranted" },
             ),
           );
         } else {
@@ -64,7 +71,7 @@ export function requestGoogleToken(
         }
       },
       error_callback: (error) => {
-        reject(new MailError("auth-required", describeClientError(error)));
+        reject(clientError(error));
       },
     });
     client.requestAccessToken({
@@ -83,15 +90,27 @@ function grantedAll(
   return oauth2.hasGrantedAllScopes(response, first, ...rest);
 }
 
-function describeClientError(
+function clientError(
   error: google.accounts.oauth2.ClientConfigError,
-): string {
+): MailError {
   switch (error.type) {
     case "popup_closed":
-      return "The Google sign-in window was closed.";
+      return new MailError(
+        "auth-required",
+        "The Google sign-in window was closed.",
+        { reason: "signInClosed" },
+      );
     case "popup_failed_to_open":
-      return "The Google sign-in window was blocked. Please allow popups for this site.";
+      return new MailError(
+        "auth-required",
+        "The Google sign-in window was blocked. Please allow popups for this site.",
+        { reason: "signInBlocked" },
+      );
     case "unknown":
-      return `Google sign-in failed: ${error.message}`;
+      return new MailError(
+        "auth-required",
+        `Google sign-in failed: ${error.message}`,
+        { reason: "signInFailed", params: { detail: error.message } },
+      );
   }
 }

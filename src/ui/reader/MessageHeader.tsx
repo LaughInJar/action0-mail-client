@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { EmailAddress, Mailbox, Message } from "../../core/model";
 import { displayName, formatFullDate } from "../common/format";
 import { Icon } from "../common/Icon";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link MessageHeader}. */
 export interface MessageHeaderProps {
@@ -26,6 +27,7 @@ export function MessageHeader({
   trailing,
   unsubscribe,
 }: MessageHeaderProps) {
+  const t = useT();
   const labels = (mailboxes ?? []).filter(
     (mailbox) =>
       mailbox.kind === "label" &&
@@ -42,11 +44,11 @@ export function MessageHeader({
           id={subjectId}
           className="text-lg font-semibold break-words sm:text-xl"
         >
-          {message.subject || "(no subject)"}
+          {message.subject || t.common.noSubject}
         </h1>
       )}
       {subjectId !== undefined && labels.length > 0 && (
-        <ul aria-label="Labels" className="flex flex-wrap gap-1.5">
+        <ul aria-label={t.labels.labels} className="flex flex-wrap gap-1.5">
           {labels.map((label) => (
             <li
               key={label.id}
@@ -66,10 +68,12 @@ export function MessageHeader({
         </ul>
       )}
       <div className="flex items-start gap-3">
-        <Avatar address={message.from} />
+        <Avatar address={message.from} unknown={t.common.unknownSender} />
         <div className="min-w-0 flex-1 space-y-0.5 text-sm">
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-semibold">{displayName(message.from)}</span>
+            <span className="font-semibold">
+              {displayName(message.from, t.common.unknownSender)}
+            </span>
             {message.from?.name && (
               <span className="min-w-0 truncate text-zinc-500">
                 {message.from.address}
@@ -79,7 +83,7 @@ export function MessageHeader({
               (unsubscribe.done ? (
                 <span className="flex items-center gap-1 self-center border border-transparent py-0.5 text-xs text-zinc-500">
                   <Icon name="check" className="size-3.5" />
-                  Unsubscribed
+                  {t.reader.unsubscribed}
                 </span>
               ) : (
                 <button
@@ -88,14 +92,14 @@ export function MessageHeader({
                   // Small to look at; the touch area reaches 44px.
                   className="relative self-center rounded-full border border-zinc-300 px-2.5 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:before:absolute pointer-coarse:before:-inset-x-1 pointer-coarse:before:-inset-y-3 pointer-coarse:before:content-['']"
                 >
-                  Unsubscribe
+                  {t.reader.unsubscribe}
                 </button>
               ))}
             <time
               dateTime={message.receivedAt}
               className="ml-auto shrink-0 text-xs text-zinc-500"
             >
-              {formatFullDate(message.receivedAt)}
+              {formatFullDate(message.receivedAt, { locale: t.locale })}
             </time>
             {trailing && (
               <span className="-my-2 flex shrink-0 items-center self-center">
@@ -103,9 +107,9 @@ export function MessageHeader({
               </span>
             )}
           </div>
-          <AddressLine label="To" addresses={message.to} />
-          <AddressLine label="Cc" addresses={message.cc} />
-          <AddressLine label="Reply to" addresses={message.replyTo} />
+          <AddressLine label={t.common.to} addresses={message.to} />
+          <AddressLine label={t.common.cc} addresses={message.cc} />
+          <AddressLine label={t.common.replyTo} addresses={message.replyTo} />
         </div>
       </div>
     </header>
@@ -126,7 +130,7 @@ function AddressLine({
       {addresses.map((address, index) => (
         <span key={`${address.address}-${index}`} title={address.address}>
           {index > 0 && ", "}
-          {displayName(address)}
+          {displayName(address, "")}
         </span>
       ))}
     </p>
@@ -144,8 +148,14 @@ const AVATAR_COLORS = [
   "bg-lime-700",
 ];
 
-function Avatar({ address }: { address: EmailAddress | undefined }) {
-  const name = displayName(address);
+function Avatar({
+  address,
+  unknown,
+}: {
+  address: EmailAddress | undefined;
+  unknown: string;
+}) {
+  const name = displayName(address, unknown);
   const key = address?.address ?? name;
   let hash = 0;
   for (const char of key) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) | 0;

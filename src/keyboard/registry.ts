@@ -1,12 +1,17 @@
 import { Emitter } from "../lib/emitter";
 import { parseBinding, strokeFromEvent } from "./keys";
 
+/** Sections of the shortcut help. */
+export type CommandGroup =
+  "list" | "actions" | "reading" | "goTo" | "search" | "writing" | "general";
+
 /** A keyboard command. */
 export interface Command {
   /** Unique id, e.g. `list.next`. */
   readonly id: string;
   /** Heading in the shortcut overlay. */
-  readonly group: string;
+  /** Where the shortcut help lists it (translated there). */
+  readonly group: CommandGroup;
   readonly description: string;
   /** Bindings in the notation of `keys.ts`, e.g. `["j", "ArrowDown"]` or `["g i"]`. */
   readonly keys: readonly string[];

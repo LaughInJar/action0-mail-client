@@ -159,3 +159,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Archive, labels, move, delete, spam and read/unread act on the whole conversation (optimistic, undoable); `s` stars the newest message or unstars all; opening marks the unread messages read (per the mark-as-read setting).
   - Search returns conversations; live updates patch rows in place and append to an open conversation.
   - Keys: j/k between conversations; n/p between messages and Enter opens/closes the one at the cursor; r / Shift+R / f answer that message (the newest by default).
+- **German interface decisions:**
+  - The language follows the browser; Settings → General offers Automatic / English / Deutsch (per browser). `lang` on <html> follows it.
+  - German text uses "du". Everything the app says is translated (buttons, menus, dialogs, settings, toasts, errors it writes itself, shortcut help, screen-reader labels); dates and numbers use the browser's formatting for the language (de-AT: "Jänner").
+  - Replies and forwards in German get "Am 16.10.2026 um 20:59 schrieb Anna Berger:"; subjects keep Re:/Fwd:.
+  - Not translated: shortcut keys, Gmail's own error texts, the demo's sample mails, README and code.
+  - A typed English/German catalogue without a library (missing German text fails the build) and a lint rule against untranslated UI text.

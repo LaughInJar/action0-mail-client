@@ -8,6 +8,7 @@ import type { AccountHandle } from "../../accounts/types";
 import { REFRESH_WINDOW_MS } from "../../auth/refreshOnInteraction";
 import { errorMessage } from "../common/errorMessage";
 import { useCoarsePointer } from "./useBreakpoint";
+import { useT } from "../../i18n/context";
 
 /** Current time, updated every `intervalMs`. */
 function useNow(intervalMs: number): number {
@@ -56,6 +57,7 @@ function AccountReconnect({ handle, warnEarly, now }: AccountReconnectProps) {
   const status = useAuthStatus(handle.auth);
   const expiresAt = useAuthExpiry(handle.auth);
   const [error, setError] = useState<string>();
+  const t = useT();
   const expiringSoon =
     warnEarly &&
     status === "signed-in" &&
@@ -71,20 +73,20 @@ function AccountReconnect({ handle, warnEarly, now }: AccountReconnectProps) {
     >
       <span className="min-w-0 flex-1">
         {status === "expired"
-          ? `Reconnect ${handle.account.email} to keep reading mail.`
-          : `The session for ${handle.account.email} expires soon.`}
+          ? t.layout.reconnectExpired(handle.account.email)
+          : t.layout.reconnectSoon(handle.account.email)}
       </span>
       <button
         type="button"
         onClick={() => {
           setError(undefined);
           handle.auth.signIn().catch((cause: unknown) => {
-            setError(errorMessage(cause));
+            setError(errorMessage(cause, t));
           });
         }}
         className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-700 pointer-coarse:min-h-11"
       >
-        Reconnect
+        {t.layout.reconnect}
       </button>
       {error !== undefined && (
         <span className="w-full text-red-700 dark:text-red-300">{error}</span>

@@ -3,11 +3,14 @@ import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import type { Undo } from "./useUndo";
 import type { MailActions } from "./useMailActions";
+import { useT } from "../../i18n/context";
 
 /** Keyboard shortcuts for mail actions; `undo` is the app's combined undo. */
 export function useActionCommands(actions: MailActions, undo: Undo): void {
+  const t = useT();
   const commands = useMemo((): Command[] => {
-    const group = "Actions";
+    const group = "actions";
+    const s = t.shortcuts;
     const hasTargets = () => actions.targets().length > 0;
     // Inside Trash and Spam, messages can only be restored or deleted.
     const quarantined = actions.view === "trash" || actions.view === "junk";
@@ -15,7 +18,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.archive",
         group,
-        description: "Archive",
+        description: s.archive,
         keys: ["a"],
         when: () => actions.canArchive && hasTargets(),
         run: () => {
@@ -25,7 +28,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.mark-read",
         group,
-        description: "Mark as read",
+        description: s.markRead,
         keys: ["shift+i"],
         when: () => actions.canSetSeen && hasTargets(),
         run: () => {
@@ -35,7 +38,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.mark-unread",
         group,
-        description: "Mark as unread",
+        description: s.markUnread,
         keys: ["shift+u"],
         when: () => actions.canSetSeen && hasTargets(),
         run: () => {
@@ -45,7 +48,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.move",
         group,
-        description: "Move to…",
+        description: s.moveTo,
         keys: ["v"],
         when: () => actions.canMove && !quarantined && hasTargets(),
         run: () => {
@@ -55,7 +58,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.labels",
         group,
-        description: "Labels…",
+        description: s.labels,
         keys: ["l"],
         when: () => actions.canLabel && !quarantined && hasTargets(),
         run: () => {
@@ -65,7 +68,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.star",
         group,
-        description: "Star or unstar",
+        description: s.star,
         keys: ["s"],
         when: () => actions.canStar && hasTargets(),
         run: () => {
@@ -76,7 +79,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
         id: "mail.trash",
         group,
         description:
-          actions.view === "trash" ? "Restore from Trash" : "Move to Trash",
+          actions.view === "trash" ? s.restoreFromTrash : s.moveToTrash,
         keys: ["Delete", "Backspace"],
         when: () => actions.canTrash && hasTargets(),
         run: () => {
@@ -86,7 +89,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.spam",
         group,
-        description: actions.view === "junk" ? "Not spam" : "Report spam",
+        description: actions.view === "junk" ? s.notSpam : s.reportSpam,
         keys: ["shift+s"],
         when: () => actions.canSpam && hasTargets(),
         run: () => {
@@ -96,7 +99,7 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.delete-forever",
         group,
-        description: "Delete forever (in Trash and Spam)",
+        description: s.deleteForever,
         keys: ["shift+Delete", "shift+Backspace"],
         when: () => actions.canDeleteForever && quarantined && hasTargets(),
         run: () => {
@@ -106,12 +109,12 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
       {
         id: "mail.undo",
         group,
-        description: "Undo",
+        description: s.undo,
         keys: ["z"],
         when: undo.canUndo,
         run: undo.undo,
       },
     ];
-  }, [actions, undo]);
+  }, [actions, undo, t]);
   useCommands(commands);
 }

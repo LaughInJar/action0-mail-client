@@ -22,6 +22,7 @@ import { COMPOSER_IDS } from "./ids";
 import { useComposerFiles } from "./useComposerFiles";
 import { RichTextEditor } from "./RichTextEditor";
 import type { ComposeActions } from "./useComposeActions";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link Composer}. */
 export interface ComposerProps {
@@ -29,14 +30,6 @@ export interface ComposerProps {
   /** Tablets and phones: a full-screen, modal composer. */
   readonly fullScreen: boolean;
 }
-
-const TITLES: Readonly<Record<ComposerSession["kind"], string>> = {
-  new: "New message",
-  reply: "Reply",
-  "reply-all": "Reply all",
-  forward: "Forward",
-  draft: "Draft",
-};
 
 /**
  * The open composer: docked at the bottom right on desktop (minimizable,
@@ -61,6 +54,8 @@ function ComposerWindow({
   const [confirmNoSubject, setConfirmNoSubject] = useState(false);
   const files = useComposerFiles(session, rootRef, setProblem);
   const pickerRef = useRef<HTMLInputElement>(null);
+  const t = useT();
+  const c = t.composer;
 
   useFocusTrap(rootRef, fullScreen);
   // The first field to fill in: To for new mail, the text for replies.
@@ -82,7 +77,7 @@ function ComposerWindow({
     store.getState().updateComposer(key, patch, edit);
   };
   const minimized = session.window === "minimized" && !fullScreen;
-  const title = session.subject.trim() || TITLES[session.kind];
+  const title = session.subject.trim() || c.titles[session.kind];
   const composeAccounts = accounts.filter(
     (handle) => handle.provider.capabilities.compose,
   );
@@ -140,18 +135,21 @@ function ComposerWindow({
     const recipients = [...session.to, ...session.cc, ...session.bcc];
     const invalid = recipients.find((a) => !isValidAddress(a.address));
     if (recipients.length === 0) {
-      setProblem("Add at least one recipient.");
+      setProblem(c.addRecipient);
       document.getElementById(COMPOSER_IDS.to)?.focus();
       return;
     }
     if (invalid) {
-      setProblem(`“${invalid.address}” isn’t a valid address.`);
+      setProblem(c.invalidAddress(invalid.address));
       return;
     }
     const bytes = sentBytes(session);
     if (bytes > files.maxBytes) {
       setProblem(
-        `The attachments add up to ${megabytes(bytes)}; the limit is ${megabytes(files.maxBytes)}. Remove some to send.`,
+        c.tooBigToSend(
+          megabytes(bytes, t.locale),
+          megabytes(files.maxBytes, t.locale),
+        ),
       );
       return;
     }
@@ -234,11 +232,11 @@ function ComposerWindow({
   };
 
   const saveStatus = session.saving
-    ? "Saving…"
+    ? t.common.saving
     : session.saveError !== undefined
-      ? "Not saved"
+      ? t.common.notSaved
       : session.savedRevision > 0 && session.savedRevision === session.revision
-        ? "Saved"
+        ? t.common.saved
         : "";
 
   const frame = fullScreen
@@ -262,7 +260,7 @@ function ComposerWindow({
       <header className="flex min-h-11 shrink-0 items-center gap-1 rounded-t-lg bg-zinc-100 px-2 dark:bg-zinc-900">
         {fullScreen && (
           <IconButton
-            label="Close (keeps the draft)"
+            label={c.closeKeepsDraft}
             icon="arrow-left"
             onClick={actions.close}
           />
@@ -294,7 +292,7 @@ function ComposerWindow({
             }}
             className="rounded px-1.5 text-xs font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800"
           >
-            Retry
+            {c.retry}
           </button>
         )}
         {fullScreen ? (
@@ -306,19 +304,19 @@ function ComposerWindow({
             className="ml-1 flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white pointer-coarse:min-h-11"
           >
             <Icon name="send" className="size-4" />
-            Send
+            {c.send}
           </button>
         ) : (
           <>
             <IconButton
-              label={minimized ? "Restore" : "Minimize"}
+              label={minimized ? c.restore : c.minimize}
               icon={minimized ? "chevron-up" : "minus"}
               onClick={() => {
                 update({ window: minimized ? "docked" : "minimized" }, false);
               }}
             />
             <IconButton
-              label={session.window === "expanded" ? "Smaller" : "Larger"}
+              label={session.window === "expanded" ? c.smaller : c.larger}
               icon={session.window === "expanded" ? "minimize" : "maximize"}
               onClick={() => {
                 update(
@@ -331,7 +329,7 @@ function ComposerWindow({
               }}
             />
             <IconButton
-              label="Close (Esc, keeps the draft)"
+              label={c.closeEscKeepsDraft}
               icon="x"
               onClick={actions.close}
             />
@@ -347,7 +345,7 @@ function ComposerWindow({
                 htmlFor="composer-from"
                 className="w-8 shrink-0 text-sm text-zinc-500"
               >
-                From
+                {t.common.from}
               </label>
               <select
                 id="composer-from"
@@ -377,7 +375,7 @@ function ComposerWindow({
           )}
           <AddressField
             id={COMPOSER_IDS.to}
-            label="To"
+            label={t.common.to}
             accountId={session.accountId}
             value={session.to}
             onChange={(to) => {
@@ -396,7 +394,7 @@ function ComposerWindow({
                   }}
                   className="shrink-0 rounded px-1.5 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
                 >
-                  Cc/Bcc
+                  {c.ccBcc}
                 </button>
               )
             }
@@ -405,7 +403,7 @@ function ComposerWindow({
             <>
               <AddressField
                 id={COMPOSER_IDS.cc}
-                label="Cc"
+                label={t.common.cc}
                 accountId={session.accountId}
                 value={session.cc}
                 onChange={(cc) => {
@@ -414,7 +412,7 @@ function ComposerWindow({
               />
               <AddressField
                 id={COMPOSER_IDS.bcc}
-                label="Bcc"
+                label={t.common.bcc}
                 accountId={session.accountId}
                 value={session.bcc}
                 onChange={(bcc) => {
@@ -425,8 +423,8 @@ function ComposerWindow({
           )}
           <input
             id={COMPOSER_IDS.subject}
-            aria-label="Subject"
-            placeholder="Subject"
+            aria-label={c.subject}
+            placeholder={c.subject}
             value={session.subject}
             onChange={(event) => {
               update({ subject: event.target.value });
@@ -480,10 +478,10 @@ function ComposerWindow({
           {confirmNoSubject && (
             <div
               role="alertdialog"
-              aria-label="Send without a subject?"
+              aria-label={c.noSubjectAsk}
               className="flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-200 bg-amber-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-amber-950"
             >
-              <span className="min-w-0 flex-1">Send without a subject?</span>
+              <span className="min-w-0 flex-1">{c.noSubjectAsk}</span>
               <button
                 type="button"
                 ref={sendAnywayRef}
@@ -493,7 +491,7 @@ function ComposerWindow({
                 }}
                 className="rounded-md bg-blue-600 px-3 py-1 font-semibold text-white pointer-coarse:min-h-11"
               >
-                Send anyway
+                {c.sendAnyway}
               </button>
               <button
                 type="button"
@@ -503,7 +501,7 @@ function ComposerWindow({
                 }}
                 className="rounded-md px-3 py-1 hover:bg-amber-100 dark:hover:bg-amber-900 pointer-coarse:min-h-11"
               >
-                Cancel
+                {t.common.cancel}
               </button>
             </div>
           )}
@@ -517,14 +515,14 @@ function ComposerWindow({
                 className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 <Icon name="send" className="size-4" />
-                Send
+                {c.send}
                 <kbd className="ml-1 font-sans text-xs font-normal opacity-75 pointer-coarse:hidden">
-                  Ctrl+Enter
+                  {c.sendKey}
                 </kbd>
               </button>
             )}
             <IconButton
-              label="Attach files"
+              label={c.attachFiles}
               icon="paperclip"
               onClick={() => pickerRef.current?.click()}
             />
@@ -542,15 +540,14 @@ function ComposerWindow({
             />
             <div className="flex-1" />
             <IconButton
-              label="Discard draft"
+              label={c.discardDraft}
               icon="trash"
               onClick={actions.discard}
             />
           </footer>
           {files.dragOver && (
             <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-t-lg border-2 border-dashed border-blue-500 bg-blue-50/85 p-6 text-center text-sm font-medium text-blue-900 dark:bg-blue-950/85 dark:text-blue-100">
-              Drop files to attach them. Pictures dropped into the text appear
-              inline.
+              {c.dropHint}
             </div>
           )}
         </>
@@ -577,14 +574,15 @@ function SignatureBlock({
       }),
     [html],
   );
+  const c = useT().composer;
   return (
     <div className="max-h-[30%] shrink-0 overflow-y-auto px-3 py-1.5">
       <div className="group/signature relative rounded border border-dashed border-zinc-300 dark:border-zinc-700">
-        <SafeHtmlFrame srcDoc={srcDoc} title="Signature" shortcuts={false} />
+        <SafeHtmlFrame srcDoc={srcDoc} title={c.signature} shortcuts={false} />
         <button
           type="button"
-          aria-label="Remove the signature"
-          title="Remove the signature"
+          aria-label={c.removeSignature}
+          title={c.removeSignature}
           onClick={onRemove}
           className="absolute top-1 right-1 grid size-6 place-items-center rounded bg-white/90 text-zinc-500 shadow-sm hover:text-zinc-900 dark:bg-zinc-800/90 dark:text-zinc-300 dark:hover:text-white pointer-coarse:size-11"
         >
@@ -610,15 +608,18 @@ function QuotedOriginal({
     () => (open ? buildMailDocument(html, { allowRemoteContent: false }) : ""),
     [open, html],
   );
-  const what = kind === "forward" ? "forwarded message" : "quoted text";
+  const t = useT();
+  const c = t.composer;
+  const forward = kind === "forward";
+  const toggle = open ? c.hideQuoted(forward) : c.showQuoted(forward);
   return (
     <div className="max-h-[40%] shrink-0 overflow-y-auto border-t border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
       <div className="flex items-center gap-2">
         <button
           type="button"
           aria-expanded={open}
-          aria-label={open ? `Hide the ${what}` : `Show the ${what}`}
-          title={open ? `Hide the ${what}` : `Show the ${what}`}
+          aria-label={toggle}
+          title={toggle}
           onClick={() => {
             setOpen(!open);
           }}
@@ -627,21 +628,21 @@ function QuotedOriginal({
           <Icon name="more" className="size-4" />
         </button>
         <span className="flex-1 text-xs text-zinc-500">
-          {kind === "forward" ? "Forwarded message" : "Quoted text"}
+          {c.quoted(forward)}
         </span>
         <button
           type="button"
           onClick={onRemove}
           className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
         >
-          Remove
+          {t.common.remove}
         </button>
       </div>
       {open && (
         <div className="mt-1.5 rounded border border-zinc-200 dark:border-zinc-800">
           <SafeHtmlFrame
             srcDoc={srcDoc}
-            title={`The ${what}`}
+            title={c.quotedFrame(forward)}
             shortcuts={false}
           />
         </div>
@@ -661,10 +662,11 @@ function AttachedFiles({
   const files = session.attachments.filter(
     (part) => part.contentId === undefined,
   );
+  const t = useT();
   if (files.length === 0) return null;
   return (
     <ul
-      aria-label="Attachments"
+      aria-label={t.reader.attachments}
       className="flex max-h-28 shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-zinc-200 px-3 py-2 dark:border-zinc-800"
     >
       {files.map((part) => (
@@ -675,11 +677,11 @@ function AttachedFiles({
           <Icon name="paperclip" className="size-3.5 shrink-0 text-zinc-500" />
           <span className="truncate">{part.filename}</span>
           <span className="shrink-0 text-zinc-500">
-            {formatBytes(part.size)}
+            {formatBytes(part.size, t.locale)}
           </span>
           <button
             type="button"
-            aria-label={`Remove ${part.filename}`}
+            aria-label={t.composer.removeItem(part.filename)}
             onClick={() => {
               onRemove(part.id);
             }}

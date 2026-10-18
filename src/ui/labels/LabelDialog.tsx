@@ -3,7 +3,7 @@ import { useAccountHandle } from "../../accounts/context";
 import type { MailboxId } from "../../core/ids";
 import type { Mailbox, MailboxColor } from "../../core/model";
 import type { MailboxChange } from "../../core/provider";
-import { findMailbox, useMailboxes } from "../../data/hooks";
+import { findMailbox } from "../../data/hooks";
 import { isNestable, mailboxPath, subtreeIds } from "../../data/mailboxActions";
 import { useUi } from "../../state/context";
 import type { LabelDialogState } from "../../state/uiStore";
@@ -12,11 +12,13 @@ import { Icon } from "../common/Icon";
 import { Sheet } from "../common/Sheet";
 import { colorName } from "./colorName";
 import { useLabelActions } from "./useLabelActions";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** Shows the label dialog while one is open. */
 export function LabelDialogHost() {
   const dialog = useUi((state) => state.labelDialog);
-  const { data: mailboxes } = useMailboxes(dialog?.accountId);
+  const { data: mailboxes } = useMailboxList(dialog?.accountId);
   if (!dialog || !mailboxes) return null;
   const editing =
     dialog.mode === "edit"
@@ -56,6 +58,8 @@ interface LabelDialogProps {
 function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const labels = useLabelActions();
+  const t = useT();
+  const l = t.labels;
   const palette =
     useAccountHandle(dialog.accountId)?.provider.capabilities.mailboxColors ??
     [];
@@ -105,16 +109,16 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
     if (saving) return;
     const trimmed = name.trim();
     if (trimmed === "") {
-      setError("Give the label a name.");
+      setError(l.nameMissing);
       return;
     }
     if (trimmed.includes("/")) {
-      setError("Names can’t contain “/”. Choose a parent instead.");
+      setError(l.noSlash);
       return;
     }
     const fail = (reason: unknown) => {
       setSaving(false);
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
     };
     if (!editing) {
       setSaving(true);
@@ -150,11 +154,11 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
     labels.edit(dialog.accountId, editing, change).then(close, fail);
   };
 
-  const preview = name.trim() || "Label";
-  let title = "New label";
-  if (editing) title = `Edit label “${editing.name}”`;
+  const preview = name.trim() || l.preview;
+  let title = l.newLabel;
+  if (editing) title = l.editLabel(editing.name);
   else if (parentId !== "")
-    title = `New label in “${findMailbox(mailboxes, parentId)?.name ?? ""}”`;
+    title = l.newLabelIn(findMailbox(mailboxes, parentId)?.name ?? "");
 
   return (
     <Sheet labelledBy={titleId} onEscape={close}>
@@ -165,7 +169,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
           </h2>
           <div className="space-y-1">
             <label htmlFor={nameId} className="text-sm font-medium">
-              Name
+              {l.name}
             </label>
             <input
               id={nameId}
@@ -183,7 +187,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
           </div>
           <div className="space-y-1">
             <label htmlFor={parentFieldId} className="text-sm font-medium">
-              Inside
+              {l.inside}
             </label>
             <select
               id={parentFieldId}
@@ -195,7 +199,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
               data-initial-focus={focus === "parent" ? "" : undefined}
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
             >
-              <option value="">Nothing (top level)</option>
+              <option value="">{l.topLevel}</option>
               {parents.map(({ mailbox, path }) => (
                 <option key={mailbox.id} value={mailbox.id}>
                   {path}
@@ -206,7 +210,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
           {colors.length > 0 && (
             <fieldset className="space-y-2">
               <legend className="flex w-full items-center gap-2 text-sm font-medium">
-                Colour
+                {l.colour}
                 <span
                   aria-hidden="true"
                   className={`ml-auto max-w-40 truncate rounded px-1.5 py-0.5 text-xs font-medium ${color ? "" : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
@@ -221,7 +225,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
               </legend>
               <div className="flex flex-wrap gap-1.5">
                 <Swatch
-                  label="No colour"
+                  label={l.noColour}
                   checked={color === null}
                   onChoose={() => {
                     setColor(null);
@@ -231,7 +235,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
                 {colors.map((option) => (
                   <Swatch
                     key={`${option.background}/${option.text}`}
-                    label={colorName(option.background)}
+                    label={colorName(option.background, l.colours)}
                     color={option}
                     checked={sameColor(color, option)}
                     onChoose={() => {
@@ -252,7 +256,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
               }}
               className="size-4"
             />
-            Show in the folder list
+            {l.showInList}
           </label>
           {error && (
             <p
@@ -270,14 +274,18 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
             onClick={close}
             className="rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="submit"
             disabled={saving}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60 pointer-coarse:min-h-11"
           >
-            {saving ? "Saving…" : editing ? "Save" : "Create"}
+            {saving
+              ? t.common.saving
+              : editing
+                ? t.common.save
+                : t.common.create}
           </button>
         </div>
       </form>

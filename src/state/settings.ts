@@ -4,6 +4,8 @@
  * the provider instead.
  */
 
+import type { LanguageSetting } from "../i18n/locale";
+
 /** Undo-send periods the settings offer, in seconds (0: send right away). */
 export const UNDO_SEND_CHOICES = [0, 5, 10, 20, 30] as const;
 
@@ -25,6 +27,8 @@ export interface AppSettings {
   readonly notifications: boolean;
   /** One row per conversation instead of per message (where the account supports it). */
   readonly conversations: boolean;
+  /** Interface language; "auto" follows the browser. */
+  readonly language: LanguageSetting;
 }
 
 /** The settings of a browser that never changed any. */
@@ -37,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   undoSendSeconds: 30,
   notifications: true,
   conversations: false,
+  language: "auto",
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -52,6 +57,7 @@ const isAfterRemove = oneOf(["below", "above", "list"] as const);
 const isMarkRead = oneOf(["immediately", "delay", "manual"] as const);
 const isRemoteImages = oneOf(["ask", "always", "trusted"] as const);
 const isUndoSend = oneOf(UNDO_SEND_CHOICES);
+const isLanguage = oneOf(["auto", "en", "de"] as const);
 
 /** Settings read from storage: every invalid or missing field gets its default. */
 export function parseSettings(value: unknown): AppSettings {
@@ -86,6 +92,7 @@ export function parseSettings(value: unknown): AppSettings {
       typeof raw.conversations === "boolean"
         ? raw.conversations
         : d.conversations,
+    language: isLanguage(raw.language) ? raw.language : d.language,
   };
 }
 

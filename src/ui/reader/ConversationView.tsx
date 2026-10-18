@@ -4,7 +4,7 @@ import { useSenders } from "../../data/senders";
 import type { AccountId, MessageId, ThreadId } from "../../core/ids";
 import { isMailError } from "../../core/errors";
 import type { Mailbox, Message, MessageSummary } from "../../core/model";
-import { useMailboxes, useThread } from "../../data/hooks";
+import { useThread } from "../../data/hooks";
 import { isolatingMailboxes, visibleMessages } from "../../data/optimistic";
 import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
@@ -25,6 +25,8 @@ import { AttachmentList } from "./AttachmentList";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useUnsubscribe } from "./useUnsubscribe";
+import { useT } from "../../i18n/context";
+import { useMailboxList } from "../common/mailboxNames";
 
 /** Props of {@link ConversationView}. */
 export interface ConversationViewProps {
@@ -51,7 +53,8 @@ export function ConversationView({
   onBack,
 }: ConversationViewProps) {
   const { data: thread, error, refetch } = useThread(accountId, threadId);
-  const { data: mailboxes } = useMailboxes(accountId);
+  const t = useT();
+  const { data: mailboxes } = useMailboxList(accountId);
   const actions = useMailActions();
   const compose = useComposeActions();
   const messages = useMemo(() => {
@@ -97,14 +100,14 @@ export function ConversationView({
     content = (
       <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
         {isMailError(error, "not-found")
-          ? "This conversation no longer exists."
-          : errorMessage(error)}{" "}
+          ? t.reader.conversationGoneText
+          : errorMessage(error, t)}{" "}
         <button
           type="button"
           className="text-blue-700 underline dark:text-blue-300"
           onClick={() => void refetch()}
         >
-          Try again
+          {t.common.tryAgain}
         </button>
       </p>
     );
@@ -112,7 +115,7 @@ export function ConversationView({
     content = (
       <div
         aria-busy="true"
-        aria-label="Loading conversation"
+        aria-label={t.reader.loadingConversation}
         className="animate-pulse space-y-4 p-6"
       >
         <div className="h-5 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800" />
@@ -126,12 +129,12 @@ export function ConversationView({
     <div className="flex h-full min-h-0 flex-col">
       <div
         role="group"
-        aria-label="Conversation actions"
+        aria-label={t.reader.conversationActions}
         className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800"
       >
         {onBack && (
           <IconButton
-            label="Back to messages"
+            label={t.reader.backToMessages}
             icon="arrow-left"
             onClick={onBack}
           />
@@ -140,21 +143,21 @@ export function ConversationView({
         {summary && compose.canCompose && (
           <>
             <IconButton
-              label="Reply (r)"
+              label={t.actions.replyButton}
               icon="reply"
               onClick={() => {
                 compose.reply(answering(), "reply");
               }}
             />
             <IconButton
-              label="Reply all (Shift+R)"
+              label={t.actions.replyAllButton}
               icon="reply-all"
               onClick={() => {
                 compose.reply(answering(), "reply-all");
               }}
             />
             <IconButton
-              label="Forward (f)"
+              label={t.actions.forwardButton}
               icon="forward"
               onClick={() => {
                 compose.forward(answering());
@@ -202,6 +205,7 @@ function ConversationBody({
 }: ConversationBodyProps) {
   const subjectId = useId();
   const store = useUiStore();
+  const t = useT();
   const cursor = useUi((state) => state.readerCursor);
   const markRead = useUi((state) => state.settings.markRead);
   const drafts = mailboxes?.find((m) => m.role === "drafts")?.id;
@@ -290,7 +294,7 @@ function ConversationBody({
 
   // n / p / Enter inside the conversation.
   const commands = useMemo((): Command[] => {
-    const group = "Reading";
+    const group = "reading";
     const move = (delta: number) => () => {
       const ids = messages.map((m) => m.id);
       const cursorId = store.getState().readerCursor;
@@ -307,21 +311,21 @@ function ConversationBody({
       {
         id: "conversation.next",
         group,
-        description: "Next message in the conversation",
+        description: t.shortcuts.nextInConversation,
         keys: ["n"],
         run: move(1),
       },
       {
         id: "conversation.previous",
         group,
-        description: "Previous message in the conversation",
+        description: t.shortcuts.previousInConversation,
         keys: ["p"],
         run: move(-1),
       },
       {
         id: "conversation.toggle",
         group,
-        description: "Open or close the message at the cursor",
+        description: t.shortcuts.toggleInConversation,
         keys: ["Enter", "o"],
         when: () => store.getState().readerCursor !== null,
         run: () => {
@@ -330,7 +334,7 @@ function ConversationBody({
         },
       },
     ];
-  }, [messages, store, domId]);
+  }, [messages, store, domId, t]);
   useCommands(commands);
 
   const first = messages[0];
@@ -348,16 +352,16 @@ function ConversationBody({
           id={subjectId}
           className="text-lg font-semibold break-words sm:text-xl"
         >
-          {first?.subject || "(no subject)"}
+          {first?.subject || t.common.noSubject}
           {messages.length > 1 && (
             <span className="ml-2 align-middle text-sm font-normal text-zinc-500">
               {messages.length}
-              <span className="sr-only"> messages</span>
+              <span className="sr-only">{t.reader.messageCount}</span>
             </span>
           )}
         </h1>
         {labels.length > 0 && (
-          <ul aria-label="Labels" className="flex flex-wrap gap-1.5">
+          <ul aria-label={t.labels.labels} className="flex flex-wrap gap-1.5">
             {labels.map((label) => (
               <li
                 key={label.id}
@@ -378,7 +382,7 @@ function ConversationBody({
         )}
       </div>
       <ol
-        aria-label="Messages"
+        aria-label={t.reader.messagesOfConversation}
         className="divide-y divide-zinc-200 dark:divide-zinc-800"
       >
         {messages.map((message, index) => (
@@ -418,11 +422,11 @@ function ConversationBody({
                   className={`w-32 shrink-0 truncate ${message.flags.seen ? "" : "font-semibold"}`}
                 >
                   {message.from && mine.has(message.from.address.toLowerCase())
-                    ? "me"
-                    : displayName(message.from)}
+                    ? t.common.me
+                    : displayName(message.from, t.common.unknownSender)}
                   {isDraft(message, drafts) && (
                     <span className="ml-1 font-normal text-red-700 dark:text-red-400">
-                      Draft
+                      {t.reader.draft}
                     </span>
                   )}
                 </span>
@@ -433,7 +437,7 @@ function ConversationBody({
                   dateTime={message.receivedAt}
                   className="shrink-0 text-xs text-zinc-500"
                 >
-                  {formatListDate(message.receivedAt)}
+                  {formatListDate(message.receivedAt, { locale: t.locale })}
                 </time>
               </button>
             )}
@@ -488,6 +492,7 @@ function OpenMessage({
   onCollapse,
 }: OpenMessageProps) {
   const unsubscribe = useUnsubscribe();
+  const t = useT();
   const unsubscribed = useUi((state) => state.unsubscribed.has(message.id));
   const button =
     "flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
@@ -502,8 +507,8 @@ function OpenMessage({
               <IconButton
                 label={
                   message.flags.flagged
-                    ? "Unstar this message"
-                    : "Star this message"
+                    ? t.reader.unstarMessage
+                    : t.reader.starMessage
                 }
                 icon="star"
                 pressed={message.flags.flagged}
@@ -514,7 +519,7 @@ function OpenMessage({
             )}
             {onCollapse && (
               <IconButton
-                label="Close this message"
+                label={t.reader.closeMessage}
                 icon="chevron-up"
                 onClick={onCollapse}
               />
@@ -539,7 +544,7 @@ function OpenMessage({
           {draft ? (
             <>
               <span className="self-center text-sm font-medium text-red-700 dark:text-red-400">
-                Draft
+                {t.reader.draft}
               </span>
               <button
                 type="button"
@@ -549,7 +554,7 @@ function OpenMessage({
                 }}
               >
                 <Icon name="pencil" className="size-4" />
-                Edit
+                {t.common.edit}
               </button>
             </>
           ) : (
@@ -562,7 +567,7 @@ function OpenMessage({
                 }}
               >
                 <Icon name="reply" className="size-4" />
-                Reply
+                {t.reader.reply}
               </button>
               <button
                 type="button"
@@ -572,7 +577,7 @@ function OpenMessage({
                 }}
               >
                 <Icon name="reply-all" className="size-4" />
-                Reply all
+                {t.reader.replyAll}
               </button>
               <button
                 type="button"
@@ -582,7 +587,7 @@ function OpenMessage({
                 }}
               >
                 <Icon name="forward" className="size-4" />
-                Forward
+                {t.reader.forward}
               </button>
             </>
           )}

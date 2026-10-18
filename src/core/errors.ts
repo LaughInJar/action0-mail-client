@@ -16,21 +16,66 @@ export type MailErrorCode =
   | "unavailable"
   | "provider";
 
+/**
+ * Known causes the app describes itself, so the interface can say them in
+ * its language (with {@link MailError.params}). Errors without a reason
+ * show their message as it is (e.g. the provider's own text).
+ */
+export type MailErrorReason =
+  | "notConnected"
+  | "signInAgain"
+  | "signInUnavailable"
+  | "signInFailed"
+  | "signInClosed"
+  | "signInBlocked"
+  | "accessNotGranted"
+  | "unreachable"
+  | "tokenRejected"
+  | "draftGone"
+  | "noContent"
+  | "onlyTrashSpam"
+  | "notALabel"
+  | "labelNeedsName"
+  | "labelNoSlash"
+  | "labelExists"
+  | "labelNotAllowed"
+  | "labelInsideItself"
+  | "systemMailbox"
+  | "settingsNotAllowed"
+  | "peopleApiDisabled"
+  | "contactsDeclined"
+  | "senderUnreachable"
+  | "senderRefused"
+  | "needsHttps"
+  | "demoRefused"
+  | "demoContactsOff";
+
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {
   override readonly name = "MailError";
   readonly code: MailErrorCode;
   /** HTTP status, if the error came from an HTTP response. */
   readonly status: number | undefined;
+  /** A cause the interface can describe in its own language. */
+  readonly reason: MailErrorReason | undefined;
+  /** Values for the description of {@link reason} (a label's name, …). */
+  readonly params: Readonly<Record<string, string>>;
 
   constructor(
     code: MailErrorCode,
     message: string,
-    options: { status?: number; cause?: unknown } = {},
+    options: {
+      status?: number;
+      cause?: unknown;
+      reason?: MailErrorReason;
+      params?: Readonly<Record<string, string>>;
+    } = {},
   ) {
     super(message, { cause: options.cause });
     this.code = code;
     this.status = options.status;
+    this.reason = options.reason;
+    this.params = options.params ?? {};
   }
 }
 

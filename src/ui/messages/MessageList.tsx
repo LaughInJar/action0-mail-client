@@ -17,6 +17,7 @@ import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
 import { rowView } from "./rowView";
 import { useLongPress } from "./useLongPress";
+import { useT } from "../../i18n/context";
 
 /** The row of a message (ids are opaque, so no CSS selector built from them). */
 function rowOf(list: HTMLElement, id: MessageId): HTMLElement | undefined {
@@ -105,6 +106,7 @@ export function MessageList({
   const store = useUiStore();
   const focusedId = useUi((state) => state.focusedId);
   const compact = useUi((state) => state.settings.density === "compact");
+  const t = useT();
   const selectedIds = useUi((state) => state.selectedIds);
   const ids = useMemo(() => rows.map((row) => row.id), [rows]);
   // "me" in a conversation's senders: the account's addresses.
@@ -119,9 +121,9 @@ export function MessageList({
     const showRecipients =
       mailbox?.role === "sent" || mailbox?.role === "drafts";
     return rows.map((row) =>
-      rowView(row, { mailbox, isolating, mine, showRecipients, drafts }),
+      rowView(row, { mailbox, isolating, mine, showRecipients, drafts, t }),
     );
-  }, [rows, mailbox, isolating, email, senders, drafts]);
+  }, [rows, mailbox, isolating, email, senders, drafts, t]);
   const pointerType = useRef("mouse");
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -201,8 +203,7 @@ export function MessageList({
       ? ids.filter((candidate) => state.selectedIds.has(candidate))
       : [id];
     state.setDragging({ accountId, ids: dragged });
-    const label =
-      dragged.length === 1 ? "1 message" : `${dragged.length} messages`;
+    const label = t.common.messages(dragged.length);
     event.dataTransfer.effectAllowed = "copyMove";
     // Firefox only starts a drag with some data set.
     event.dataTransfer.setData("text/plain", label);
@@ -259,10 +260,7 @@ export function MessageList({
           }}
           className="absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-blue-600 px-3 py-1 text-sm font-medium text-white shadow-lg hover:bg-blue-700 pointer-coarse:min-h-11"
         >
-          ↑{" "}
-          {newAbove === 1
-            ? "1 new message"
-            : `${String(newAbove)} new messages`}
+          ↑ {t.list.newAbove(newAbove)}
         </button>
       )}
       <div
@@ -272,7 +270,7 @@ export function MessageList({
         role="listbox"
         data-density={compact ? "compact" : "comfortable"}
         aria-label={
-          label ?? (mailbox ? `Messages in ${mailbox.name}` : "Messages")
+          label ?? (mailbox ? t.list.messagesIn(mailbox.name) : t.list.messages)
         }
         aria-multiselectable="true"
         aria-activedescendant={
@@ -330,7 +328,7 @@ export function MessageList({
               }}
               className="rounded-md px-3 py-1.5 text-sm text-blue-700 hover:bg-zinc-100 disabled:text-zinc-400 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
             >
-              {isFetchingNextPage ? "Loading…" : "Load more"}
+              {isFetchingNextPage ? t.common.loading : t.list.loadMore}
             </button>
           </div>
         )}

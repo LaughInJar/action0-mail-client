@@ -155,6 +155,7 @@ function providerOf(registry: AccountRegistry, accountId: AccountId) {
     throw new MailError(
       "auth-required",
       "This account is no longer connected.",
+      { reason: "notConnected" },
     );
   return handle.provider;
 }

@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { asMessageId, asThreadId } from "../core/ids";
 import type { Message } from "../core/model";
 import { editorHtmlToMail, htmlToText, textToHtml } from "./html";
-import { forwardQuote, replyQuote, splitQuote } from "./quote";
+import { messages } from "../i18n/messages";
+import { forwardQuote, replyQuote, splitQuote, type QuoteTexts } from "./quote";
 import { draftInputOf, mailBody, mailHtmlToEditor, sentBytes } from "./session";
 import { splitSignature } from "./signature";
+
+const english: QuoteTexts = {
+  ...messages.en.composer.quote,
+  locale: "en-US",
+  unknownSender: "(unknown sender)",
+};
 
 const original: Message = {
   id: asMessageId("m1"),
@@ -59,7 +66,7 @@ describe("editor and mail HTML", () => {
 
 describe("quotes", () => {
   it("quotes a reply: sanitized, styles kept, inline images dropped", () => {
-    const quote = replyQuote(original);
+    const quote = replyQuote(original, english);
     expect(quote.html).toMatch(/^<div class="gmail_quote">/);
     expect(quote.html).toContain("Anna Berger &lt;anna@example.org&gt; wrote:");
     expect(quote.html).toContain(".big{font-size:20px}");
@@ -70,7 +77,7 @@ describe("quotes", () => {
   });
 
   it("forwards with a header block and keeps inline images", () => {
-    const quote = forwardQuote(original);
+    const quote = forwardQuote(original, english);
     expect(quote.html).toContain("---------- Forwarded message ---------");
     expect(quote.html).toContain("Subject: Plans<br>");
     expect(quote.html).toContain("Cc: Bob &lt;bob@example.net&gt;");
@@ -78,8 +85,24 @@ describe("quotes", () => {
     expect(quote.text).toContain("From: Anna Berger <anna@example.org>");
   });
 
+  it("quotes in German", () => {
+    const german: QuoteTexts = {
+      ...messages.de.composer.quote,
+      locale: "de-AT",
+      unknownSender: "Unbekannter Absender",
+    };
+    expect(replyQuote(original, german).text).toMatch(
+      /^Am 18\.10\.2026 um \d\d:\d\d schrieb Anna Berger <anna@example\.org>:\n> Hello/,
+    );
+    const forward = forwardQuote(original, german).text;
+    expect(forward).toMatch(/^---------- Weitergeleitete Nachricht -/);
+    expect(forward).toContain("Von: Anna Berger <anna@example.org>");
+    expect(forward).toContain("Betreff: Plans");
+    expect(forward).toMatch(/Datum: 18\.10\.2026, \d\d:\d\d/);
+  });
+
   it("splits a saved draft into the user's text and the quote", () => {
-    const quote = replyQuote(original);
+    const quote = replyQuote(original, english);
     const { html } = mailBody("<p>Thanks!</p>", quote);
     const split = splitQuote(html);
     expect(split.body).toBe("<div>Thanks!</div>");
@@ -156,7 +179,7 @@ describe("signatures", () => {
   const signature = '<b style="color:red">Anna</b>';
 
   it("go between the text and the quote, as they are", () => {
-    const quote = replyQuote(original);
+    const quote = replyQuote(original, english);
     const { html, text } = mailBody("<p>Thanks!</p>", quote, signature);
     expect(html).toBe(
       `<div>Thanks!</div><br><div class="gmail_signature" data-smartmail="gmail_signature">${signature}</div><br>${quote.html}`,

@@ -291,6 +291,8 @@ export class GmailHttp {
         }
         throw new MailError("network", `Could not reach ${this.#service}.`, {
           cause,
+          reason: "unreachable",
+          params: { service: this.#service },
         });
       }
 
@@ -307,6 +309,8 @@ export class GmailHttp {
           `${this.#service} rejected the access token.`,
           {
             status,
+            reason: "tokenRejected",
+            params: { service: this.#service },
           },
         );
       }

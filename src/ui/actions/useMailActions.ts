@@ -30,6 +30,8 @@ import type { Mailbox } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { useCurrentList } from "../messages/useCurrentList";
+import { useT } from "../../i18n/context";
+import { mailboxName } from "../common/mailboxNames";
 
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
@@ -102,10 +104,6 @@ interface PerformOptions {
   readonly nothing?: string;
 }
 
-const messages = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
-const conversationCount = (n: number) =>
-  n === 1 ? "1 conversation" : `${n} conversations`;
-
 /**
  * Turns "the current message or selection" into intents: predicts the
  * effect, moves the cursor away from rows that disappear, runs the intent
@@ -125,6 +123,7 @@ export function useMailActions(): MailActions {
   const breakpoint = useBreakpoint();
   const handle = useAccountHandle(route?.accountId);
   const queryClient = useQueryClient();
+  const t = useT();
   const preview = usePreviewIntent();
   // mutateAsync, not mutate: the promise settles even when the calling
   // component (picker, confirmation, reader) unmounts first, so error toasts
@@ -136,7 +135,8 @@ export function useMailActions(): MailActions {
   return useMemo((): MailActions => {
     const orderedIds = (rows ?? []).map((row) => row.id);
     const isolating = isolatingMailboxes(mailboxes ?? []);
-    const count = conversations ? conversationCount : messages;
+    const a = t.actions;
+    const count = conversations ? t.common.conversations : t.common.messages;
     /** Rows → messages: a conversation stands for all its messages. */
     const expand = (ids: readonly MessageId[]): MessageId[] =>
       conversations && route
@@ -153,7 +153,10 @@ export function useMailActions(): MailActions {
       findMailbox(mailboxes, id) ??
       (route && findMailbox(cachedMailboxes(queryClient, route.accountId), id));
     const roleOf = (id: MailboxId) => mailboxOf(id)?.role;
-    const nameOf = (id: MailboxId) => mailboxOf(id)?.name ?? "the mailbox";
+    const nameOf = (id: MailboxId) => {
+      const found = mailboxOf(id);
+      return found ? mailboxName(found, t) : a.theMailbox;
+    };
 
     const targets = (): MessageId[] => {
       const { selectedIds, focusedId } = store.getState();
@@ -165,7 +168,7 @@ export function useMailActions(): MailActions {
 
     const showError = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
-        message: `${prefix}: ${errorMessage(error)}`,
+        message: `${prefix}: ${errorMessage(error, t)}`,
         tone: "error",
       });
     };
@@ -268,9 +271,9 @@ export function useMailActions(): MailActions {
         perform(
           { kind: "archive", ids: ids(explicit) },
           {
-            done: (n) => `Archived ${count(n)}`,
-            failure: "Couldn’t archive",
-            nothing: "Not in the Inbox, nothing to archive.",
+            done: (n) => a.archived(count(n)),
+            failure: a.couldntArchive,
+            nothing: a.notInInbox,
           },
         );
       },
@@ -286,10 +289,9 @@ export function useMailActions(): MailActions {
             ...(silent
               ? {}
               : {
-                  done: (n: number) =>
-                    `Marked ${count(n)} as ${seen ? "read" : "unread"}`,
+                  done: (n: number) => a.marked(count(n), seen),
                 }),
-            failure: `Couldn’t mark as ${seen ? "read" : "unread"}`,
+            failure: a.couldntMark(seen),
           },
           exact,
         );
@@ -299,9 +301,8 @@ export function useMailActions(): MailActions {
         if (!route || !capabilities?.settableFlags.includes("flagged")) return;
         const targetIds = ids(explicit);
         const done = (flagged: boolean) => (n: number) =>
-          `${flagged ? "Starred" : "Unstarred"} ${count(n)}`;
-        const failure = (flagged: boolean) =>
-          `Couldn’t ${flagged ? "star" : "unstar"}`;
+          a.starred(count(n), flagged);
+        const failure = (flagged: boolean) => a.couldntStar(flagged);
 
         if (conversations && !exact) {
           // Like Gmail: a conversation's star is on its newest message.
@@ -355,8 +356,8 @@ export function useMailActions(): MailActions {
           perform(
             { kind: "trash", ids: ids(explicit) },
             {
-              done: (n) => `Moved ${count(n)} to Trash`,
-              failure: "Couldn’t move to Trash",
+              done: (n) => a.movedToTrash(count(n)),
+              failure: a.couldntTrash,
             },
           );
           return;
@@ -365,8 +366,8 @@ export function useMailActions(): MailActions {
           perform(
             { kind: "report-spam", ids: ids(explicit) },
             {
-              done: (n) => `Reported ${count(n)} as spam`,
-              failure: "Couldn’t report spam",
+              done: (n) => a.reportedSpam(count(n)),
+              failure: a.couldntReportSpam,
             },
           );
           return;
@@ -381,9 +382,9 @@ export function useMailActions(): MailActions {
             to,
           },
           {
-            done: (n) => `Moved ${count(n)} to ${name}`,
-            failure: "Couldn’t move",
-            nothing: `Already in ${name}.`,
+            done: (n) => a.moved(count(n), name),
+            failure: a.couldntMove,
+            nothing: a.alreadyIn(name),
           },
         );
       },
@@ -397,12 +398,12 @@ export function useMailActions(): MailActions {
           {
             done: (n) => {
               if (add.length === 1 && remove.length === 0 && onlyAdded)
-                return `Added label ${nameOf(onlyAdded)} to ${count(n)}`;
+                return a.labelAdded(nameOf(onlyAdded), count(n));
               if (remove.length === 1 && add.length === 0 && onlyRemoved)
-                return `Removed label ${nameOf(onlyRemoved)} from ${count(n)}`;
-              return `Changed labels of ${count(n)}`;
+                return a.labelRemoved(nameOf(onlyRemoved), count(n));
+              return a.labelsChanged(count(n));
             },
-            failure: "Couldn’t change labels",
+            failure: a.couldntChangeLabels,
           },
         );
       },
@@ -430,16 +431,16 @@ export function useMailActions(): MailActions {
           perform(
             { kind: "untrash", ids: ids(explicit) },
             {
-              done: (n) => `Restored ${count(n)}`,
-              failure: "Couldn’t restore",
+              done: (n) => a.restored(count(n)),
+              failure: a.couldntRestore,
             },
           );
         } else {
           perform(
             { kind: "trash", ids: ids(explicit) },
             {
-              done: (n) => `Moved ${count(n)} to Trash`,
-              failure: "Couldn’t move to Trash",
+              done: (n) => a.movedToTrash(count(n)),
+              failure: a.couldntTrash,
             },
           );
         }
@@ -451,16 +452,16 @@ export function useMailActions(): MailActions {
           perform(
             { kind: "not-spam", ids: ids(explicit) },
             {
-              done: (n) => `Not spam: moved ${count(n)} to the Inbox`,
-              failure: "Couldn’t mark as not spam",
+              done: (n) => a.notSpamMoved(count(n)),
+              failure: a.couldntNotSpam,
             },
           );
         } else {
           perform(
             { kind: "report-spam", ids: ids(explicit) },
             {
-              done: (n) => `Reported ${count(n)} as spam`,
-              failure: "Couldn’t report spam",
+              done: (n) => a.reportedSpam(count(n)),
+              failure: a.couldntReportSpam,
             },
           );
         }
@@ -472,9 +473,9 @@ export function useMailActions(): MailActions {
         const targetIds = ids(explicit);
         if (targetIds.length === 0) return;
         store.getState().setConfirm({
-          title: `Delete ${count(targetIds.length)} forever?`,
-          message: "This can’t be undone.",
-          confirmLabel: "Delete forever",
+          title: a.deleteForeverTitle(count(targetIds.length)),
+          message: a.cantBeUndone,
+          confirmLabel: a.deleteForever,
           action: {
             kind: "delete-forever",
             accountId: route.accountId,
@@ -489,9 +490,9 @@ export function useMailActions(): MailActions {
           return;
         if (view !== "trash" && view !== "junk") return;
         store.getState().setConfirm({
-          title: `Empty ${mailbox.name}?`,
-          message: `Every message in ${mailbox.name} will be deleted forever. This can’t be undone.`,
-          confirmLabel: `Empty ${mailbox.name}`,
+          title: a.emptyTitle(mailbox.name),
+          message: a.emptyMessage(mailbox.name),
+          confirmLabel: a.empty(mailbox.name),
           action: {
             kind: "empty",
             accountId: route.accountId,
@@ -508,8 +509,8 @@ export function useMailActions(): MailActions {
           perform(
             { kind: "delete-forever", ids: action.ids },
             {
-              done: (n) => `Deleted ${count(n)} forever`,
-              failure: "Couldn’t delete",
+              done: (n) => a.deletedForever(count(n)),
+              failure: a.couldntDelete,
             },
           );
           return;
@@ -521,11 +522,11 @@ export function useMailActions(): MailActions {
         }).then(
           ({ deleted }) => {
             store.getState().showToast({
-              message: `Emptied ${action.name} (${count(deleted)})`,
+              message: a.emptied(action.name, t.common.messages(deleted)),
               tone: "info",
             });
           },
-          showError(`Couldn’t empty ${action.name}`),
+          showError(a.couldntEmpty(action.name)),
         );
       },
 
@@ -544,7 +545,7 @@ export function useMailActions(): MailActions {
                 !belongsTo(mailbox, change.before, isolating),
             )?.id;
           }
-          apply({ accountId, intent, known }).catch(showError("Couldn’t undo"));
+          apply({ accountId, intent, known }).catch(showError(a.couldntUndo));
         }
         // Undo brings the cursor back to a message that returns to this list.
         if (restoredHere !== undefined)
@@ -566,5 +567,6 @@ export function useMailActions(): MailActions {
     rows,
     conversations,
     store,
+    t,
   ]);
 }

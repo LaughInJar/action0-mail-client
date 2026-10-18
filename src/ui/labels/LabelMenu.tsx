@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, type KeyboardEvent } from "react";
 import { useAccountHandle } from "../../accounts/context";
-import { findMailbox, useMailboxes } from "../../data/hooks";
+import { findMailbox } from "../../data/hooks";
 import { useUi } from "../../state/context";
 import type { LabelMenuState } from "../../state/uiStore";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { useLabelActions } from "./useLabelActions";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** Shows the label menu while one is open. */
 export function LabelMenuHost() {
@@ -23,11 +25,12 @@ const MARGIN = 8;
 function LabelMenu({ menu }: { menu: LabelMenuState }) {
   const setLabelMenu = useUi((state) => state.setLabelMenu);
   const setLabelDialog = useUi((state) => state.setLabelDialog);
-  const { data: mailboxes } = useMailboxes(menu.accountId);
+  const { data: mailboxes } = useMailboxList(menu.accountId);
   const mailbox = findMailbox(mailboxes, menu.mailboxId);
   const colors =
     useAccountHandle(menu.accountId)?.provider.capabilities.mailboxColors ?? [];
   const labels = useLabelActions();
+  const l = useT().labels;
   const menuRef = useRef<HTMLDivElement>(null);
   // The click that ends a long-press lands on whatever opened under the
   // finger: only presses that started on the backdrop or the menu count.
@@ -64,23 +67,23 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
     readonly run: () => void;
     readonly danger?: boolean;
   }[] = [
-    { label: "Rename…", run: edit("name") },
-    ...(colors.length > 0 ? [{ label: "Colour…", run: edit("color") }] : []),
-    { label: "Move under…", run: edit("parent") },
+    { label: l.rename, run: edit("name") },
+    ...(colors.length > 0 ? [{ label: l.colourMenu, run: edit("color") }] : []),
+    { label: l.moveUnder, run: edit("parent") },
     {
-      label: "Add sublabel…",
+      label: l.addSublabel,
       run: () => {
         setLabelDialog({ mode: "create", accountId, parentId: mailbox.id });
       },
     },
     {
-      label: mailbox.hidden ? "Show in folder list" : "Hide from folder list",
+      label: mailbox.hidden ? l.showInFolderList : l.hideFromFolderList,
       run: () => {
         labels.toggleHidden(accountId, mailbox);
       },
     },
     {
-      label: "Delete…",
+      label: l.deleteMenu,
       danger: true,
       run: () => {
         labels.requestDelete(accountId, mailbox);
@@ -113,7 +116,7 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Close menu"
+        aria-label={l.closeMenu}
         onPointerDown={() => {
           pressed.current = "backdrop";
         }}
@@ -129,7 +132,7 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
       <div
         ref={menuRef}
         role="menu"
-        aria-label={`Label ${mailbox.name}`}
+        aria-label={l.menuOf(mailbox.name)}
         tabIndex={-1}
         data-own-keys=""
         onKeyDown={onKeyDown}

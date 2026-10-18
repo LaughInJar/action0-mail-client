@@ -18,10 +18,28 @@ const QUOTE_CLASS = "gmail_quote";
 const BLOCKQUOTE_STYLE =
   "margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex";
 
-const dateFormat = new Intl.DateTimeFormat("en", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+/** The words of a quote, in the interface language. */
+export interface QuoteTexts {
+  /** Formats dates (a BCP 47 tag, like "de-AT"). */
+  readonly locale: string;
+  readonly unknownSender: string;
+  /** The line above a reply's quote: "On <date>, <sender> wrote:". */
+  readonly wrote: (when: Date, locale: string, sender: string) => string;
+  /** The heading of a forwarded message. */
+  readonly forwarded: string;
+  /** Field names in a forward's header. */
+  readonly from: string;
+  readonly date: string;
+  readonly subject: string;
+  readonly to: string;
+  readonly cc: string;
+}
+
+const formatDate = (iso: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso));
 
 const addressList = (list: readonly EmailAddress[]) =>
   list.map(formatAddress).join(", ");
@@ -53,13 +71,16 @@ function originalText(original: Message): string {
   return text ?? (html === undefined ? "" : htmlToText(html));
 }
 
-const senderLine = (original: Message) =>
-  original.from ? formatAddress(original.from) : "Unknown sender";
+const senderLine = (original: Message, texts: QuoteTexts) =>
+  original.from ? formatAddress(original.from) : texts.unknownSender;
 
 /** "On <date>, <sender> wrote:" and the original in a blockquote. */
-export function replyQuote(original: Message): Quote {
-  const date = dateFormat.format(new Date(original.receivedAt));
-  const attribution = `On ${date}, ${senderLine(original)} wrote:`;
+export function replyQuote(original: Message, texts: QuoteTexts): Quote {
+  const attribution = texts.wrote(
+    new Date(original.receivedAt),
+    texts.locale,
+    senderLine(original, texts),
+  );
   return {
     html:
       `<div class="${QUOTE_CLASS}"><div class="gmail_attr">${escapeHtml(attribution)}<br></div>` +
@@ -74,17 +95,17 @@ export function replyQuote(original: Message): Quote {
 }
 
 /** The "Forwarded message" header and the original. */
-export function forwardQuote(original: Message): Quote {
+export function forwardQuote(original: Message, texts: QuoteTexts): Quote {
   const fields: [string, string][] = [
-    ["From", senderLine(original)],
-    ["Date", dateFormat.format(new Date(original.receivedAt))],
-    ["Subject", original.subject],
-    ["To", addressList(original.to)],
+    [texts.from, senderLine(original, texts)],
+    [texts.date, formatDate(original.receivedAt, texts.locale)],
+    [texts.subject, original.subject],
+    [texts.to, addressList(original.to)],
     ...(original.cc.length > 0
-      ? [["Cc", addressList(original.cc)] as [string, string]]
+      ? [[texts.cc, addressList(original.cc)] as [string, string]]
       : []),
   ];
-  const heading = "---------- Forwarded message ---------";
+  const heading = texts.forwarded;
   return {
     html:
       `<div class="${QUOTE_CLASS}"><div class="gmail_attr">${heading}<br>` +

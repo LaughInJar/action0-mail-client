@@ -1,21 +1,34 @@
 import { useUi } from "../../state/context";
 import type { ThemeMode } from "../../state/theme";
 import { Icon, type IconName } from "../common/Icon";
+import { useT, type I18n } from "../../i18n/context";
 
-const OPTIONS: readonly {
+const options = (
+  t: I18n,
+): readonly {
   readonly mode: ThemeMode;
   readonly label: string;
   readonly hint: string;
   readonly icon: IconName;
-}[] = [
+}[] => [
   {
     mode: "system",
-    label: "System",
-    hint: "System theme (follows your device)",
+    label: t.layout.themeSystem,
+    hint: t.layout.themeSystemHint,
     icon: "monitor",
   },
-  { mode: "light", label: "Light", hint: "Light theme", icon: "sun" },
-  { mode: "dark", label: "Dark", hint: "Dark theme", icon: "moon" },
+  {
+    mode: "light",
+    label: t.layout.themeLight,
+    hint: t.layout.themeLightHint,
+    icon: "sun",
+  },
+  {
+    mode: "dark",
+    label: t.layout.themeDark,
+    hint: t.layout.themeDarkHint,
+    icon: "moon",
+  },
 ];
 
 /**
@@ -26,14 +39,15 @@ const OPTIONS: readonly {
 export function ThemeSwitch() {
   const theme = useUi((state) => state.theme);
   const setTheme = useUi((state) => state.setTheme);
+  const t = useT();
   return (
     <div
       role="radiogroup"
-      aria-label="Theme"
+      aria-label={t.layout.theme}
       data-own-keys=""
       className="flex rounded-md bg-zinc-200/70 p-0.5 dark:bg-zinc-800"
     >
-      {OPTIONS.map(({ mode, label, hint, icon }) => (
+      {options(t).map(({ mode, label, hint, icon }) => (
         <label
           key={mode}
           title={hint}

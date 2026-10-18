@@ -1,0 +1,54 @@
+import { accounts } from "./texts/accounts";
+import { actions } from "./texts/actions";
+import { common } from "./texts/common";
+import { composer } from "./texts/composer";
+import { errors } from "./texts/errors";
+import { labels } from "./texts/labels";
+import { layout } from "./texts/layout";
+import { list } from "./texts/list";
+import { mailboxes } from "./texts/mailboxes";
+import { reader } from "./texts/reader";
+import { settings } from "./texts/settings";
+import { shortcuts } from "./texts/shortcuts";
+import { unsubscribe } from "./texts/unsubscribe";
+
+/**
+ * Every text of the interface, by language. Each area keeps English and
+ * German side by side (`texts/`); German is typed against English, so a
+ * missing or mismatched German text fails the build.
+ */
+export const messages = {
+  en: {
+    accounts: accounts.en,
+    actions: actions.en,
+    common: common.en,
+    composer: composer.en,
+    errors: errors.en,
+    labels: labels.en,
+    layout: layout.en,
+    list: list.en,
+    mailboxes: mailboxes.en,
+    reader: reader.en,
+    settings: settings.en,
+    shortcuts: shortcuts.en,
+    unsubscribe: unsubscribe.en,
+  },
+  de: {
+    accounts: accounts.de,
+    actions: actions.de,
+    common: common.de,
+    composer: composer.de,
+    errors: errors.de,
+    labels: labels.de,
+    layout: layout.de,
+    list: list.de,
+    mailboxes: mailboxes.de,
+    reader: reader.de,
+    settings: settings.de,
+    shortcuts: shortcuts.de,
+    unsubscribe: unsubscribe.de,
+  },
+};
+
+/** The texts of one language. */
+export type Messages = (typeof messages)["en"];

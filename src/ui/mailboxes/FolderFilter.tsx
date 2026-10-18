@@ -5,6 +5,7 @@ import { focusWhenReady } from "../common/focusWhenReady";
 import { Icon } from "../common/Icon";
 import { MESSAGE_LIST_ID } from "../messages/MessageList";
 import { listKeyOf } from "../messages/useCurrentList";
+import { useT } from "../../i18n/context";
 
 /** DOM id of the folder filter field (focused by `g f`). */
 export const FOLDER_FILTER_ID = "folder-filter";
@@ -20,6 +21,7 @@ export function FolderFilter() {
   const setText = useUi((state) => state.setFolderFilter);
   const store = useUiStore();
   const inputRef = useRef<HTMLInputElement>(null);
+  const a = useT().accounts;
 
   /** Tree items of this sidebar, matches only while filtering. */
   const items = (selector: string) =>
@@ -84,8 +86,8 @@ export function FolderFilter() {
         id={FOLDER_FILTER_ID}
         data-initial-focus=""
         type="search"
-        aria-label="Filter folders"
-        placeholder="Filter folders"
+        aria-label={a.filterFolders}
+        placeholder={a.filterFolders}
         autoComplete="off"
         value={text}
         onChange={(event) => {
@@ -97,8 +99,8 @@ export function FolderFilter() {
       {text && (
         <button
           type="button"
-          aria-label="Clear filter"
-          title="Clear filter"
+          aria-label={a.clearFilter}
+          title={a.clearFilter}
           onClick={() => {
             setText("");
             inputRef.current?.focus();

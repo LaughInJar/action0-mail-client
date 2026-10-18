@@ -16,6 +16,8 @@ import type { AccountId } from "../../core/ids";
 import type { EmailAddress } from "../../core/model";
 import { useAddressSuggestions } from "../../data/drafts";
 import { Icon } from "../common/Icon";
+import { useT } from "../../i18n/context";
+import { errorMessage } from "../common/errorMessage";
 
 /** Props of {@link AddressField}. */
 export interface AddressFieldProps {
@@ -50,6 +52,7 @@ export function AddressField({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const listId = useId();
+  const t = useT();
 
   // Look up suggestions once typing pauses briefly.
   useEffect(() => {
@@ -158,7 +161,7 @@ export function AddressField({
           return (
             <span
               key={`${address.address}-${String(index)}`}
-              title={valid ? formatAddress(address) : "Not a valid address"}
+              title={valid ? formatAddress(address) : t.composer.notAnAddress}
               className={`flex max-w-full items-center gap-0.5 rounded-full py-0.5 pr-0.5 pl-2.5 text-sm ${
                 valid
                   ? "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
@@ -166,10 +169,12 @@ export function AddressField({
               }`}
             >
               <span className="truncate">{shown}</span>
-              {!valid && <span className="sr-only">(not a valid address)</span>}
+              {!valid && (
+                <span className="sr-only">({t.composer.notAnAddress})</span>
+              )}
               <button
                 type="button"
-                aria-label={`Remove ${shown}`}
+                aria-label={t.composer.removeItem(shown)}
                 onClick={() => {
                   remove(index);
                 }}
@@ -214,7 +219,7 @@ export function AddressField({
       {trailing}
       {showList && (
         <div className="absolute top-full right-3 left-12 z-10 mt-0.5 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <div id={listId} role="listbox" aria-label="Suggestions">
+          <div id={listId} role="listbox" aria-label={t.composer.suggestions}>
             {options.map((option, index) => (
               // Clicks are fine on options; the combobox input handles the keyboard.
               // eslint-disable-next-line jsx-a11y/click-events-have-key-events
@@ -246,7 +251,7 @@ export function AddressField({
           </div>
           {notice && (
             <p className="border-t border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-700">
-              {notice}
+              {t.composer.fromRecentMail(errorMessage(notice, t))}
             </p>
           )}
         </div>

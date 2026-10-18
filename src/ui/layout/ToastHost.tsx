@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
+import { useT } from "../../i18n/context";
 
 /** How long a toast stays visible. */
 export const TOAST_DURATION_MS = 8000;
@@ -8,6 +9,7 @@ export const TOAST_DURATION_MS = 8000;
 /** Shows the current toast at the bottom of the screen, with Undo if possible. */
 export function ToastHost({ onUndo }: { onUndo: () => void }) {
   const toast = useUi((state) => state.toast);
+  const t = useT();
   const dismissToast = useUi((state) => state.dismissToast);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export function ToastHost({ onUndo }: { onUndo: () => void }) {
               onClick={onUndo}
               className="rounded px-2 py-1 font-semibold hover:bg-white/15 dark:hover:bg-black/10 pointer-coarse:min-h-11"
             >
-              Undo{" "}
+              {t.common.undo}{" "}
               <kbd className="ml-0.5 font-sans text-xs opacity-70 pointer-coarse:hidden">
                 z
               </kbd>
@@ -60,7 +62,7 @@ export function ToastHost({ onUndo }: { onUndo: () => void }) {
           )}
           <button
             type="button"
-            aria-label="Dismiss"
+            aria-label={t.common.dismiss}
             onClick={() => {
               dismissToast(toast.id);
             }}

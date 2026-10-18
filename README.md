@@ -20,7 +20,8 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
 - Conversation view (Settings → Reading, off by default): one row per conversation ("Anna, me 3"), and the reader shows the whole conversation, oldest first, with older read messages folded to one line. Your replies and drafts show in place. Archive, labels, delete and the other actions apply to the whole conversation; <kbd>n</kbd>/<kbd>p</kbd> move between its messages, <kbd>Enter</kbd> opens or closes one, and <kbd>r</kbd>/<kbd>f</kbd> answer the one at the cursor.
-- Settings (⚙ next to the theme switch): list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
+- English and German: the interface follows the browser's language, and Settings → General can choose English or Deutsch instead. Dates and numbers follow the browser's regional format (Austrian German writes "Jänner"); German replies quote with "Am 16.10.2026 um 20:59 schrieb …:".
+- Settings (⚙ next to the theme switch): language, list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
 - Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
@@ -153,6 +154,7 @@ src/
                draft saving and sending
   compose/     Outgoing mail HTML: quoting, plain-text version, composer content
   state/       UI state (Zustand): focus, selection, layout; hash router
+  i18n/        Interface texts in English and German (texts/), language choice, useT()
   keyboard/    Central shortcut registry
   security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
   ui/          React components: layout, mailboxes, messages, reader, composer, help
@@ -164,6 +166,7 @@ Rules, enforced by ESLint where possible:
 - The UI, data and state layers depend only on the provider-agnostic contracts in `src/core`. Concrete providers are wired up in `src/app`.
 - Providers do no caching; the data layer does.
 - IDs and pagination cursors are opaque strings that only their provider interprets.
+- Everything the interface says comes from `src/i18n/texts`, where each area keeps its English and German texts side by side; the German ones are typed against the English ones, so a missing text fails the build. Components read them with `useT()`. ESLint flags words written directly into `src/ui` (JSX text, labels, titles, toast messages). Errors carry a `reason` that the UI translates; messages from Google are shown as Google wrote them.
 
 ### Labels and folders
 
@@ -181,7 +184,7 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
 | Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
 | sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                                                                               | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the addresses of senders you trust with remote images)                                                          | Until sign-out                      |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language and the addresses of senders you trust with remote images)                                         | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

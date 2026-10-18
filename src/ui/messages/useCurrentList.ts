@@ -2,17 +2,13 @@ import type { Mailbox } from "../../core/model";
 import type { MessageOrder } from "../../core/provider";
 import { useMemo } from "react";
 import { useAccountHandle } from "../../accounts/context";
-import {
-  findMailbox,
-  useMailboxes,
-  useMessageList,
-  useThreadList,
-} from "../../data/hooks";
+import { findMailbox, useMessageList, useThreadList } from "../../data/hooks";
 import { messageRows, threadRows } from "../../data/listRows";
 import { isolatingMailboxes } from "../../data/optimistic";
 import type { ListSpec } from "../../data/keys";
 import { useRoute, useUi } from "../../state/context";
 import type { Route } from "../../state/router";
+import { useMailboxList } from "../common/mailboxNames";
 
 /**
  * Identifies the list a route shows in an order, as messages or
@@ -70,7 +66,7 @@ export function useCurrentList() {
   const wantsConversations = useUi((state) => state.settings.conversations);
   const supportsThreads =
     useAccountHandle(route?.accountId)?.provider.capabilities.threads === true;
-  const { data: mailboxes } = useMailboxes(route?.accountId);
+  const { data: mailboxes } = useMailboxList(route?.accountId);
   const spec = listSpecOf(route, order, mailboxes);
   const scope = findMailbox(mailboxes, spec?.mailboxId);
   // Drafts open one by one in the composer, so they stay single messages.

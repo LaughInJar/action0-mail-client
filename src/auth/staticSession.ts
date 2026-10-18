@@ -27,7 +27,11 @@ export class StaticAuthSession implements AuthSession {
 
   getAccessToken(): Promise<string> {
     if (this.#status !== "signed-in") {
-      return Promise.reject(new MailError("auth-required", "Not signed in"));
+      return Promise.reject(
+        new MailError("auth-required", "Not signed in", {
+          reason: "notConnected",
+        }),
+      );
     }
     return Promise.resolve(this.#token);
   }

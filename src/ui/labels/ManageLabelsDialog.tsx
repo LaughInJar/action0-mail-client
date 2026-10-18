@@ -1,13 +1,14 @@
 import { useId } from "react";
 import { useAccountHandle } from "../../accounts/context";
 import type { AccountId } from "../../core/ids";
-import { useMailboxes } from "../../data/hooks";
 import { isOwnMailbox, mailboxPath } from "../../data/mailboxActions";
 import { useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { Sheet } from "../common/Sheet";
 import { useLabelActions } from "./useLabelActions";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** Shows "Manage labels" while it's open. */
 export function ManageLabelsHost() {
@@ -24,8 +25,10 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
   const setManageLabels = useUi((state) => state.setManageLabels);
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const email = useAccountHandle(accountId)?.account.email;
-  const { data: mailboxes = [], isPending } = useMailboxes(accountId);
+  const { data: mailboxes = [], isPending } = useMailboxList(accountId);
   const labels = useLabelActions();
+  const t = useT();
+  const l = t.labels;
   const titleId = useId();
   const close = () => {
     setManageLabels(null);
@@ -41,7 +44,7 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
     <Sheet labelledBy={titleId} onEscape={close} size="lg">
       <div className="flex items-center gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
         <h2 id={titleId} className="min-w-0 flex-1 text-base font-semibold">
-          Manage labels{" "}
+          {l.manageLabels}{" "}
           {email && (
             <span className="text-sm font-normal text-zinc-500">{email}</span>
           )}
@@ -54,17 +57,17 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
           className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 pointer-coarse:min-h-11"
         >
           <Icon name="plus" className="size-4" />
-          New label
+          {l.newLabel}
         </button>
-        <IconButton label="Close" icon="x" onClick={close} />
+        <IconButton label={t.common.close} icon="x" onClick={close} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
         {rows.length === 0 && (
           <p className="px-2 py-6 text-center text-sm text-zinc-500">
-            {isPending ? "Loading labels…" : "No labels yet."}
+            {isPending ? l.loadingLabels : l.noLabels}
           </p>
         )}
-        <ul aria-label="All labels" className="space-y-px">
+        <ul aria-label={l.allLabels} className="space-y-px">
           {rows.map(({ mailbox, path }) => (
             <li
               key={mailbox.id}
@@ -84,13 +87,13 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
                 {mailbox.name}
                 {mailbox.hidden && (
                   <span className="ml-2 rounded bg-zinc-100 px-1.5 py-px text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                    hidden
+                    {l.hidden}
                   </span>
                 )}
               </span>
               <button
                 type="button"
-                aria-label={`Edit ${mailbox.name}`}
+                aria-label={l.editNamed(mailbox.name)}
                 onClick={() => {
                   setLabelDialog({
                     mode: "edit",
@@ -101,27 +104,31 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
                 }}
                 className={action}
               >
-                Edit
+                {t.common.edit}
               </button>
               <button
                 type="button"
-                aria-label={`${mailbox.hidden ? "Show" : "Hide"} ${mailbox.name}`}
+                aria-label={
+                  mailbox.hidden
+                    ? l.showNamed(mailbox.name)
+                    : l.hideNamed(mailbox.name)
+                }
                 onClick={() => {
                   labels.toggleHidden(accountId, mailbox);
                 }}
-                className={`${action} w-12`}
+                className={`${action} min-w-12`}
               >
-                {mailbox.hidden ? "Show" : "Hide"}
+                {mailbox.hidden ? l.show : l.hide}
               </button>
               <button
                 type="button"
-                aria-label={`Delete ${mailbox.name}`}
+                aria-label={l.deleteNamed(mailbox.name)}
                 onClick={() => {
                   labels.requestDelete(accountId, mailbox);
                 }}
                 className={`${action} text-red-700 dark:text-red-400`}
               >
-                Delete
+                {t.common.delete}
               </button>
             </li>
           ))}

@@ -16,6 +16,7 @@ import type { Breakpoint } from "../layout/useBreakpoint";
 import { ListToolbar } from "./ListToolbar";
 import { MessageList } from "./MessageList";
 import { everywhereMailbox, useCurrentList } from "./useCurrentList";
+import { useT } from "../../i18n/context";
 
 /** Column (b): header, search and message list of the current mailbox. */
 export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
@@ -32,7 +33,8 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     listKey,
   } = useCurrentList();
   const drafts = mailboxes?.find((m) => m.role === "drafts")?.id;
-  const things = conversations ? "conversations" : "messages";
+  const t = useT();
+  const l = t.list;
   const router = useRouter();
   const store = useUiStore();
   const accounts = useAccounts();
@@ -69,32 +71,27 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   }, [fetchNextPage]);
 
   let body;
-  if (!route) body = <Note>Choose a folder.</Note>;
-  else if (!handle) body = <Note>This account is no longer connected.</Note>;
+  if (!route) body = <Note>{l.chooseFolder}</Note>;
+  else if (!handle) body = <Note>{t.errors.reasons.notConnected({})}</Note>;
   else if (!rows && status !== "signed-in")
-    body = <Note>Reconnect the account to see its messages.</Note>;
+    body = <Note>{l.reconnectToSee}</Note>;
   else if (list.isPending)
     body = (
       <>
-        {order === "oldest" && (
-          <Note>
-            Sorting oldest first: big folders take a moment, because every
-            message has to be listed first.
-          </Note>
-        )}
+        {order === "oldest" && <Note>{l.sortingOldest}</Note>}
         <ListSkeleton />
       </>
     );
   else if (list.isError && !rows)
     body = (
       <Note>
-        {errorMessage(list.error)}{" "}
+        {errorMessage(list.error, t)}{" "}
         <button
           type="button"
           className="text-blue-700 underline dark:text-blue-300"
           onClick={() => void list.refetch()}
         >
-          Try again
+          {t.common.tryAgain}
         </button>
       </Note>
     );
@@ -103,8 +100,8 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     body = (
       <Note>
         {search.everywhere || !mailbox
-          ? `No ${things} match “${search.text}”.`
-          : `No ${things} match “${search.text}” in ${mailbox.name}.`}
+          ? l.noMatch(conversations, search.text)
+          : l.noMatchIn(conversations, search.text, mailbox.name)}
         {!search.everywhere &&
           everywhere &&
           mailbox &&
@@ -121,13 +118,13 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
                   });
                 }}
               >
-                Search everywhere
+                {l.searchEverywhere}
               </button>
             </>
           )}
       </Note>
     );
-  else if (rows.length === 0) body = <Note>No {things} here.</Note>;
+  else if (rows.length === 0) body = <Note>{l.empty(conversations)}</Note>;
   else
     body = (
       <MessageList
@@ -139,7 +136,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         isolating={isolating}
         drafts={drafts}
         {...(listKey === null ? {} : { listKey })}
-        {...(search ? { label: `Results for “${search.text}”` } : {})}
+        {...(search ? { label: l.results(search.text) } : {})}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
         fetchNextPage={loadMore}
@@ -160,7 +157,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
       <header className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800">
         {breakpoint !== "wide" && (
           <IconButton
-            label="Show folders"
+            label={l.showFolders}
             icon="menu"
             onClick={() => {
               if (breakpoint === "medium") setDrawerOpen(true);
@@ -171,20 +168,20 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         {selectedCount > 0 ? (
           <>
             <p className="flex-1 px-2 text-sm font-medium" aria-live="polite">
-              {selectedCount} selected
+              {l.selected(selectedCount)}
             </p>
             <button
               type="button"
               onClick={clearSelection}
               className="rounded-md px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-zinc-100 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
             >
-              Done
+              {t.common.done}
             </button>
           </>
         ) : (
           <div className="min-w-0 flex-1 px-2">
             <h2 className="truncate text-sm font-semibold">
-              {search ? `Results for “${search.text}”` : (mailbox?.name ?? "")}
+              {search ? l.results(search.text) : (mailbox?.name ?? "")}
             </h2>
             {accounts.length > 1 && handle && (
               <p className="truncate text-xs text-zinc-500">
@@ -195,13 +192,13 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         )}
         {breakpoint === "medium" && compose.canCompose && (
           <IconButton
-            label="Compose (c)"
+            label={l.composeButton}
             icon="pencil"
             onClick={compose.compose}
           />
         )}
         <IconButton
-          label="Refresh"
+          label={l.refresh}
           icon="refresh"
           spinning={list.isFetching}
           disabled={!route || status !== "signed-in"}
@@ -212,7 +209,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
       {selectedCount > 0 && (
         <div
           role="group"
-          aria-label="Actions for the selected messages"
+          aria-label={l.selectionActions}
           className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <MailActionButtons actions={actions} />
@@ -223,16 +220,14 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           role="note"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
         >
-          <span className="min-w-0 flex-1">
-            Messages in {scope.name} are deleted automatically after 30 days.
-          </span>
+          <span className="min-w-0 flex-1">{l.deletedAfter30(scope.name)}</span>
           {actions.canDeleteForever && !search && (rows?.length ?? 0) > 0 && (
             <button
               type="button"
               onClick={actions.requestEmpty}
               className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
             >
-              Empty {scope.name}
+              {t.actions.empty(scope.name)}
             </button>
           )}
         </div>
@@ -241,7 +236,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
       {breakpoint === "narrow" && compose.canCompose && (
         <button
           type="button"
-          aria-label="Compose"
+          aria-label={t.layout.compose}
           onClick={compose.compose}
           className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 grid size-14 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg"
         >
@@ -257,10 +252,11 @@ function Note({ children }: { children: ReactNode }) {
 }
 
 function ListSkeleton() {
+  const t = useT();
   return (
     <div
       aria-busy="true"
-      aria-label="Loading messages"
+      aria-label={t.list.loadingMessages}
       className="animate-pulse"
     >
       {Array.from({ length: 8 }, (_, index) => (

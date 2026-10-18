@@ -1,6 +1,7 @@
 import { Fragment, useRef, type ReactNode } from "react";
 import { useUi } from "../../state/context";
 import { COLUMN_LIMITS } from "../../state/uiStore";
+import { useT } from "../../i18n/context";
 
 /** One column of {@link ResizableColumns}. */
 export interface Column {
@@ -73,6 +74,7 @@ function ColumnResizer({
   onResize,
 }: ColumnResizerProps) {
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const t = useT();
   /* A focusable separator is the ARIA "window splitter" widget (WAI-ARIA 1.2,
      APG), which jsx-a11y still classifies as non-interactive. */
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
@@ -80,7 +82,7 @@ function ColumnResizer({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={`Resize ${label}`}
+      aria-label={t.layout.resize(label)}
       aria-valuenow={width}
       aria-valuemin={min}
       aria-valuemax={max}

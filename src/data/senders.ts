@@ -69,6 +69,7 @@ export function useUpdateSignature() {
           new MailError(
             "auth-required",
             "This account is no longer connected.",
+            { reason: "notConnected" },
           ),
         );
       return provider.updateSignature(address, html);

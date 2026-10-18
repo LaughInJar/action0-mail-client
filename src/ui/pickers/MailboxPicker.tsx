@@ -3,7 +3,6 @@ import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useAccountHandle } from "../../accounts/context";
 import type { MailboxId } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
-import { useMailboxes } from "../../data/hooks";
 import { mailboxPath } from "../../data/mailboxActions";
 import { cachedSummaries, threadMessageIds } from "../../data/mutations";
 import { useRoute, useUi } from "../../state/context";
@@ -14,6 +13,8 @@ import { Icon } from "../common/Icon";
 import { Sheet } from "../common/Sheet";
 import { splitPath, useLabelActions } from "../labels/useLabelActions";
 import { useCoarsePointer } from "../layout/useBreakpoint";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** Shows the move or label picker while one is open. */
 export function MailboxPickerHost() {
@@ -41,8 +42,10 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const setPicker = useUi((state) => state.setPicker);
   const route = useRoute();
   const actions = useMailActions();
+  const t = useT();
+  const l = t.labels;
   const queryClient = useQueryClient();
-  const { data: mailboxes = [] } = useMailboxes(picker.accountId);
+  const { data: mailboxes = [] } = useMailboxList(picker.accountId);
   const [filter, setFilter] = useState("");
   const [active, setActive] = useState(0);
   const [choices, setChoices] = useState<ReadonlyMap<MailboxId, boolean>>(
@@ -176,7 +179,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
       },
       (error: unknown) => {
         setCreating(false);
-        setCreateError(errorMessage(error));
+        setCreateError(errorMessage(error, t));
       },
     );
   };
@@ -221,7 +224,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   };
 
   const count = picker.ids.length;
-  const title = labelsMode ? "Labels" : "Move to";
+  const title = labelsMode ? l.labels : l.moveTo;
   const optionId = (index: number) => `${listId}-${index}`;
   const highlightedIndex = optionCount === 0 ? -1 : activeIndex;
 
@@ -233,7 +236,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
         if (labelsMode) applyLabels();
         else close();
       }}
-      backdropLabel={labelsMode ? "Apply and close" : "Close"}
+      backdropLabel={labelsMode ? l.applyAndClose : t.common.close}
       focusContainer={coarse}
     >
       <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
@@ -242,12 +245,8 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           <span className="font-normal text-zinc-500">
             (
             {picker.conversations === true
-              ? count === 1
-                ? "1 conversation"
-                : `${count} conversations`
-              : count === 1
-                ? "1 message"
-                : `${count} messages`}
+              ? t.common.conversations(count)
+              : t.common.messages(count)}
             )
           </span>
         </h2>
@@ -258,7 +257,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           aria-activedescendant={
             highlightedIndex === -1 ? undefined : optionId(highlightedIndex)
           }
-          aria-label={labelsMode ? "Filter labels" : "Filter mailboxes"}
+          aria-label={labelsMode ? l.filterLabels : l.filterMailboxes}
           value={filter}
           onChange={(event) => {
             setFilter(event.target.value);
@@ -266,7 +265,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             setCreateError(undefined);
           }}
           onKeyDown={onInputKeyDown}
-          placeholder={labelsMode ? "Find a label" : "Find a mailbox"}
+          placeholder={labelsMode ? l.findLabel : l.findMailbox}
           className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
         />
         {createError ? (
@@ -278,9 +277,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           </p>
         ) : (
           <p className="mt-1.5 text-xs text-zinc-500 pointer-coarse:hidden">
-            {labelsMode
-              ? "↑↓ to choose · Space or click to toggle · Enter applies · Esc cancels"
-              : "↑↓ to choose · Enter moves · Esc cancels"}
+            {labelsMode ? l.labelsHint : l.moveHint}
           </p>
         )}
       </div>
@@ -296,7 +293,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             role="presentation"
             className="px-3 py-4 text-center text-sm text-zinc-500"
           >
-            Nothing matches.
+            {l.nothingMatches}
           </div>
         )}
         {visible.map(({ mailbox, path }, index) => {
@@ -386,7 +383,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           >
             <Icon name="plus" className="size-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">
-              {creating ? "Creating…" : `Create label “${typed.join(" / ")}”`}
+              {creating ? l.creating : l.createLabel(typed.join(" / "))}
             </span>
           </div>
         )}
@@ -398,7 +395,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             onClick={close}
             className="rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="button"
@@ -407,7 +404,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             }}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 pointer-coarse:min-h-11"
           >
-            Apply
+            {l.apply}
           </button>
         </div>
       )}

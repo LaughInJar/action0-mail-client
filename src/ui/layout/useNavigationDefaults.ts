@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useMailboxes } from "../../data/hooks";
 import { useRoute, useRouter } from "../../state/context";
 import type { Breakpoint } from "./useBreakpoint";
+import { useMailboxList } from "../common/mailboxNames";
 
 /**
  * Picks a sensible place when the URL doesn't name one:
@@ -17,7 +17,7 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
   const accounts = useAccounts();
   const startedAtRoot = useRef(route === null);
   const firstAccountId = accounts[0]?.account.id;
-  const { data: mailboxes } = useMailboxes(
+  const { data: mailboxes } = useMailboxList(
     route === null ? firstAccountId : undefined,
   );
 

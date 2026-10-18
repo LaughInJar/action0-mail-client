@@ -7,12 +7,20 @@ import { Sheet } from "../common/Sheet";
 import { notificationsSupported } from "../sync/notifications";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
+import { useT } from "../../i18n/context";
+import {
+  browserLanguages,
+  LANGUAGE_NAMES,
+  resolveLanguage,
+  type LanguageSetting,
+} from "../../i18n/locale";
 
+/** The sections, by DOM id and text key. */
 const SECTIONS = [
-  { id: "settings-general", title: "General" },
-  { id: "settings-reading", title: "Reading" },
-  { id: "settings-writing", title: "Writing" },
-  { id: "settings-notifications", title: "Notifications" },
+  ["settings-general", "general"],
+  ["settings-reading", "reading"],
+  ["settings-writing", "writing"],
+  ["settings-notifications", "notifications"],
 ] as const;
 
 /**
@@ -26,6 +34,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const update = useUi((state) => state.updateSettings);
   const theme = useUi((state) => state.theme);
   const setTheme = useUi((state) => state.setTheme);
+  const t = useT();
+  const s = t.settings;
   const set =
     <K extends keyof AppSettings>(key: K) =>
     (value: AppSettings[K]) => {
@@ -36,136 +46,140 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     <Sheet labelledBy={titleId} onEscape={onClose} size="page">
       <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 py-2 pr-2 pl-4 dark:border-zinc-800">
         <h2 id={titleId} className="flex-1 text-base font-semibold">
-          Settings
+          {s.title}
         </h2>
-        <IconButton label="Close settings (Esc)" icon="x" onClick={onClose} />
+        <IconButton label={s.close} icon="x" onClick={onClose} />
       </div>
       <div className="flex min-h-0 flex-1">
         <nav
-          aria-label="Settings sections"
+          aria-label={s.sections}
           className="hidden w-40 shrink-0 space-y-0.5 border-r border-zinc-200 p-2 sm:block dark:border-zinc-800"
         >
-          {SECTIONS.map((section) => (
+          {SECTIONS.map(([id, title]) => (
             <button
-              key={section.id}
+              key={id}
               type="button"
               onClick={() => {
                 document
-                  .getElementById(section.id)
+                  .getElementById(id)
                   ?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
               className="block w-full rounded-md px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              {section.title}
+              {s[title]}
             </button>
           ))}
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6">
-          <SettingsSection id="settings-general" title="General">
+          <SettingsSection id="settings-general" title={s.general}>
+            <ChoiceGroup<LanguageSetting>
+              legend={s.language}
+              value={settings.language}
+              onChange={set("language")}
+              choices={[
+                {
+                  value: "auto",
+                  label: s.automatic,
+                  hint: s.followsBrowser(
+                    LANGUAGE_NAMES[resolveLanguage("auto", browserLanguages())],
+                  ),
+                },
+                { value: "en", label: LANGUAGE_NAMES.en, lang: "en" },
+                { value: "de", label: LANGUAGE_NAMES.de, lang: "de" },
+              ]}
+            />
             <ChoiceGroup<ThemeMode>
-              legend="Theme"
+              legend={t.layout.theme}
               value={theme}
               onChange={setTheme}
               choices={[
                 {
                   value: "system",
-                  label: "System",
-                  hint: "Follows your device",
+                  label: t.layout.themeSystem,
+                  hint: s.themeHint,
                 },
-                { value: "light", label: "Light" },
-                { value: "dark", label: "Dark" },
+                { value: "light", label: t.layout.themeLight },
+                { value: "dark", label: t.layout.themeDark },
               ]}
             />
             <ChoiceGroup
-              legend="Message list"
+              legend={s.messageList}
               value={settings.density}
               onChange={set("density")}
               choices={[
                 {
                   value: "comfortable",
-                  label: "Comfortable",
-                  hint: "Two lines per message",
+                  label: s.comfortable,
+                  hint: s.comfortableHint,
                 },
                 {
                   value: "compact",
-                  label: "Compact",
-                  hint: "One line per message, to see more at once",
+                  label: s.compact,
+                  hint: s.compactHint,
                 },
               ]}
             />
             <ChoiceGroup
-              legend="After archiving or deleting the open message"
+              legend={s.afterRemove}
               value={settings.afterRemove}
               onChange={set("afterRemove")}
               choices={[
-                { value: "below", label: "Open the next message below" },
-                { value: "above", label: "Open the next message above" },
+                { value: "below", label: s.openBelow },
+                { value: "above", label: s.openAbove },
                 {
                   value: "list",
-                  label: "Go back to the list",
-                  hint: "j and k continue from where the message was",
+                  label: s.backToList,
+                  hint: s.backToListHint,
                 },
               ]}
             />
           </SettingsSection>
 
-          <SettingsSection id="settings-reading" title="Reading">
+          <SettingsSection id="settings-reading" title={s.reading}>
             <ChoiceGroup
-              legend="Conversation view"
+              legend={s.conversationView}
               value={settings.conversations ? "on" : "off"}
               onChange={(value) => {
                 update({ conversations: value === "on" });
               }}
               choices={[
-                {
-                  value: "off",
-                  label: "Off",
-                  hint: "One row per message",
-                },
-                {
-                  value: "on",
-                  label: "On",
-                  hint: "Replies are grouped with the mail they answer, in one row",
-                },
+                { value: "off", label: s.off, hint: s.offHint },
+                { value: "on", label: s.on, hint: s.onHint },
               ]}
             />
             <ChoiceGroup
-              legend="Mark as read"
+              legend={s.markRead}
               value={settings.markRead}
               onChange={set("markRead")}
               choices={[
-                { value: "immediately", label: "As soon as it opens" },
+                { value: "immediately", label: s.immediately },
                 {
                   value: "delay",
-                  label: "After 1.5 seconds on screen",
-                  hint: "Skimming with j and k doesn't mark everything",
+                  label: s.afterDelay,
+                  hint: s.afterDelayHint,
                 },
                 {
                   value: "manual",
-                  label: "Only by hand",
-                  hint: "Shift+I, or the button above the message",
+                  label: s.manually,
+                  hint: s.manuallyHint,
                 },
               ]}
             />
             <ChoiceGroup
-              legend="Remote images in mail"
+              legend={s.remoteImages}
               value={settings.remoteImages}
               onChange={set("remoteImages")}
               choices={[
-                {
-                  value: "ask",
-                  label: "Ask every time",
-                  hint: "Senders can't see when you read their mail",
-                },
+                { value: "ask", label: s.askAlways, hint: s.askAlwaysHint },
                 {
                   value: "trusted",
-                  label: "Ask, but remember senders I trust",
-                  hint: "“Always from …” above a mail's blocked images",
+                  label: s.askTrusted,
+                  hint: s.askTrustedHint,
                 },
                 {
                   value: "always",
-                  label: "Always load them",
-                  hint: "Senders can tell when and where you open their mail",
+                  label: s.loadAlways,
+                  hint: s.loadAlwaysHint,
                 },
               ]}
             >
@@ -173,7 +187,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </ChoiceGroup>
           </SettingsSection>
 
-          <SettingsSection id="settings-writing" title="Writing">
+          <SettingsSection id="settings-writing" title={s.writing}>
             <UndoSend
               value={settings.undoSendSeconds}
               onChange={set("undoSendSeconds")}
@@ -181,7 +195,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             <SignatureSettings />
           </SettingsSection>
 
-          <SettingsSection id="settings-notifications" title="Notifications">
+          <SettingsSection id="settings-notifications" title={s.notifications}>
             <Notifications
               enabled={settings.notifications}
               onChange={set("notifications")}
@@ -201,10 +215,11 @@ function UndoSend({
   onChange: (value: AppSettings["undoSendSeconds"]) => void;
 }) {
   const id = useId();
+  const s = useT().settings;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <label htmlFor={id} className="text-sm font-medium">
-        Undo send
+        {s.undoSend}
       </label>
       <select
         id={id}
@@ -219,7 +234,7 @@ function UndoSend({
       >
         {UNDO_SEND_CHOICES.map((seconds) => (
           <option key={seconds} value={seconds}>
-            {seconds === 0 ? "Off: send right away" : `${seconds} seconds`}
+            {seconds === 0 ? s.sendRightAway : s.seconds(seconds)}
           </option>
         ))}
       </select>
@@ -231,12 +246,18 @@ function UndoSend({
 function TrustedSenders() {
   const trusted = useUi((state) => state.settings.trustedSenders);
   const untrust = useUi((state) => state.untrustSender);
+  const t = useT();
   if (trusted.length === 0)
     return (
-      <p className="px-2 pt-1 text-xs text-zinc-500">No trusted senders yet.</p>
+      <p className="px-2 pt-1 text-xs text-zinc-500">
+        {t.settings.noTrustedSenders}
+      </p>
     );
   return (
-    <ul aria-label="Trusted senders" className="space-y-0.5 pt-1 pl-8">
+    <ul
+      aria-label={t.settings.trustedSenders}
+      className="space-y-0.5 pt-1 pl-8"
+    >
       {trusted.map((address) => (
         <li
           key={address}
@@ -245,13 +266,13 @@ function TrustedSenders() {
           <span className="min-w-0 flex-1 truncate">{address}</span>
           <button
             type="button"
-            aria-label={`Remove ${address}`}
+            aria-label={t.settings.removeSender(address)}
             onClick={() => {
               untrust(address);
             }}
             className="rounded-md px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
           >
-            Remove
+            {t.common.remove}
           </button>
         </li>
       ))}
@@ -275,13 +296,11 @@ function Notifications({
     supported ? Notification.permission : "denied",
   );
   const blocked = supported && permission === "denied";
+  const s = useT().settings;
   let note: string | undefined;
-  if (!supported) note = "Phones only allow notifications for installed apps.";
-  else if (blocked)
-    note =
-      "Your browser blocks notifications for this site. Allow them in the site settings (the icon left of the address), then reload.";
-  else if (enabled && permission === "default")
-    note = "Your browser hasn't been asked yet: switch them on to allow them.";
+  if (!supported) note = s.phonesOnly;
+  else if (blocked) note = s.notificationsBlocked;
+  else if (enabled && permission === "default") note = s.notAskedYet;
 
   return (
     <div className="space-y-1">
@@ -299,9 +318,9 @@ function Notifications({
           className="mt-0.5 size-4 shrink-0 accent-blue-600"
         />
         <span className="text-sm">
-          Desktop notifications for new mail
+          {s.desktopNotifications}
           <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-            Only new unread Inbox mail, and only while action0 isn't in front.
+            {s.desktopNotificationsHint}
           </span>
         </span>
       </label>

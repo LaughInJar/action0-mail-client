@@ -94,7 +94,10 @@ function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
   );
   return invented === undefined
     ? undefined
-    : new MailError("provider", `"${invented}" is not a Gmail label.`);
+    : new MailError("provider", `"${invented}" is not a Gmail label.`, {
+        reason: "notALabel",
+        params: { name: invented },
+      });
 }
 
 /** A clear message for Gmail's answers to an unusable label name. */
@@ -104,13 +107,23 @@ function labelNameError(error: unknown, path: string): unknown {
     return new MailError(
       "provider",
       `There’s already a label called “${path}”.`,
-      { status: 409, cause: error },
+      {
+        status: 409,
+        cause: error,
+        reason: "labelExists",
+        params: { name: path },
+      },
     );
   if (error.status === 400 && /label name/i.test(error.message))
     return new MailError(
       "provider",
       `Gmail doesn’t allow the label name “${path}”.`,
-      { status: 400, cause: error },
+      {
+        status: 400,
+        cause: error,
+        reason: "labelNotAllowed",
+        params: { name: path },
+      },
     );
   return error;
 }
@@ -118,9 +131,14 @@ function labelNameError(error: unknown, path: string): unknown {
 /** A leaf name for a label: trimmed, not empty, no "/" (Gmail nests on it). */
 function checkedName(name: string): string {
   const trimmed = name.trim();
-  if (trimmed === "") throw new MailError("provider", "A label needs a name.");
+  if (trimmed === "")
+    throw new MailError("provider", "A label needs a name.", {
+      reason: "labelNeedsName",
+    });
   if (trimmed.includes("/"))
-    throw new MailError("provider", "Label names can’t contain “/”.");
+    throw new MailError("provider", "Label names can’t contain “/”.", {
+      reason: "labelNoSlash",
+    });
   return trimmed;
 }
 
@@ -157,7 +175,11 @@ function contactsError(error: unknown): unknown {
     disabled
       ? "The People API isn't enabled in the Google Cloud project."
       : "Access to your Google contacts wasn't granted.",
-    { status: 403, cause: error },
+    {
+      status: 403,
+      cause: error,
+      reason: disabled ? "peopleApiDisabled" : "contactsDeclined",
+    },
   );
 }
 
@@ -603,7 +625,9 @@ export class GmailProvider implements MailProvider {
           ? ""
           : await this.#pathOf(parentId, signal);
     if (parentPath === oldPath || parentPath.startsWith(`${oldPath}/`))
-      throw new MailError("provider", "A label can’t go inside itself.");
+      throw new MailError("provider", "A label can’t go inside itself.", {
+        reason: "labelInsideItself",
+      });
     const leaf = name === undefined ? leafName(oldPath) : checkedName(name);
     const path = parentPath ? `${parentPath}/${leaf}` : leaf;
     const nextColor =
@@ -710,7 +734,7 @@ export class GmailProvider implements MailProvider {
         throw new MailError(
           "unavailable",
           "Changing Gmail settings wasn’t allowed for this account.",
-          { status: 403, cause: error },
+          { status: 403, cause: error, reason: "settingsNotAllowed" },
         );
       throw error;
     }
@@ -726,7 +750,9 @@ export class GmailProvider implements MailProvider {
       signal,
     );
     if (label.type !== "user")
-      throw new MailError("provider", "System labels can’t be changed.");
+      throw new MailError("provider", "System labels can’t be changed.", {
+        reason: "systemMailbox",
+      });
     return label;
   }
 
@@ -759,7 +785,10 @@ export class GmailProvider implements MailProvider {
     if (part.content) return Promise.resolve(part.content);
     if (!part.source)
       return Promise.reject(
-        new MailError("provider", `No content for "${part.filename}".`),
+        new MailError("provider", `No content for "${part.filename}".`, {
+          reason: "noContent",
+          params: { name: part.filename },
+        }),
       );
     return this.getAttachment(
       part.source.messageId,
@@ -1071,7 +1100,9 @@ export class GmailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<{ readonly deleted: number }> {
     if (!SPAM_TRASH.has(mailboxId)) {
-      throw new MailError("provider", "Only Trash and Spam can be emptied.");
+      throw new MailError("provider", "Only Trash and Spam can be emptied.", {
+        reason: "onlyTrashSpam",
+      });
     }
     const ids = (
       await this.#listAllIds(

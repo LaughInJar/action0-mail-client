@@ -5,6 +5,8 @@ export interface Choice<T extends string> {
   readonly value: T;
   readonly label: string;
   readonly hint?: string;
+  /** Language of the label, if it differs from the interface's (language names). */
+  readonly lang?: string;
 }
 
 /** Props of {@link ChoiceGroup}. */
@@ -45,7 +47,7 @@ export function ChoiceGroup<T extends string>({
             className="mt-0.5 size-4 shrink-0 accent-blue-600"
           />
           <span className="min-w-0 text-sm">
-            {choice.label}
+            <span lang={choice.lang}>{choice.label}</span>
             {choice.hint && (
               <span className="block text-xs text-zinc-500 dark:text-zinc-400">
                 {choice.hint}

@@ -2,6 +2,7 @@ import { memo } from "react";
 import { formatListDate } from "../common/format";
 import { Icon } from "../common/Icon";
 import type { RowView } from "./rowView";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link MessageRow}. */
 export interface MessageRowProps {
@@ -34,18 +35,21 @@ export const MessageRow = memo(function MessageRow({
   compact,
 }: MessageRowProps) {
   const { unread } = view;
+  const t = useT();
+  const l = t.list;
   const who = (
     <>
       {view.who}
       {view.draft && (
         <span className="font-normal text-red-700 dark:text-red-400">
-          {view.who ? ", " : ""}Draft
+          {view.who ? ", " : ""}
+          {l.draft}
         </span>
       )}
       {view.count !== undefined && (
         <span className="ml-1 text-xs font-normal text-zinc-500">
           {view.count}
-          <span className="sr-only"> messages</span>
+          <span className="sr-only">{l.messageCount}</span>
         </span>
       )}
     </>
@@ -55,7 +59,7 @@ export const MessageRow = memo(function MessageRow({
       dateTime={view.receivedAt}
       className={`shrink-0 text-xs tabular-nums ${unread ? "font-semibold text-blue-700 dark:text-blue-300" : "text-zinc-500"}`}
     >
-      {formatListDate(view.receivedAt)}
+      {formatListDate(view.receivedAt, { locale: t.locale })}
     </time>
   );
   const subjectAndSnippet = (
@@ -67,7 +71,7 @@ export const MessageRow = memo(function MessageRow({
             : "text-zinc-700 dark:text-zinc-300"
         }
       >
-        {view.subject || "(no subject)"}
+        {view.subject || t.common.noSubject}
       </span>
       {view.snippet && <> — {view.snippet}</>}
     </p>
@@ -77,14 +81,14 @@ export const MessageRow = memo(function MessageRow({
       {view.hasAttachments && (
         <>
           <Icon name="paperclip" className="size-3.5 shrink-0 text-zinc-400" />
-          <span className="sr-only">, has attachments</span>
+          <span className="sr-only">{l.hasAttachments}</span>
         </>
       )}
       {starrable ? (
         // Clicks are handled by the list; `s` is the keyboard path.
         <span
           data-star=""
-          title={view.flagged ? "Unstar (s)" : "Star (s)"}
+          title={view.flagged ? t.actions.unstarButton : t.actions.starButton}
           className={`-m-1 grid shrink-0 place-items-center p-1 ${
             view.flagged
               ? ""
@@ -108,7 +112,7 @@ export const MessageRow = memo(function MessageRow({
           />
         )
       )}
-      {view.flagged && <span className="sr-only">, starred</span>}
+      {view.flagged && <span className="sr-only">{l.starred}</span>}
     </>
   );
 
@@ -146,7 +150,7 @@ export const MessageRow = memo(function MessageRow({
         ) : (
           unread && (
             <span className="size-2 rounded-full bg-blue-600 dark:bg-blue-400">
-              <span className="sr-only">Unread, </span>
+              <span className="sr-only">{l.unread}</span>
             </span>
           )
         )}

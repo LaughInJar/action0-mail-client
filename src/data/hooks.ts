@@ -302,6 +302,7 @@ export function useFetchAttachment(): (
           new MailError(
             "auth-required",
             "This account is no longer connected.",
+            { reason: "notConnected" },
           ),
         );
       return queryClient.query({

@@ -81,6 +81,11 @@ export function attachmentKind({
 }
 
 /** A short size like "3.2 MB" for messages about limits. */
-export function megabytes(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+export function megabytes(bytes: number, locale = "en-US"): string {
+  const digits = bytes < 10 * 1024 * 1024 ? 1 : 0;
+  const number = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(bytes / 1024 / 1024);
+  return `${number} MB`;
 }
