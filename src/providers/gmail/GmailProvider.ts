@@ -1,13 +1,21 @@
+import {
+  uniqueAddresses,
+  type Draft,
+  type DraftInput,
+} from "../../core/compose";
 import { isMailError, MailError } from "../../core/errors";
 import {
   asCursor,
+  asDraftId,
   asMessageId,
   type AttachmentId,
   type Cursor,
+  type DraftId,
   type MailboxId,
   type MessageId,
 } from "../../core/ids";
 import type {
+  EmailAddress,
   Mailbox,
   Message,
   MessageFlags,
@@ -21,6 +29,7 @@ import type {
   ProviderCapabilities,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
+import { buildMessage } from "../mime/buildMessage";
 import type { GmailHttp, QueryParams } from "./http";
 import {
   ALL_MAIL_ID,
@@ -30,8 +39,13 @@ import {
   mapLabels,
 } from "./labels";
 import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
+import { getHeader } from "./mime";
 import type {
   GmailAttachment,
+  GmailDraft,
+  GmailListDraftsResponse,
+  PeoplePerson,
+  PeopleSearchResponse,
   GmailLabel,
   GmailListLabelsResponse,
   GmailListMessagesResponse,
@@ -54,6 +68,35 @@ function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
   return invented === undefined
     ? undefined
     : new MailError("provider", `"${invented}" is not a Gmail label.`);
+}
+
+/** The `message` part of draft metadata: files a reply into its thread. */
+function threadOf(draft: DraftInput): { threadId?: string } {
+  const threadId = draft.threading?.threadId;
+  return threadId === undefined ? {} : { threadId };
+}
+
+/** One address per email of a People API person. */
+function personAddresses(person: PeoplePerson | undefined): EmailAddress[] {
+  const name = person?.names?.[0]?.displayName?.trim();
+  return (person?.emailAddresses ?? []).flatMap(({ value }) =>
+    value ? [{ ...(name ? { name } : {}), address: value }] : [],
+  );
+}
+
+/** People API failures that mean "no contacts here" become `unavailable`. */
+function contactsError(error: unknown): unknown {
+  if (!isMailError(error) || error.status !== 403) return error;
+  const disabled = /has not been used|is disabled|SERVICE_DISABLED/i.test(
+    `${error.message} ${JSON.stringify(error.cause ?? "")}`,
+  );
+  return new MailError(
+    "unavailable",
+    disabled
+      ? "The People API isn't enabled in the Google Cloud project."
+      : "Access to your Google contacts wasn't granted.",
+    { status: 403, cause: error },
+  );
 }
 
 /** `messages.list` parameters that select messages. */
@@ -87,7 +130,8 @@ interface LabelChange {
 
 /** {@link MailProvider} for Gmail, using the REST API (`gmail.modify` scope). */
 export class GmailProvider implements MailProvider {
-  readonly capabilities: ProviderCapabilities = {
+  readonly capabilities: ProviderCapabilities;
+  static readonly #CAPABILITIES: ProviderCapabilities = {
     mailboxKinds: ["label", "view"],
     archive: true,
     settableFlags: ["seen", "flagged"],
@@ -96,16 +140,30 @@ export class GmailProvider implements MailProvider {
     trash: true,
     spam: true,
     deleteForever: true,
+    compose: true,
+    contacts: false,
   };
   readonly #http: GmailHttp;
+  readonly #people: GmailHttp | undefined;
+  /** Google asks for one empty search before real ones ("warm-up"). */
+  #peopleWarmUp: Promise<unknown> | undefined;
   /** Id lists of oldest-first listings, by cursor key (see `#listOldest`). */
   readonly #snapshots = new Map<
     string,
     { readonly filterKey: string; readonly ids: readonly MessageId[] }
   >();
 
-  constructor(http: GmailHttp) {
+  /**
+   * @param http Gmail API client.
+   * @param options.people People API client; enables contact suggestions.
+   */
+  constructor(http: GmailHttp, options: { people?: GmailHttp } = {}) {
     this.#http = http;
+    this.#people = options.people;
+    this.capabilities = {
+      ...GmailProvider.#CAPABILITIES,
+      contacts: options.people !== undefined,
+    };
   }
 
   async listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]> {
@@ -151,6 +209,191 @@ export class GmailProvider implements MailProvider {
         ? { nextCursor: asCursor(list.nextPageToken) }
         : {}),
     };
+  }
+
+  async saveDraft(
+    draft: DraftInput,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    const raw = await this.#raw(draft, signal);
+    const message = threadOf(draft);
+    // Creating isn't retried: a lost response would leave a duplicate draft.
+    const saved =
+      draft.id === undefined
+        ? await this.#http.upload<GmailDraft>(
+            "POST",
+            "drafts",
+            { message },
+            raw,
+            { retry: false, signal },
+          )
+        : await this.#http.upload<GmailDraft>(
+            "PUT",
+            `drafts/${encodeURIComponent(draft.id)}`,
+            { id: draft.id, message },
+            raw,
+            { retry: true, signal },
+          );
+    return {
+      id: asDraftId(saved.id),
+      messageId: asMessageId(saved.message?.id ?? ""),
+    };
+  }
+
+  async draftIdOf(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<DraftId | undefined> {
+    let pageToken: string | undefined;
+    do {
+      const page = await this.#http.get<GmailListDraftsResponse>(
+        "drafts",
+        { maxResults: 500, pageToken },
+        signal,
+      );
+      const found = page.drafts?.find((d) => d.message?.id === messageId);
+      if (found) return asDraftId(found.id);
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined);
+    return undefined;
+  }
+
+  async getDraft(id: DraftId, signal?: AbortSignal): Promise<Draft> {
+    const draft = await this.#http.get<GmailDraft>(
+      `drafts/${encodeURIComponent(id)}`,
+      { format: "full" },
+      signal,
+    );
+    const raw = draft.message;
+    if (!raw) throw new MailError("not-found", `Gmail: draft ${id} is empty.`);
+    if (raw.payload)
+      await this.#hydrateLargeTextParts(
+        asMessageId(raw.id),
+        raw.payload,
+        signal,
+      );
+    const message = toMessage(raw);
+    const inReplyTo = getHeader(raw.payload?.headers, "In-Reply-To")?.trim();
+    return {
+      id: asDraftId(draft.id),
+      messageId: message.id,
+      to: message.to,
+      cc: message.cc,
+      bcc: message.bcc,
+      subject: message.subject,
+      html: message.body.html ?? "",
+      text: message.body.text ?? "",
+      forwarded: message.attachments.map((attachment) => ({
+        messageId: message.id,
+        attachmentId: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        ...(attachment.contentId === undefined
+          ? {}
+          : { contentId: attachment.contentId }),
+      })),
+      threading: {
+        ...(message.threadId === undefined
+          ? {}
+          : { threadId: message.threadId }),
+        ...(inReplyTo ? { inReplyTo } : {}),
+        references: message.references,
+      },
+    };
+  }
+
+  async deleteDraft(id: DraftId, signal?: AbortSignal): Promise<void> {
+    await this.#http.delete(`drafts/${encodeURIComponent(id)}`, signal);
+  }
+
+  async sendDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    const raw = await this.#raw(draft, signal, new Date());
+    // Uploads the final content and sends it in one request.
+    const sent = await this.#http.upload<GmailMessage>(
+      "POST",
+      "drafts/send",
+      { id: draft.id, message: threadOf(draft) },
+      raw,
+      { retry: false, signal },
+    );
+    return { messageId: asMessageId(sent.id) };
+  }
+
+  async searchContacts(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<readonly EmailAddress[]> {
+    const people = this.#people;
+    if (!people) return [];
+    const search = (path: string, text: string) =>
+      people.get<PeopleSearchResponse>(
+        path,
+        { query: text, readMask: "names,emailAddresses", pageSize: 10 },
+        signal,
+      );
+    const both = (text: string) =>
+      Promise.all([
+        // "./": a path with a colon would otherwise parse as a URL scheme.
+        search("./people:searchContacts", text),
+        search("./otherContacts:search", text),
+      ]);
+    try {
+      this.#peopleWarmUp ??= both("").catch((error: unknown) => {
+        this.#peopleWarmUp = undefined;
+        throw error;
+      });
+      await this.#peopleWarmUp;
+      const [contacts, others] = await both(query);
+      return uniqueAddresses(
+        [...(contacts.results ?? []), ...(others.results ?? [])].flatMap(
+          ({ person }) => personAddresses(person),
+        ),
+      );
+    } catch (error) {
+      throw contactsError(error);
+    }
+  }
+
+  /** The raw message for a draft, with the bytes of forwarded parts. */
+  async #raw(
+    draft: DraftInput,
+    signal?: AbortSignal,
+    date?: Date,
+  ): Promise<string> {
+    const attachments = await Promise.all(
+      draft.forwarded.map(async (part) => {
+        const blob =
+          part.content ??
+          (await this.getAttachment(part.messageId, part.attachmentId, signal));
+        return {
+          filename: part.filename,
+          mimeType: part.mimeType,
+          content: new Uint8Array(await blob.arrayBuffer()),
+          ...(part.contentId === undefined
+            ? {}
+            : { contentId: part.contentId }),
+        };
+      }),
+    );
+    // No From header: Gmail fills in the account's address and name.
+    return buildMessage({
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      html: draft.html,
+      text: draft.text,
+      ...(draft.threading?.inReplyTo
+        ? { inReplyTo: draft.threading.inReplyTo }
+        : {}),
+      references: draft.threading?.references ?? [],
+      attachments,
+      ...(date ? { date } : {}),
+    });
   }
 
   /**

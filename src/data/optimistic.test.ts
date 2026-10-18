@@ -51,6 +51,8 @@ const labels: ProviderCapabilities = {
   trash: true,
   spam: true,
   deleteForever: true,
+  compose: true,
+  contacts: false,
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 

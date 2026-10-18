@@ -71,6 +71,28 @@ export interface GmailAttachment {
   data: string;
 }
 
+export interface GmailDraft {
+  id: string;
+  /** Only `id`, `threadId` and `labelIds` unless fetched with `format=full`. */
+  message?: GmailMessage;
+}
+
+export interface GmailListDraftsResponse {
+  drafts?: { id: string; message?: { id: string; threadId: string } }[];
+  nextPageToken?: string;
+}
+
+/** A person from the People API (`readMask=names,emailAddresses`). */
+export interface PeoplePerson {
+  names?: { displayName?: string }[];
+  emailAddresses?: { value?: string }[];
+}
+
+/** Response of `people:searchContacts` and `otherContacts:search`. */
+export interface PeopleSearchResponse {
+  results?: { person?: PeoplePerson }[];
+}
+
 /** Error body returned by Google APIs. */
 export interface GoogleApiErrorBody {
   error?: {

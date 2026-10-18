@@ -122,6 +122,113 @@ const PATHS = {
     </>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
+  reply: (
+    <>
+      <polyline points="9 14 4 9 9 4" />
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+    </>
+  ),
+  "reply-all": (
+    <>
+      <polyline points="7 14 2 9 7 4" />
+      <polyline points="12 14 7 9 12 4" />
+      <path d="M22 20v-7a4 4 0 0 0-4-4H7" />
+    </>
+  ),
+  forward: (
+    <>
+      <polyline points="15 14 20 9 15 4" />
+      <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+    </>
+  ),
+  pencil: <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />,
+  minus: <line x1="5" y1="12" x2="19" y2="12" />,
+  maximize: (
+    <>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </>
+  ),
+  minimize: (
+    <>
+      <polyline points="4 14 10 14 10 20" />
+      <polyline points="20 10 14 10 14 4" />
+      <line x1="14" y1="10" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </>
+  ),
+  "chevron-up": <polyline points="18 15 12 9 6 15" />,
+  bold: (
+    <>
+      <path d="M6 4h8a4 4 0 0 1 0 8H6z" />
+      <path d="M6 12h9a4 4 0 0 1 0 8H6z" />
+    </>
+  ),
+  italic: (
+    <>
+      <line x1="19" y1="4" x2="10" y2="4" />
+      <line x1="14" y1="20" x2="5" y2="20" />
+      <line x1="15" y1="4" x2="9" y2="20" />
+    </>
+  ),
+  underline: (
+    <>
+      <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+      <line x1="4" y1="21" x2="20" y2="21" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </>
+  ),
+  list: (
+    <>
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </>
+  ),
+  "list-ordered": (
+    <>
+      <line x1="10" y1="6" x2="21" y2="6" />
+      <line x1="10" y1="12" x2="21" y2="12" />
+      <line x1="10" y1="18" x2="21" y2="18" />
+      <path d="M4 6h1v4" />
+      <path d="M4 10h2" />
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </>
+  ),
+  quote: (
+    <>
+      <path d="M17 6H3" />
+      <path d="M21 12H8" />
+      <path d="M21 18H8" />
+      <path d="M3 12v6" />
+    </>
+  ),
+  "clear-format": (
+    <>
+      <path d="M4 7V4h16v3" />
+      <path d="M5 20h6" />
+      <path d="M13 4 8 20" />
+      <path d="m15 15 5 5" />
+      <path d="m20 15-5 5" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

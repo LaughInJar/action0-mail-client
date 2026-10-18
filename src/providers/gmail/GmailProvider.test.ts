@@ -6,8 +6,10 @@ import { StaticAuthSession } from "../../auth/staticSession";
 import {
   asAttachmentId,
   asCursor,
+  asDraftId,
   asMailboxId,
   asMessageId,
+  asThreadId,
 } from "../../core/ids";
 import {
   gmailLabel,
@@ -17,7 +19,12 @@ import {
   utf8Base64Url,
 } from "../../test/gmailFixtures";
 import { GmailProvider } from "./GmailProvider";
-import { GMAIL_API_BASE, GmailHttp } from "./http";
+import {
+  GMAIL_API_BASE,
+  GMAIL_UPLOAD_BASE,
+  GmailHttp,
+  PEOPLE_API_BASE,
+} from "./http";
 import { ALL_MAIL_ID } from "./labels";
 
 const server = setupServer();
@@ -535,5 +542,300 @@ describe("GmailProvider.listMessages, oldest first", () => {
     });
     expect(other.items.map((m) => m.id)).toEqual(["m5", "m6"]);
     expect(listCalls.at(-1)?.get("q")).toBe("something else");
+  });
+});
+
+describe("GmailProvider drafts and sending", () => {
+  const upload = (path: string) => `${GMAIL_UPLOAD_BASE}${path}`;
+  const draft = {
+    to: [{ name: "Anna", address: "anna@example.org" }],
+    cc: [],
+    bcc: [],
+    subject: "Grüße",
+    html: "<p>Hi</p>",
+    text: "Hi",
+    forwarded: [],
+    threading: {
+      threadId: asThreadId("t1"),
+      inReplyTo: "<m1@x>",
+      references: ["<m1@x>"],
+    },
+  };
+
+  /** Splits a multipart/related upload into its JSON metadata and raw message. */
+  async function readUpload(request: Request) {
+    const type = request.headers.get("Content-Type") ?? "";
+    const boundary = /boundary=(\S+)/.exec(type)?.[1] ?? "";
+    const parts = (await request.text())
+      .split(`--${boundary}`)
+      .slice(1, -1)
+      .map((part) => part.slice(part.indexOf("\r\n\r\n") + 4, -2));
+    return {
+      type,
+      uploadType: new URL(request.url).searchParams.get("uploadType"),
+      metadata: JSON.parse(parts[0] ?? "{}") as unknown,
+      raw: parts[1] ?? "",
+    };
+  }
+
+  it("creates a draft in the thread, then replaces it", async () => {
+    const uploads: Awaited<ReturnType<typeof readUpload>>[] = [];
+    server.use(
+      http.post(upload("drafts"), async ({ request }) => {
+        uploads.push(await readUpload(request));
+        return HttpResponse.json({ id: "d1", message: { id: "m-a" } });
+      }),
+      http.put(upload("drafts/d1"), async ({ request }) => {
+        uploads.push(await readUpload(request));
+        return HttpResponse.json({ id: "d1", message: { id: "m-b" } });
+      }),
+    );
+    const gmail = provider();
+    expect(await gmail.saveDraft(draft)).toEqual({
+      id: "d1",
+      messageId: "m-a",
+    });
+    expect(
+      await gmail.saveDraft({ ...draft, id: asDraftId("d1"), subject: "Two" }),
+    ).toEqual({ id: "d1", messageId: "m-b" });
+
+    expect(uploads[0]?.type).toMatch(/^multipart\/related; boundary=/);
+    expect(uploads[0]?.uploadType).toBe("multipart");
+    expect(uploads[0]?.metadata).toEqual({ message: { threadId: "t1" } });
+    expect(uploads[0]?.raw).toContain("To: Anna <anna@example.org>");
+    expect(uploads[0]?.raw).toContain("In-Reply-To: <m1@x>");
+    expect(uploads[0]?.raw).toContain("Subject: =?UTF-8?B?");
+    expect(uploads[1]?.metadata).toEqual({
+      id: "d1",
+      message: { threadId: "t1" },
+    });
+    expect(uploads[1]?.raw).toContain("Subject: Two");
+  });
+
+  it("doesn't repeat creating a draft after a server error", async () => {
+    let attempts = 0;
+    server.use(
+      http.post(upload("drafts"), () => {
+        attempts++;
+        return HttpResponse.json(
+          { error: { message: "oops" } },
+          { status: 503 },
+        );
+      }),
+    );
+    await expect(provider().saveDraft(draft)).rejects.toMatchObject({
+      code: "provider",
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("sends the final content, with the forwarded files", async () => {
+    let sent: Awaited<ReturnType<typeof readUpload>> | undefined;
+    server.use(
+      http.get(url("messages/orig/attachments/att1"), () =>
+        HttpResponse.json({ size: 3, data: "AQID" }),
+      ),
+      http.post(upload("drafts/send"), async ({ request }) => {
+        sent = await readUpload(request);
+        return HttpResponse.json({ id: "sent-1", threadId: "t1" });
+      }),
+    );
+    const result = await provider().sendDraft({
+      ...draft,
+      id: asDraftId("d1"),
+      forwarded: [
+        {
+          messageId: asMessageId("orig"),
+          attachmentId: asAttachmentId("att1"),
+          filename: "a.bin",
+          mimeType: "application/octet-stream",
+          size: 3,
+        },
+        {
+          messageId: asMessageId("orig"),
+          attachmentId: asAttachmentId("loaded"),
+          filename: "b.txt",
+          mimeType: "text/plain",
+          size: 2,
+          content: new Blob(["ok"]),
+        },
+      ],
+    });
+    expect(result).toEqual({ messageId: "sent-1" });
+    expect(sent?.metadata).toEqual({ id: "d1", message: { threadId: "t1" } });
+    expect(sent?.raw).toContain('filename="a.bin"');
+    expect(sent?.raw).toContain("AQID");
+    expect(sent?.raw).toContain("b2s="); // "ok", loaded already: not fetched
+    expect(sent?.raw).toMatch(/\r\nDate: /);
+  });
+
+  it("finds a draft by its message, reads and deletes it", async () => {
+    let deleted = false;
+    server.use(
+      http.get(url("drafts"), ({ request }) => {
+        const page = new URL(request.url).searchParams.get("pageToken");
+        return HttpResponse.json(
+          page === null
+            ? {
+                drafts: [{ id: "d0", message: { id: "x" } }],
+                nextPageToken: "p2",
+              }
+            : { drafts: [{ id: "d1", message: { id: "m-b" } }] },
+        );
+      }),
+      http.get(url("drafts/d1"), () => {
+        const message = gmailMessage("m-b", {
+          payload: multipart("mixed", [
+            leafPart("text/html", utf8Base64Url("<p>Draft</p>")),
+            leafPart("application/pdf", "", {
+              filename: "x.pdf",
+              attachmentId: "att9",
+              size: 10,
+              partId: "1",
+            }),
+          ]),
+        });
+        return HttpResponse.json({
+          id: "d1",
+          message: {
+            ...message,
+            threadId: "t1",
+            payload: {
+              ...message.payload,
+              headers: [
+                { name: "Content-Type", value: "multipart/mixed; boundary=x" },
+                { name: "To", value: "Anna <anna@example.org>" },
+                { name: "Subject", value: "Re: Plans" },
+                { name: "In-Reply-To", value: "<m1@x>" },
+                { name: "References", value: "<m0@x> <m1@x>" },
+              ],
+            },
+          },
+        });
+      }),
+      http.delete(url("drafts/d1"), () => {
+        deleted = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const gmail = provider();
+    expect(await gmail.draftIdOf(asMessageId("m-b"))).toBe("d1");
+    expect(await gmail.draftIdOf(asMessageId("nope"))).toBeUndefined();
+
+    const loaded = await gmail.getDraft(asDraftId("d1"));
+    expect(loaded).toMatchObject({
+      id: "d1",
+      messageId: "m-b",
+      to: [{ name: "Anna", address: "anna@example.org" }],
+      subject: "Re: Plans",
+      html: "<p>Draft</p>",
+      threading: {
+        threadId: "t1",
+        inReplyTo: "<m1@x>",
+        references: ["<m0@x>", "<m1@x>"],
+      },
+    });
+    expect(loaded.forwarded).toEqual([
+      expect.objectContaining({
+        messageId: "m-b",
+        attachmentId: "att9",
+        filename: "x.pdf",
+      }),
+    ]);
+
+    await gmail.deleteDraft(asDraftId("d1"));
+    expect(deleted).toBe(true);
+  });
+});
+
+describe("GmailProvider.searchContacts", () => {
+  const peopleUrl = (path: string) => `${PEOPLE_API_BASE}${path}`;
+  const withPeople = () =>
+    new GmailProvider(
+      new GmailHttp({
+        auth: new StaticAuthSession(),
+        sleep: () => Promise.resolve(),
+      }),
+      {
+        people: new GmailHttp({
+          auth: new StaticAuthSession(),
+          baseUrl: PEOPLE_API_BASE,
+          service: "Google Contacts",
+          sleep: () => Promise.resolve(),
+        }),
+      },
+    );
+
+  it("warms up once, then merges contacts and other contacts", async () => {
+    const queries: string[] = [];
+    server.use(
+      http.get(peopleUrl("people:searchContacts"), ({ request }) => {
+        const query = new URL(request.url).searchParams.get("query") ?? "";
+        queries.push(`contacts:${query}`);
+        return HttpResponse.json({
+          results: query
+            ? [
+                {
+                  person: {
+                    names: [{ displayName: "Anna Berger" }],
+                    emailAddresses: [
+                      { value: "anna@example.org" },
+                      { value: "anna@work.example" },
+                    ],
+                  },
+                },
+              ]
+            : [],
+        });
+      }),
+      http.get(peopleUrl("otherContacts:search"), ({ request }) => {
+        const query = new URL(request.url).searchParams.get("query") ?? "";
+        queries.push(`other:${query}`);
+        return HttpResponse.json({
+          results: query
+            ? [
+                { person: { emailAddresses: [{ value: "ANNA@example.org" }] } },
+                { person: { emailAddresses: [{ value: "annika@x.com" }] } },
+              ]
+            : [],
+        });
+      }),
+    );
+    const gmail = withPeople();
+    expect(gmail.capabilities.contacts).toBe(true);
+    expect(provider().capabilities.contacts).toBe(false);
+
+    expect(await gmail.searchContacts("ann")).toEqual([
+      { name: "Anna Berger", address: "anna@example.org" },
+      { name: "Anna Berger", address: "anna@work.example" },
+      { address: "annika@x.com" },
+    ]);
+    await gmail.searchContacts("anni");
+    expect(queries.filter((q) => q.endsWith(":"))).toHaveLength(2);
+  });
+
+  it("reports a disabled API or a declined permission as unavailable", async () => {
+    server.use(
+      http.get(peopleUrl("people:searchContacts"), () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 403,
+              message:
+                "People API has not been used in project 123 before or it is disabled.",
+              status: "PERMISSION_DENIED",
+            },
+          },
+          { status: 403 },
+        ),
+      ),
+      http.get(peopleUrl("otherContacts:search"), () =>
+        HttpResponse.json({ results: [] }),
+      ),
+    );
+    await expect(withPeople().searchContacts("a")).rejects.toMatchObject({
+      code: "unavailable",
+      message: "The People API isn't enabled in the Google Cloud project.",
+    });
   });
 });

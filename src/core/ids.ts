@@ -29,6 +29,12 @@ export type ThreadId = Brand<string, "ThreadId">;
 export type AttachmentId = Brand<string, "AttachmentId">;
 
 /**
+ * Identifies a draft within one account. Opaque, and different from the id
+ * of the draft's message (Gmail gives the message a new id on every save).
+ */
+export type DraftId = Brand<string, "DraftId">;
+
+/**
  * Opaque pagination cursor, e.g. a Gmail `pageToken`, a Graph `@odata.nextLink`
  * or an IMAP UID range. Callers pass it back unchanged.
  */
@@ -45,5 +51,7 @@ export const asThreadId = (value: string): ThreadId => value as ThreadId;
 /** Brands a raw string as an {@link AttachmentId}. */
 export const asAttachmentId = (value: string): AttachmentId =>
   value as AttachmentId;
+/** Brands a raw string as a {@link DraftId}. */
+export const asDraftId = (value: string): DraftId => value as DraftId;
 /** Brands a raw string as a {@link Cursor}. */
 export const asCursor = (value: string): Cursor => value as Cursor;

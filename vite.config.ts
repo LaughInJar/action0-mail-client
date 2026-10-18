@@ -20,7 +20,7 @@ const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-  "connect-src 'self' https://gmail.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/",
+  "connect-src 'self' https://gmail.googleapis.com https://people.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/",
   "frame-src https://accounts.google.com/gsi/",
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",

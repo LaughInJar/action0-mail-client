@@ -7,6 +7,12 @@ export interface StoredToken {
   readonly expiresAt: number;
   /** Space-separated scopes the user granted. Empty for tokens stored before scopes were recorded. */
   readonly scope: string;
+  /**
+   * Space-separated scopes that were asked for. Absent for tokens stored
+   * before this was recorded. Lets optional scopes the user declined count
+   * as "asked already" instead of asking again.
+   */
+  readonly requested?: string;
 }
 
 /** Where a session keeps its token. Never backed by localStorage. */
@@ -53,8 +59,16 @@ export function memoryTokenStore(initial?: StoredToken): TokenStore {
 
 function parseToken(value: unknown): StoredToken | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { accessToken, expiresAt, scope } = value as Record<string, unknown>;
+  const { accessToken, expiresAt, scope, requested } = value as Record<
+    string,
+    unknown
+  >;
   return typeof accessToken === "string" && typeof expiresAt === "number"
-    ? { accessToken, expiresAt, scope: typeof scope === "string" ? scope : "" }
+    ? {
+        accessToken,
+        expiresAt,
+        scope: typeof scope === "string" ? scope : "",
+        ...(typeof requested === "string" ? { requested } : {}),
+      }
     : undefined;
 }

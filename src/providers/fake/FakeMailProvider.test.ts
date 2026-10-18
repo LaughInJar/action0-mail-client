@@ -199,3 +199,106 @@ describe("FakeMailProvider", () => {
     });
   });
 });
+
+describe("FakeMailProvider drafts and sending", () => {
+  const draft = {
+    to: [{ address: "anna.berger@example.org" }],
+    cc: [],
+    bcc: [],
+    subject: "Hello",
+    html: "<p>Hello there</p>",
+    text: "Hello there",
+    forwarded: [],
+  };
+
+  it("keeps drafts in Drafts, with a new message on every save", async () => {
+    const fake = provider();
+    const first = await fake.saveDraft(draft);
+    const second = await fake.saveDraft({
+      ...draft,
+      id: first.id,
+      subject: "Hello again",
+    });
+    expect(second.id).toBe(first.id);
+    expect(second.messageId).not.toBe(first.messageId);
+    const { items } = await fake.listMessages({
+      mailboxId: DEMO_MAILBOX.drafts,
+      limit: 50,
+    });
+    expect(items.map((m) => m.subject)).toContain("Hello again");
+    expect(items.map((m) => m.id)).not.toContain(first.messageId);
+    expect(await fake.draftIdOf(second.messageId)).toBe(first.id);
+    expect(await fake.getDraft(first.id)).toMatchObject({
+      subject: "Hello again",
+      html: "<p>Hello there</p>",
+    });
+
+    await fake.deleteDraft(first.id);
+    await expect(fake.getDraft(first.id)).rejects.toMatchObject({
+      code: "not-found",
+    });
+  });
+
+  it("sends into Sent, and mail to yourself also into the Inbox", async () => {
+    const fake = provider();
+    const { id } = await fake.saveDraft(draft);
+    await fake.sendDraft({ ...draft, id });
+    const self = await fake.saveDraft({
+      ...draft,
+      to: [{ address: "demo@example.com" }],
+      subject: "Note to self",
+    });
+    await fake.sendDraft({
+      ...draft,
+      id: self.id,
+      to: [{ address: "demo@example.com" }],
+      subject: "Note to self",
+    });
+    const subjects = async (mailboxId: typeof DEMO_MAILBOX.sent) =>
+      (await fake.listMessages({ mailboxId, limit: 50 })).items.map(
+        (m) => m.subject,
+      );
+    expect(await subjects(DEMO_MAILBOX.sent)).toEqual(
+      expect.arrayContaining(["Hello", "Note to self"]),
+    );
+    expect(await subjects(DEMO_MAILBOX.inbox)).toContain("Note to self");
+    expect(await subjects(DEMO_MAILBOX.inbox)).not.toContain("Hello");
+    expect(await subjects(DEMO_MAILBOX.drafts)).not.toContain("Hello");
+  });
+
+  it("carries forwarded parts along", async () => {
+    const fake = provider();
+    const { id, messageId } = await fake.saveDraft({
+      ...draft,
+      forwarded: [
+        {
+          messageId: asMessageId("inline-image"),
+          attachmentId: asAttachmentId("logo"),
+          filename: "logo-draft.svg",
+          mimeType: "image/svg+xml",
+          size: 10,
+        },
+      ],
+    });
+    const saved = await fake.getDraft(id);
+    const [part] = saved.forwarded;
+    expect(part).toMatchObject({ messageId, filename: "logo-draft.svg" });
+    const blob = await fake.getAttachment(
+      messageId,
+      part?.attachmentId ?? asAttachmentId(""),
+    );
+    expect(await blob.text()).toContain("<svg");
+  });
+
+  it("suggests contacts, or reports them unavailable", async () => {
+    const fake = provider();
+    expect(fake.capabilities.contacts).toBe(true);
+    expect(await fake.searchContacts("ann")).toEqual([
+      { name: "Anna Berger", address: "anna.berger@example.org" },
+    ]);
+    fake.contactsUnavailable = true;
+    await expect(fake.searchContacts("ann")).rejects.toMatchObject({
+      code: "unavailable",
+    });
+  });
+});

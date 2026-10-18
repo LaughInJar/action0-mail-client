@@ -5,6 +5,7 @@ export function errorMessage(error: unknown): string {
   if (isMailError(error)) {
     switch (error.code) {
       case "auth-required":
+      case "unavailable":
       case "provider":
         return error.message;
       case "not-found":

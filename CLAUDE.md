@@ -117,3 +117,12 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - The left column has a folder/label filter (`g f`). Matches show with their parent mailboxes, and ↓/Enter/Esc work in the field.
   - Mail search runs on the server (Gmail's `q`, operators included) as you type, about 0.4 s after the last keystroke. It searches the current folder, with a one-click switch to "Everywhere". `/` focuses the field. The search is part of the URL.
   - The list sorts newest or oldest first, remembered per browser. Gmail only lists newest first, so "Oldest first" fetches all message ids first and then loads details page by page.
+- **Composer decisions:**
+  - Scope: new mail, autosaved drafts (also reopened from Drafts), and reply, reply all and forward. Adding your own attachments is a separate feature that comes next.
+  - The editor is basic rich text built on Tiptap (bold, italic, underline, links, lists, quote). Mail is sent as HTML plus a plain-text version.
+  - On desktop the composer is docked at the bottom right and can be minimized or enlarged; one composer at a time. On tablets and phones it's full screen and part of the URL, so Back closes it and saves the draft. Replies use the same window.
+  - Shortcuts: `c` compose, `r` reply, `Shift+R` reply all (`a` stays archive), `f` forward, `Ctrl/⌘+Enter` send.
+  - Drafts save to the provider's Drafts about 2 s after typing stops and on close, never to browser storage.
+  - Sending waits 30 s with "Undo" and "Send now". Leaving the page meanwhile asks first; a mail that didn't go out stays a draft.
+  - Replies and forwards keep the original as-is (sanitized, collapsed, removable) inside Gmail's quote marker. Forwards include the original's attachments.
+  - Address suggestions come from Google Contacts (People API: contacts and "other contacts"), with recent mail as the fallback. This adds two read-only scopes, so accounts reconnect once, and the People API has to be enabled in Google Cloud.

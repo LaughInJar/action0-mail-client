@@ -4,8 +4,9 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
 /**
- * While `active`, keeps Tab focus inside `ref`, focuses its first focusable
- * element (or the container itself with `focusContainer`), calls `onEscape`
+ * While `active`, keeps Tab focus inside `ref`, focuses the element marked
+ * `data-initial-focus` or else the first focusable one (or the container
+ * itself with `focusContainer`), calls `onEscape`
  * on Escape, and restores the previous focus when it ends.
  */
 export function useFocusTrap(
@@ -28,7 +29,11 @@ export function useFocusTrap(
         : null;
     const focusables = () =>
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE));
-    (focusContainer ? container : (focusables()[0] ?? container)).focus();
+    const initial =
+      container.querySelector<HTMLElement>("[data-initial-focus]") ??
+      focusables()[0] ??
+      container;
+    (focusContainer ? container : initial).focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && escape.current) {

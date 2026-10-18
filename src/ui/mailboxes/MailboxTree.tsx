@@ -400,7 +400,11 @@ function MailboxBranch({
             <span className="sr-only">, </span>
             {badge}
             <span className="sr-only">
-              {mailbox.role === "drafts" ? " drafts" : " unread"}
+              {mailbox.role === "drafts"
+                ? badge === 1
+                  ? " draft"
+                  : " drafts"
+                : " unread"}
             </span>
           </span>
         )}

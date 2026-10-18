@@ -280,6 +280,8 @@ function buildMessage(seed: MessageSeed, now: number): Message {
     cc: seed.cc ?? [],
     bcc: [],
     replyTo: [],
+    internetMessageId: `<${seed.key}@demo.example>`,
+    references: [],
     subject: seed.subject,
     snippet: seed.snippet,
     receivedAt: new Date(now - seed.minutesAgo * 60_000).toISOString(),
@@ -304,10 +306,12 @@ const WELCOME_HTML = `<!doctype html><html><head><style>
   <tr><td><kbd>Shift</kbd>+<kbd>j</kbd> / <kbd>k</kbd></td><td>extend the selection</td></tr>
   <tr><td><kbd>x</kbd></td><td>select or unselect the current message</td></tr>
   <tr><td><kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd></td><td>go to Inbox / Sent / Drafts / All Mail</td></tr>
+  <tr><td><kbd>a</kbd></td><td>archive (<kbd>z</kbd> undoes it)</td></tr>
+  <tr><td><kbd>c</kbd>, <kbd>r</kbd>, <kbd>f</kbd></td><td>write, reply, forward</td></tr>
   <tr><td><kbd>Space</kbd></td><td>scroll this message</td></tr>
   <tr><td><kbd>?</kbd></td><td>show all shortcuts</td></tr>
 </table>
-<p><kbd>a</kbd> on its own is reserved for archiving, which arrives with a later feature.</p>
+<p>Mail you send from the demo only goes to the demo's Sent folder; send one to demo@example.com to get it in the Inbox.</p>
 <p>The newsletter below shows how remote images are blocked until you allow them.</p>
 </body></html>`;
 
@@ -530,5 +534,11 @@ export function createDemoData(now = Date.now()): FakeMailData {
       new Blob(["%PDF-1.4 demo"], { type: "application/pdf" }),
     ],
   ]);
-  return { mailboxes: MAILBOXES, messages, attachments };
+  return {
+    mailboxes: MAILBOXES,
+    messages,
+    attachments,
+    me: ME,
+    contacts: PEOPLE.filter((person) => !person.address.includes("noreply")),
+  };
 }

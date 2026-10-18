@@ -47,6 +47,24 @@ describe("parseHash / formatRoute", () => {
     expect(parseHash(formatRoute(everywhere))).toEqual(everywhere);
   });
 
+  it("keeps an open composer in the URL, next to a search", () => {
+    const composing = {
+      accountId: route.accountId,
+      mailboxId: route.mailboxId,
+      search: { text: "invoice", everywhere: false },
+      compose: "r-123",
+    };
+    expect(formatRoute(composing)).toMatch(/\?q=invoice&compose=r-123$/);
+    expect(parseHash(formatRoute(composing))).toEqual(composing);
+    expect(
+      formatRoute({
+        accountId: route.accountId,
+        mailboxId: route.mailboxId,
+        compose: "new",
+      }),
+    ).toMatch(/\/Label_1%2Fx\?compose=new$/);
+  });
+
   it("ignores blank searches and unknown parameters", () => {
     const list = { accountId: route.accountId, mailboxId: route.mailboxId };
     expect(

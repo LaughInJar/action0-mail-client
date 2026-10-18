@@ -156,6 +156,10 @@ export interface Message extends MessageSummary {
   readonly cc: readonly EmailAddress[];
   readonly bcc: readonly EmailAddress[];
   readonly replyTo: readonly EmailAddress[];
+  /** The `Message-ID` header (with angle brackets), for replies. */
+  readonly internetMessageId?: string;
+  /** Message-IDs from the `References` header, oldest first. */
+  readonly references: readonly string[];
   readonly body: MessageBody;
   readonly attachments: readonly AttachmentInfo[];
 }

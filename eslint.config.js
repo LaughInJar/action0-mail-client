@@ -58,7 +58,13 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/ui/**", "src/data/**", "src/state/**", "src/keyboard/**"],
+    files: [
+      "src/ui/**",
+      "src/data/**",
+      "src/state/**",
+      "src/keyboard/**",
+      "src/compose/**",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",

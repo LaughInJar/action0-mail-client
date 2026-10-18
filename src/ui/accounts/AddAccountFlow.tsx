@@ -221,9 +221,13 @@ function GoogleSetupStep({
       </p>
       <ol className="list-decimal space-y-2 pl-5 text-sm">
         <li>
-          Create a project and{" "}
+          Create a project,{" "}
           <ExternalLink href={GOOGLE_CLOUD_LINKS.gmailApi}>
             enable the Gmail API
+          </ExternalLink>{" "}
+          and, for address suggestions,{" "}
+          <ExternalLink href={GOOGLE_CLOUD_LINKS.peopleApi}>
+            the People API
           </ExternalLink>
           .
         </li>
@@ -244,8 +248,10 @@ function GoogleSetupStep({
           <ExternalLink href={GOOGLE_CLOUD_LINKS.dataAccess}>
             Data access
           </ExternalLink>
-          , add the scope{" "}
-          <code className="text-xs">https://mail.google.com/</code>.
+          , add the scopes{" "}
+          <code className="text-xs">https://mail.google.com/</code>,{" "}
+          <code className="text-xs">contacts.readonly</code> and{" "}
+          <code className="text-xs">contacts.other.readonly</code>.
         </li>
         <li>
           Under{" "}
@@ -355,6 +361,11 @@ function GoogleConnectStep({
           The app asks for full access to your mailbox, because “Delete forever”
           needs it. There's no server: your mail goes straight from Google to
           this browser.
+        </li>
+        <li>
+          It also asks to read your contacts, for address suggestions while
+          writing. That's optional: without it, suggestions come from your
+          recent mail.
         </li>
         <li>
           While your Google Cloud app is in <em>Testing</em>, Google warns that
