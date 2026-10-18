@@ -1,10 +1,16 @@
 import type { MailboxId } from "../../core/ids";
 import { MAILBOX_ROLE_ORDER, type Mailbox } from "../../core/model";
+import { findFolded } from "../../lib/text";
 
 /** A mailbox with its visible children. */
 export interface MailboxNode {
   readonly mailbox: Mailbox;
   readonly children: readonly MailboxNode[];
+  /**
+   * Set by {@link filterMailboxTree}: whether the name matches, or the node
+   * is only there as the parent of a match.
+   */
+  readonly match?: boolean;
 }
 
 const roleRank = (mailbox: Mailbox) =>
@@ -60,6 +66,27 @@ export function buildMailboxTree(mailboxes: readonly Mailbox[]): MailboxNode[] {
       });
 
   return build(null, new Set());
+}
+
+/**
+ * The part of a tree whose names contain `text` (ignoring case and accents),
+ * with the parents of every match. A matching grouping node (one that can't
+ * be opened, like Gmail's Categories) keeps all its children.
+ */
+export function filterMailboxTree(
+  nodes: readonly MailboxNode[],
+  text: string,
+): MailboxNode[] {
+  return nodes.flatMap((node) => {
+    const match = findFolded(node.mailbox.name, text) !== undefined;
+    const children =
+      match && !node.mailbox.selectable
+        ? node.children
+        : filterMailboxTree(node.children, text);
+    return match || children.length > 0
+      ? [{ mailbox: node.mailbox, children, match }]
+      : [];
+  });
 }
 
 /** Number shown next to a mailbox: drafts count everything, others count unread. */

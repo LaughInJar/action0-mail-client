@@ -12,6 +12,9 @@ import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
 import { useLongPress } from "./useLongPress";
 
+/** DOM id of the listbox (focused after a search). */
+export const MESSAGE_LIST_ID = "message-list";
+
 /** DOM id of the row at `index` (for `aria-activedescendant`). */
 const rowDomId = (index: number) => `message-row-${index}`;
 
@@ -22,6 +25,10 @@ export interface MessageListProps {
   readonly allowDrag: boolean;
   readonly items: readonly MessageSummary[];
   readonly mailbox: Mailbox | undefined;
+  /** Accessible name; defaults to "Messages in <mailbox>". */
+  readonly label?: string;
+  /** Identifies the list (see `listKeyOf`), exposed as `data-list-key`. */
+  readonly listKey?: string;
   readonly hasNextPage: boolean;
   readonly isFetchingNextPage: boolean;
   readonly fetchNextPage: () => void;
@@ -60,6 +67,8 @@ export function MessageList({
   allowDrag,
   items,
   mailbox,
+  label,
+  listKey,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
@@ -159,8 +168,12 @@ export function MessageList({
   return (
     <div
       ref={listRef}
+      id={MESSAGE_LIST_ID}
+      data-list-key={listKey}
       role="listbox"
-      aria-label={mailbox ? `Messages in ${mailbox.name}` : "Messages"}
+      aria-label={
+        label ?? (mailbox ? `Messages in ${mailbox.name}` : "Messages")
+      }
       aria-multiselectable="true"
       aria-activedescendant={
         focusedIndex === -1 ? undefined : rowDomId(focusedIndex)

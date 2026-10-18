@@ -7,6 +7,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AccountId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary } from "../core/model";
+import type { MessageOrder } from "../core/provider";
 import * as selection from "./selection";
 
 /** A short notification at the bottom of the screen, optionally undoable. */
@@ -57,8 +58,12 @@ export interface ConfirmState {
 
 /** UI state that isn't server data and isn't in the URL. */
 export interface UiState extends selection.SelectionState {
-  /** `${accountId}/${mailboxId}` of the list that focus and selection belong to. */
+  /** Identifies the list that focus and selection belong to (mailbox, search and order). */
   readonly listKey: string | null;
+  /** Date order of message lists. Persisted. */
+  readonly listOrder: MessageOrder;
+  /** Text of the folder filter above the tree. Session only. */
+  readonly folderFilter: string;
   /** Messages whose remote content the user allowed. Session only. */
   readonly remoteContentAllowed: ReadonlySet<MessageId>;
   /** Widths (px) of the tree and the list column. Persisted. */
@@ -100,6 +105,8 @@ export interface UiActions {
   ) => void;
   readonly allowRemoteContent: (id: MessageId) => void;
   readonly setColumnWidth: (index: 0 | 1, width: number) => void;
+  readonly setListOrder: (order: MessageOrder) => void;
+  readonly setFolderFilter: (text: string) => void;
   readonly toggleNode: (key: string) => void;
   readonly setDrawerOpen: (open: boolean) => void;
   readonly setHelpOpen: (open: boolean) => void;
@@ -141,11 +148,12 @@ const noStorage: StateStorage = {
 interface PersistedUi {
   columnWidths?: unknown;
   toggledNodes?: unknown;
+  listOrder?: unknown;
 }
 
 /**
- * Creates the UI store. Only column widths and tree expansion are
- * persisted (to `storage`, i.e. localStorage); nothing that contains mail.
+ * Creates the UI store. Only column widths, tree expansion and the list
+ * order are persisted (to `storage`, i.e. localStorage); nothing that contains mail.
  */
 export function createUiStore(storage: Storage | undefined): UiStore {
   return createStore<UiState & UiActions>()(
@@ -162,6 +170,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           remoteContentAllowed: new Set(),
           columnWidths: [COLUMN_LIMITS[0].initial, COLUMN_LIMITS[1].initial],
           toggledNodes: new Set(),
+          listOrder: "newest",
+          folderFilter: "",
           drawerOpen: false,
           helpOpen: false,
           toast: null,
@@ -214,6 +224,12 @@ export function createUiStore(storage: Storage | undefined): UiStore {
               return { columnWidths };
             });
           },
+          setListOrder: (listOrder) => {
+            set({ listOrder });
+          },
+          setFolderFilter: (folderFilter) => {
+            set({ folderFilter });
+          },
           toggleNode: (key) => {
             set((s) => {
               const toggledNodes = new Set(s.toggledNodes);
@@ -254,9 +270,10 @@ export function createUiStore(storage: Storage | undefined): UiStore {
         partialize: (state) => ({
           columnWidths: state.columnWidths,
           toggledNodes: [...state.toggledNodes],
+          listOrder: state.listOrder,
         }),
         merge: (persisted, current) => {
-          const { columnWidths, toggledNodes } = (persisted ??
+          const { columnWidths, toggledNodes, listOrder } = (persisted ??
             {}) as PersistedUi;
           const widths =
             Array.isArray(columnWidths) &&
@@ -276,6 +293,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             ...current,
             columnWidths: widths,
             toggledNodes: new Set(toggledKeys),
+            listOrder: listOrder === "oldest" ? "oldest" : "newest",
           };
         },
       },

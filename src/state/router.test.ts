@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { asAccountId, asMailboxId, asMessageId } from "../core/ids";
-import { createHashRouter, formatRoute, parseHash, sameList } from "./router";
+import {
+  createHashRouter,
+  formatRoute,
+  listRoute,
+  parseHash,
+  sameList,
+} from "./router";
 
 const route = {
   accountId: asAccountId("gmail:jane@example.com"),
@@ -22,6 +28,33 @@ describe("parseHash / formatRoute", () => {
     expect(formatRoute(null)).toBe("#/");
   });
 
+  it("keeps a search in the query part, text exactly as typed", () => {
+    const searched = {
+      ...route,
+      search: { text: "from:bob & #1/ä?", everywhere: false },
+    };
+    const hash = formatRoute(searched);
+    expect(hash).toBe(
+      "#/gmail%3Ajane%40example.com/Label_1%2Fx/18c%231?q=from%3Abob+%26+%231%2F%C3%A4%3F",
+    );
+    expect(parseHash(hash)).toEqual(searched);
+
+    const everywhere = {
+      ...searched,
+      search: { text: "invoice", everywhere: true },
+    };
+    expect(formatRoute(everywhere)).toMatch(/\?q=invoice&in=all$/);
+    expect(parseHash(formatRoute(everywhere))).toEqual(everywhere);
+  });
+
+  it("ignores blank searches and unknown parameters", () => {
+    const list = { accountId: route.accountId, mailboxId: route.mailboxId };
+    expect(
+      formatRoute({ ...list, search: { text: "  ", everywhere: true } }),
+    ).toBe(formatRoute(list));
+    expect(parseHash(`${formatRoute(list)}?q=+&in=all&x=1`)).toEqual(list);
+  });
+
   it("compares lists without the message", () => {
     expect(
       sameList(route, {
@@ -30,6 +63,36 @@ describe("parseHash / formatRoute", () => {
       }),
     ).toBe(true);
     expect(sameList(route, null)).toBe(false);
+    expect(listRoute(route)).toEqual({
+      accountId: route.accountId,
+      mailboxId: route.mailboxId,
+    });
+  });
+
+  it("treats a search, or searching everywhere, as another list", () => {
+    const search = { text: "invoice", everywhere: false };
+    expect(sameList(route, { ...route, search })).toBe(false);
+    expect(
+      sameList(
+        { ...route, search },
+        {
+          accountId: route.accountId,
+          mailboxId: route.mailboxId,
+          search: { ...search },
+        },
+      ),
+    ).toBe(true);
+    expect(
+      sameList(
+        { ...route, search },
+        { ...route, search: { ...search, everywhere: true } },
+      ),
+    ).toBe(false);
+    expect(listRoute({ ...route, search })).toEqual({
+      accountId: route.accountId,
+      mailboxId: route.mailboxId,
+      search,
+    });
   });
 });
 

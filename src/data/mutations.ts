@@ -11,7 +11,7 @@ import { MailError } from "../core/errors";
 import type { AccountId, MailboxId, MessageId } from "../core/ids";
 import { runIntent, type MailIntent } from "../core/intents";
 import type { Mailbox, Message, MessageSummary } from "../core/model";
-import { queryKeys } from "./keys";
+import { listSpecOfKey, queryKeys } from "./keys";
 import {
   isolatingMailboxes,
   patchCounts,
@@ -133,11 +133,14 @@ function applyChanges(
   for (const [key, data] of queryClient.getQueriesData<MessageListData>({
     queryKey: listsKey(accountId),
   })) {
-    const mailbox = mailboxes.find((candidate) => candidate.id === key[3]);
-    if (data && mailbox)
+    const spec = listSpecOfKey(key);
+    const mailbox = mailboxes.find(
+      (candidate) => candidate.id === spec?.mailboxId,
+    );
+    if (data && spec && mailbox)
       queryClient.setQueryData(
         key,
-        patchList(data, mailbox, changes, isolating),
+        patchList(data, mailbox, changes, isolating, spec.order),
       );
   }
   for (const change of changes) {
@@ -156,7 +159,10 @@ function applyChanges(
  * Runs a {@link MailIntent} with an optimistic update: the cache changes
  * immediately and is rolled back if the provider rejects the change.
  * Afterwards only the mailbox counts are refetched; lists keep their patched
- * state, so marking a message read doesn't re-download the list.
+ * state, so marking a message read doesn't re-download the list. Search
+ * results are patched the same way, but whether a changed message still
+ * matches is up to the provider, so they are marked stale and reload the
+ * next time they are shown.
  */
 export function useApplyIntent() {
   const queryClient = useQueryClient();
@@ -196,9 +202,17 @@ export function useApplyIntent() {
       void queryClient.invalidateQueries({ queryKey: listsKey(accountId) });
     },
     onSettled: (_data, _error, { accountId }) =>
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.mailboxes(accountId),
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.mailboxes(accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: listsKey(accountId),
+          predicate: (query) =>
+            listSpecOfKey(query.queryKey)?.search !== undefined,
+          refetchType: "none",
+        }),
+      ]),
   });
 }
 
@@ -243,18 +257,21 @@ export function useEmptyMailbox() {
       return handle.provider.emptyMailbox(mailboxId);
     },
     onMutate: async ({ accountId, mailboxId }) => {
-      const listKey = queryKeys.messages(accountId, mailboxId);
-      await queryClient.cancelQueries({ queryKey: listKey });
+      // Every list of the mailbox, searched ones included.
+      const lists = queryKeys.messages(accountId, mailboxId);
+      await queryClient.cancelQueries({ queryKey: lists });
       const snapshot = queryClient.getQueriesData({
         queryKey: queryKeys.account(accountId),
       });
-      queryClient.setQueryData<MessageListData>(listKey, (data) =>
-        data
-          ? {
-              pages: [{ items: [] }],
-              pageParams: data.pageParams.slice(0, 1),
-            }
-          : data,
+      queryClient.setQueriesData<MessageListData>(
+        { queryKey: lists },
+        (data) =>
+          data
+            ? {
+                pages: [{ items: [] }],
+                pageParams: data.pageParams.slice(0, 1),
+              }
+            : data,
       );
       queryClient.setQueryData<readonly Mailbox[]>(
         queryKeys.mailboxes(accountId),

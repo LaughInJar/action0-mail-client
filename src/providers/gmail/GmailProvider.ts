@@ -3,6 +3,7 @@ import {
   asCursor,
   asMessageId,
   type AttachmentId,
+  type Cursor,
   type MailboxId,
   type MessageId,
 } from "../../core/ids";
@@ -20,7 +21,7 @@ import type {
   ProviderCapabilities,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
-import type { GmailHttp } from "./http";
+import type { GmailHttp, QueryParams } from "./http";
 import {
   ALL_MAIL_ID,
   CATEGORIES_ID,
@@ -55,6 +56,26 @@ function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
     : new MailError("provider", `"${invented}" is not a Gmail label.`);
 }
 
+/** `messages.list` parameters that select messages. */
+type ListFilter = Partial<
+  Pick<QueryParams, "labelIds" | "includeSpamTrash" | "q">
+>;
+
+/** The messages of a mailbox, or only those matching `search`. */
+function listFilter(
+  mailboxId: MailboxId,
+  search: string | undefined,
+): ListFilter {
+  return {
+    labelIds: mailboxId === ALL_MAIL_ID ? undefined : [mailboxId],
+    includeSpamTrash: SPAM_TRASH.has(mailboxId) ? true : undefined,
+    q: search?.trim() || undefined,
+  };
+}
+
+/** Oldest-first id lists kept for paging (each holds ids only). */
+const MAX_SNAPSHOTS = 5;
+
 /** `messages.batchModify` accepts at most this many ids per call. */
 export const BATCH_MODIFY_LIMIT = 1000;
 
@@ -77,6 +98,11 @@ export class GmailProvider implements MailProvider {
     deleteForever: true,
   };
   readonly #http: GmailHttp;
+  /** Id lists of oldest-first listings, by cursor key (see `#listOldest`). */
+  readonly #snapshots = new Map<
+    string,
+    { readonly filterKey: string; readonly ids: readonly MessageId[] }
+  >();
 
   constructor(http: GmailHttp) {
     this.#http = http;
@@ -104,22 +130,89 @@ export class GmailProvider implements MailProvider {
   }
 
   async listMessages(
-    { mailboxId, cursor, limit }: ListMessagesQuery,
+    { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
+    const filter = listFilter(mailboxId, search);
+    if (order === "oldest")
+      return this.#listOldest(filter, cursor, limit, signal);
+
     const list = await this.#http.get<GmailListMessagesResponse>(
       "messages",
-      {
-        maxResults: limit,
-        pageToken: cursor,
-        labelIds: mailboxId === ALL_MAIL_ID ? undefined : [mailboxId],
-        includeSpamTrash: SPAM_TRASH.has(mailboxId) ? true : undefined,
-      },
+      { ...filter, maxResults: limit, pageToken: cursor },
       signal,
     );
+    return {
+      items: await this.#summaries(
+        (list.messages ?? []).map(({ id }) => id),
+        signal,
+      ),
+      ...(list.nextPageToken
+        ? { nextCursor: asCursor(list.nextPageToken) }
+        : {}),
+    };
+  }
 
+  /**
+   * Oldest first. Gmail only lists newest first, so this lists every matching
+   * id (500 per request, ids only), reverses them and pages through that
+   * snapshot. Cursors are `<snapshot>:<offset>`. The last few snapshots stay
+   * in memory; one that's gone (e.g. after a reload) is listed again.
+   */
+  async #listOldest(
+    filter: ListFilter,
+    cursor: Cursor | undefined,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<Page<MessageSummary>> {
+    const filterKey = JSON.stringify(filter);
+    const [cursorKey = "", cursorOffset = "0"] = cursor?.split(":") ?? [];
+    const offset = Number(cursorOffset) || 0;
+    const snapshot = this.#snapshots.get(cursorKey);
+    let key = cursorKey;
+    let ids = snapshot?.filterKey === filterKey ? snapshot.ids : undefined;
+    if (!ids) {
+      ids = (await this.#listAllIds(filter, signal)).reverse();
+      key = crypto.randomUUID();
+      this.#snapshots.set(key, { filterKey, ids });
+      for (const old of this.#snapshots.keys()) {
+        if (this.#snapshots.size <= MAX_SNAPSHOTS) break;
+        this.#snapshots.delete(old);
+      }
+    }
+    const next = offset + limit;
+    return {
+      items: await this.#summaries(ids.slice(offset, next), signal),
+      ...(next < ids.length ? { nextCursor: asCursor(`${key}:${next}`) } : {}),
+    };
+  }
+
+  /** Every message id that `filter` selects, newest first. */
+  async #listAllIds(
+    filter: ListFilter,
+    signal?: AbortSignal,
+  ): Promise<MessageId[]> {
+    const ids: MessageId[] = [];
+    let pageToken: string | undefined;
+    do {
+      const page = await this.#http.get<GmailListMessagesResponse>(
+        "messages",
+        { ...filter, maxResults: 500, pageToken },
+        signal,
+      );
+      ids.push(...(page.messages ?? []).map(({ id }) => asMessageId(id)));
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined);
+    return ids;
+  }
+
+  /** Summaries of the given messages, in the same order. */
+  async #summaries(
+    ids: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<MessageSummary[]> {
     const messages = await Promise.all(
-      (list.messages ?? []).map(({ id }) =>
+      ids.map((id) =>
         this.#http
           .get<GmailMessage>(
             `messages/${encodeURIComponent(id)}`,
@@ -133,15 +226,9 @@ export class GmailProvider implements MailProvider {
           }),
       ),
     );
-
-    return {
-      items: messages
-        .filter((message): message is GmailMessage => message !== undefined)
-        .map(toMessageSummary),
-      ...(list.nextPageToken
-        ? { nextCursor: asCursor(list.nextPageToken) }
-        : {}),
-    };
+    return messages
+      .filter((message): message is GmailMessage => message !== undefined)
+      .map(toMessageSummary);
   }
 
   async getMessage(id: MessageId, signal?: AbortSignal): Promise<Message> {
@@ -304,22 +391,10 @@ export class GmailProvider implements MailProvider {
     if (!SPAM_TRASH.has(mailboxId)) {
       throw new MailError("provider", "Only Trash and Spam can be emptied.");
     }
-    const ids: MessageId[] = [];
-    let pageToken: string | undefined;
-    do {
-      const page = await this.#http.get<GmailListMessagesResponse>(
-        "messages",
-        {
-          labelIds: [mailboxId],
-          includeSpamTrash: true,
-          maxResults: 500,
-          pageToken,
-        },
-        signal,
-      );
-      ids.push(...(page.messages ?? []).map(({ id }) => asMessageId(id)));
-      pageToken = page.nextPageToken;
-    } while (pageToken !== undefined);
+    const ids = await this.#listAllIds(
+      { labelIds: [mailboxId], includeSpamTrash: true },
+      signal,
+    );
     await this.deleteForever(ids, signal);
     return { deleted: ids.length };
   }

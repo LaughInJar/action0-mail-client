@@ -5,26 +5,28 @@ import {
   useAuthStatus,
 } from "../../accounts/context";
 import type { MessageId } from "../../core/ids";
-import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
-import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
+import { useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
 import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
+import { ListToolbar } from "./ListToolbar";
 import { MessageList } from "./MessageList";
+import { everywhereMailbox, useCurrentList } from "./useCurrentList";
 
-/** Column (b): header and message list of the current mailbox. */
+/** Column (b): header, search and message list of the current mailbox. */
 export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
-  const route = useRoute();
+  const { route, list, mailboxes, mailbox, scope, order, listKey } =
+    useCurrentList();
   const router = useRouter();
   const store = useUiStore();
   const accounts = useAccounts();
   const handle = useAccountHandle(route?.accountId);
   const status = useAuthStatus(handle?.auth);
-  const { data: mailboxes } = useMailboxes(route?.accountId);
-  const mailbox = findMailbox(mailboxes, route?.mailboxId);
-  const list = useMessageList(route?.accountId, route?.mailboxId);
+  const search = route?.search;
+  const everywhere = everywhereMailbox(mailboxes);
+  const isolated = scope?.role === "trash" || scope?.role === "junk";
   const selectedCount = useUi((state) => state.selectedIds.size);
   const clearSelection = useUi((state) => state.clearSelection);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
@@ -50,7 +52,18 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   else if (!handle) body = <Note>This account is no longer connected.</Note>;
   else if (!list.data && status !== "signed-in")
     body = <Note>Reconnect the account to see its messages.</Note>;
-  else if (list.isPending) body = <ListSkeleton />;
+  else if (list.isPending)
+    body = (
+      <>
+        {order === "oldest" && (
+          <Note>
+            Sorting oldest first: big folders take a moment, because every
+            message has to be listed first.
+          </Note>
+        )}
+        <ListSkeleton />
+      </>
+    );
   else if (list.isError && !list.data)
     body = (
       <Note>
@@ -64,14 +77,44 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         </button>
       </Note>
     );
+  else if (list.data.length === 0 && search)
+    body = (
+      <Note>
+        {search.everywhere || !mailbox
+          ? `No messages match “${search.text}”.`
+          : `No messages match “${search.text}” in ${mailbox.name}.`}
+        {!search.everywhere &&
+          everywhere &&
+          mailbox &&
+          mailbox.id !== everywhere.id && (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="text-blue-700 underline dark:text-blue-300"
+                onClick={() => {
+                  router.navigate({
+                    ...route,
+                    search: { ...search, everywhere: true },
+                  });
+                }}
+              >
+                Search everywhere
+              </button>
+            </>
+          )}
+      </Note>
+    );
   else if (list.data.length === 0) body = <Note>No messages here.</Note>;
   else
     body = (
       <MessageList
         accountId={route.accountId}
-        allowDrag={mailbox?.role !== "trash" && mailbox?.role !== "junk"}
+        allowDrag={!isolated}
         items={list.data}
-        mailbox={mailbox}
+        mailbox={scope}
+        {...(listKey === null ? {} : { listKey })}
+        {...(search ? { label: `Results for “${search.text}”` } : {})}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
         fetchNextPage={loadMore}
@@ -115,7 +158,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         ) : (
           <div className="min-w-0 flex-1 px-2">
             <h2 className="truncate text-sm font-semibold">
-              {mailbox?.name ?? ""}
+              {search ? `Results for “${search.text}”` : (mailbox?.name ?? "")}
             </h2>
             {accounts.length > 1 && handle && (
               <p className="truncate text-xs text-zinc-500">
@@ -132,6 +175,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           onClick={() => void list.refetch()}
         />
       </header>
+      {route && <ListToolbar mailbox={mailbox} everywhere={everywhere} />}
       {selectedCount > 0 && (
         <div
           role="group"
@@ -141,23 +185,25 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           <MailActionButtons actions={actions} />
         </div>
       )}
-      {(mailbox?.role === "trash" || mailbox?.role === "junk") && (
+      {scope && isolated && (
         <div
           role="note"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
         >
           <span className="min-w-0 flex-1">
-            Messages in {mailbox.name} are deleted automatically after 30 days.
+            Messages in {scope.name} are deleted automatically after 30 days.
           </span>
-          {actions.canDeleteForever && (list.data?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              onClick={actions.requestEmpty}
-              className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
-            >
-              Empty {mailbox.name}
-            </button>
-          )}
+          {actions.canDeleteForever &&
+            !search &&
+            (list.data?.length ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={actions.requestEmpty}
+                className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
+              >
+                Empty {scope.name}
+              </button>
+            )}
         </div>
       )}
       <div className="min-h-0 flex-1">{body}</div>

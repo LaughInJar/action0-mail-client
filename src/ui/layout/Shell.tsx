@@ -37,7 +37,7 @@ function MailApp() {
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   useNavigationDefaults(breakpoint);
   useListController(breakpoint);
-  useGlobalCommands();
+  useGlobalCommands(breakpoint);
   const actions = useMailActions();
   useActionCommands(actions);
 

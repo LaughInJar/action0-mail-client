@@ -8,28 +8,43 @@ import {
 } from "../core/ids";
 import { Emitter } from "../lib/emitter";
 
+/** A mail search, shown instead of the mailbox's messages. */
+export interface RouteSearch {
+  /** The search text as typed (provider syntax); never blank. */
+  readonly text: string;
+  /** Searches the whole account instead of the mailbox. */
+  readonly everywhere: boolean;
+}
+
 /**
  * Navigation state kept in the URL hash:
- * `#/<accountId>/<mailboxId>[/<messageId>]`, or `null` for `#/` (on phones:
- * the folder tree).
+ * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]]`, or `null`
+ * for `#/` (on phones: the folder tree). With a search, `mailboxId` is the
+ * mailbox it was started from.
  */
 export type Route = {
   readonly accountId: AccountId;
   readonly mailboxId: MailboxId;
   readonly messageId?: MessageId;
+  readonly search?: RouteSearch;
 } | null;
 
 /** Parses a location hash. Unknown or partial hashes become `null`. */
 export function parseHash(hash: string): Route {
-  const path = hash.replace(/^#\/?/, "");
+  const [path, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
   if (!path) return null;
   const segments = path.split("/").map(safeDecode);
   const [account, mailbox, message] = segments;
   if (!account || !mailbox || segments.length > 3) return null;
+  const params = new URLSearchParams(query);
+  const text = params.get("q") ?? "";
   return {
     accountId: asAccountId(account),
     mailboxId: asMailboxId(mailbox),
     ...(message ? { messageId: asMessageId(message) } : {}),
+    ...(text.trim()
+      ? { search: { text, everywhere: params.get("in") === "all" } }
+      : {}),
   };
 }
 
@@ -39,12 +54,28 @@ export function formatRoute(route: Route): string {
   const segments = [route.accountId, route.mailboxId, route.messageId].filter(
     (segment): segment is NonNullable<typeof segment> => segment !== undefined,
   );
-  return `#/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  const path = segments.map((segment) => encodeURIComponent(segment));
+  const { search } = route;
+  if (!search?.text.trim()) return `#/${path.join("/")}`;
+  const params = new URLSearchParams({ q: search.text });
+  if (search.everywhere) params.set("in", "all");
+  return `#/${path.join("/")}?${params.toString()}`;
 }
 
-/** True if both routes point to the same mailbox (ignoring the message). */
+/** True if both routes show the same list: mailbox and search (ignoring the message). */
 export function sameList(a: Route, b: Route): boolean {
-  return a?.accountId === b?.accountId && a?.mailboxId === b?.mailboxId;
+  return (
+    a?.accountId === b?.accountId &&
+    a?.mailboxId === b?.mailboxId &&
+    a?.search?.text.trim() === b?.search?.text.trim() &&
+    a?.search?.everywhere === b?.search?.everywhere
+  );
+}
+
+/** The route of the list that `route` shows (the same route without the message). */
+export function listRoute(route: NonNullable<Route>): NonNullable<Route> {
+  const { messageId, ...list } = route;
+  return list;
 }
 
 /** Hash-based router. */
@@ -104,6 +135,13 @@ export function createHashRouter(win: Window = window): HashRouter {
       win.removeEventListener("hashchange", sync);
     },
   };
+}
+
+function splitOnce(text: string, separator: string): [string, string] {
+  const index = text.indexOf(separator);
+  return index === -1
+    ? [text, ""]
+    : [text.slice(0, index), text.slice(index + 1)];
 }
 
 function safeDecode(segment: string): string {

@@ -15,7 +15,7 @@ import type { AccountHandle } from "../accounts/types";
 import type { AccountId, Cursor, MailboxId, MessageId } from "../core/ids";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
 import { encodeBase64 } from "../lib/base64url";
-import { queryKeys } from "./keys";
+import { queryKeys, type ListSpec } from "./keys";
 
 /** Messages per page in the message list. */
 export const PAGE_SIZE = 50;
@@ -50,27 +50,29 @@ const flattenPages = (
   data: InfiniteData<Page<MessageSummary>, Cursor | undefined>,
 ) => data.pages.flatMap((page) => page.items);
 
+const NO_LIST: ListSpec = { mailboxId: NO_MAILBOX, order: "newest" };
+
 /**
- * The messages of a mailbox, newest first, as a flat list that grows with
- * `fetchNextPage()`. Persisted briefly.
+ * The messages of a list (a mailbox, or a search in it) as a flat list that
+ * grows with `fetchNextPage()`. Mailbox lists are persisted briefly; search
+ * results stay in memory.
  */
 export function useMessageList(
   accountId: AccountId | undefined,
-  mailboxId: MailboxId | undefined,
+  spec: ListSpec | undefined,
 ) {
   const handle = useReadyHandle(accountId);
   return useInfiniteQuery({
-    queryKey: queryKeys.messages(
-      accountId ?? NO_ACCOUNT,
-      mailboxId ?? NO_MAILBOX,
-    ),
+    queryKey: queryKeys.messageList(accountId ?? NO_ACCOUNT, spec ?? NO_LIST),
     queryFn:
-      handle && mailboxId !== undefined
+      handle && spec
         ? ({ pageParam, signal }) =>
             handle.provider.listMessages(
               {
-                mailboxId,
+                mailboxId: spec.mailboxId,
+                order: spec.order,
                 limit: PAGE_SIZE,
+                ...(spec.search === undefined ? {} : { search: spec.search }),
                 ...(pageParam === undefined ? {} : { cursor: pageParam }),
               },
               signal,
@@ -80,7 +82,7 @@ export function useMessageList(
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     select: flattenPages,
     staleTime: 30_000,
-    meta: { persist: true },
+    meta: { persist: spec?.search === undefined },
   });
 }
 

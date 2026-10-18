@@ -1,6 +1,7 @@
 import { useAccountRegistry, useAccounts } from "../../accounts/context";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
+import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 
 /** Column (a): app title, account/mailbox tree and account management. */
@@ -14,6 +15,7 @@ export function Sidebar({ onNavigate }: MailboxTreeProps) {
         <Icon name="mail" className="size-5 text-blue-600 dark:text-blue-400" />
         action0
       </div>
+      <FolderFilter />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <MailboxTree {...(onNavigate ? { onNavigate } : {})} />
       </div>

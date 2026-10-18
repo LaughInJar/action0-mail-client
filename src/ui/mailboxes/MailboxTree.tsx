@@ -15,14 +15,17 @@ import type { Mailbox, MailboxRole } from "../../core/model";
 import { useMailboxes } from "../../data/hooks";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
+import { findFolded } from "../../lib/text";
 import { useMailActions } from "../actions/useMailActions";
 import { Icon, type IconName } from "../common/Icon";
 import {
   badgeCount,
   buildMailboxTree,
   expandedByDefault,
+  filterMailboxTree,
   type MailboxNode,
 } from "./buildTree";
+import { FOLDER_FILTER_ID } from "./FolderFilter";
 
 /** The tree item currently under a drag, and whether the drop would only add a label. */
 interface DropHighlight {
@@ -31,6 +34,9 @@ interface DropHighlight {
 }
 
 const DropContext = createContext<DropHighlight | null>(null);
+
+/** The folder filter's text (blank when not filtering). */
+const FilterContext = createContext("");
 
 const ROLE_ICONS: Readonly<Record<MailboxRole, IconName>> = {
   inbox: "inbox",
@@ -60,6 +66,8 @@ export interface MailboxTreeProps {
  * The accounts and their mailboxes as one ARIA tree (flat DOM with
  * `aria-level`). Arrow keys move between visible items, ←/→ collapse and
  * expand, Enter or Space opens a mailbox. Clicks are delegated to the tree.
+ * While the folder filter has text, only matches and their parents show,
+ * all expanded.
  */
 export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const accounts = useAccounts();
@@ -70,6 +78,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const store = useUiStore();
   const actions = useMailActions();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
+  const filter = useUi((state) => state.folderFilter).trim();
 
   /** The mailbox under a drag, if the dragged messages may go there. */
   const dropTargetOf = (target: EventTarget) => {
@@ -144,7 +153,8 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     } = item.dataset;
     const onChevron = target.closest("[data-toggle]") !== null;
     if (hasChildren === "true" && (onChevron || selectable !== "true")) {
-      toggleNode(key);
+      // While filtering, everything that's shown is expanded.
+      if (!filter) toggleNode(key);
       return;
     }
     if (
@@ -158,6 +168,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       mailboxId: asMailboxId(mailboxId),
     };
     if (!sameList(router.getRoute(), destination)) router.navigate(destination);
+    store.getState().setFolderFilter("");
     onNavigate?.();
   };
 
@@ -178,7 +189,8 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
         focus(items[index + 1]);
         break;
       case "ArrowUp":
-        focus(items[index - 1]);
+        if (index === 0) document.getElementById(FOLDER_FILTER_ID)?.focus();
+        else focus(items[index - 1]);
         break;
       case "Home":
         focus(items[0]);
@@ -187,11 +199,13 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
         focus(items.at(-1));
         break;
       case "ArrowRight":
-        if (expanded === "false") toggleNode(current.dataset.key ?? "");
+        if (expanded === "false" && !filter)
+          toggleNode(current.dataset.key ?? "");
         else if (expanded === "true") focus(items[index + 1]);
         break;
       case "ArrowLeft":
-        if (expanded === "true") toggleNode(current.dataset.key ?? "");
+        if (expanded === "true" && !filter)
+          toggleNode(current.dataset.key ?? "");
         else
           focus(
             items.find(
@@ -225,15 +239,17 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       onDrop={onDrop}
       className="space-y-px px-2 py-2 focus:outline-none"
     >
-      <DropContext value={drop}>
-        {accounts.map((handle, index) => (
-          <AccountBranch
-            key={handle.account.id}
-            handle={handle}
-            isTabStop={!routeAccountKnown && index === 0}
-          />
-        ))}
-      </DropContext>
+      <FilterContext value={filter}>
+        <DropContext value={drop}>
+          {accounts.map((handle, index) => (
+            <AccountBranch
+              key={handle.account.id}
+              handle={handle}
+              isTabStop={!routeAccountKnown && index === 0}
+            />
+          ))}
+        </DropContext>
+      </FilterContext>
     </div>
   );
 }
@@ -247,10 +263,14 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const { account, auth } = handle;
   const status = useAuthStatus(auth);
   const { data: mailboxes, isPending, isError } = useMailboxes(account.id);
-  const nodes = useMemo(() => buildMailboxTree(mailboxes ?? []), [mailboxes]);
+  const filter = useContext(FilterContext);
+  const nodes = useMemo(() => {
+    const tree = buildMailboxTree(mailboxes ?? []);
+    return filter ? filterMailboxTree(tree, filter) : tree;
+  }, [mailboxes, filter]);
   const toggledNodes = useUi((state) => state.toggledNodes);
   const key = `account:${account.id}`;
-  const expanded = !toggledNodes.has(key);
+  const expanded = filter !== "" || !toggledNodes.has(key);
 
   let body;
   if (!expanded) body = null;
@@ -259,6 +279,8 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   else if (isPending) body = <TreeNote>Loading folders…</TreeNote>;
   else if (isError && !mailboxes)
     body = <TreeNote>Couldn’t load folders.</TreeNote>;
+  else if (filter && nodes.length === 0)
+    body = <TreeNote>No matching folders.</TreeNote>;
   else
     body = nodes.map((node) => (
       <MailboxBranch
@@ -319,10 +341,12 @@ function MailboxBranch({
   const { mailbox, children } = node;
   const route = useRoute();
   const toggledNodes = useUi((state) => state.toggledNodes);
+  const filter = useContext(FilterContext);
   const key = `${accountId}/${mailbox.id}`;
   const hasChildren = children.length > 0;
   const expanded =
-    hasChildren && expandedByDefault(mailbox) !== toggledNodes.has(key);
+    hasChildren &&
+    (filter !== "" || expandedByDefault(mailbox) !== toggledNodes.has(key));
   const selected =
     route?.accountId === accountId && route.mailboxId === mailbox.id;
   const badge = badgeCount(mailbox);
@@ -345,6 +369,7 @@ function MailboxBranch({
         data-has-children={String(hasChildren)}
         data-assignable={String(mailbox.assignable)}
         data-role={mailbox.role}
+        data-match={node.match}
         className={`${rowClass(selected)} ${dropHere ? "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20" : ""}`}
         style={{ paddingLeft: `${(depth - 1) * 0.875 + 0.5}rem` }}
       >
@@ -361,9 +386,9 @@ function MailboxBranch({
           }
         />
         <span
-          className={`min-w-0 flex-1 truncate ${badge !== undefined && mailbox.role !== "drafts" ? "font-semibold" : ""}`}
+          className={`min-w-0 flex-1 truncate ${badge !== undefined && mailbox.role !== "drafts" ? "font-semibold" : ""} ${node.match === false ? "text-zinc-400 dark:text-zinc-500" : ""}`}
         >
-          {mailbox.name}
+          <Highlighted text={mailbox.name} query={filter} />
         </span>
         {dropHere && (
           <span className="shrink-0 rounded bg-blue-600 px-1.5 py-px text-[0.6875rem] font-semibold text-white">
@@ -390,6 +415,22 @@ function MailboxBranch({
             parentKey={key}
           />
         ))}
+    </>
+  );
+}
+
+/** `text` with the part matching `query` marked. */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const range = findFolded(text, query);
+  if (!range) return text;
+  const [start, end] = range;
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark className="rounded-sm bg-yellow-200 text-inherit dark:bg-yellow-500/40">
+        {text.slice(start, end)}
+      </mark>
+      {text.slice(end)}
     </>
   );
 }

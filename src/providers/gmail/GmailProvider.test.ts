@@ -126,6 +126,31 @@ describe("GmailProvider.listMessages", () => {
     expect(seen[1]?.get("includeSpamTrash")).toBe("true");
   });
 
+  it("passes a search as q, together with the mailbox's label", async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get(url("messages"), ({ request }) => {
+        seen.push(new URL(request.url).searchParams);
+        return HttpResponse.json({});
+      }),
+    );
+    const gmail = provider();
+    await gmail.listMessages({
+      mailboxId: asMailboxId("INBOX"),
+      search: "  from:bob has:attachment ",
+      limit: 10,
+    });
+    await gmail.listMessages({
+      mailboxId: asMailboxId(ALL_MAIL_ID),
+      search: "invoice",
+      limit: 10,
+    });
+    expect(seen[0]?.get("q")).toBe("from:bob has:attachment");
+    expect(seen[0]?.getAll("labelIds")).toEqual(["INBOX"]);
+    expect(seen[1]?.get("q")).toBe("invoice");
+    expect(seen[1]?.has("labelIds")).toBe(false);
+  });
+
   it("skips messages deleted between list and get", async () => {
     server.use(
       http.get(url("messages"), () =>
@@ -427,5 +452,88 @@ describe("GmailProvider trash, spam and deletion", () => {
     ).rejects.toMatchObject({
       code: "provider",
     });
+  });
+});
+
+describe("GmailProvider.listMessages, oldest first", () => {
+  /** Six messages m1 (oldest) … m6 (newest), listed two per page. */
+  function serveSixMessages() {
+    const listCalls: URLSearchParams[] = [];
+    const pages: Record<string, { ids: string[]; next?: string }> = {
+      "": { ids: ["m6", "m5"], next: "p2" },
+      p2: { ids: ["m4", "m3"], next: "p3" },
+      p3: { ids: ["m2", "m1"] },
+    };
+    server.use(
+      http.get(url("messages"), ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        listCalls.push(params);
+        const page = pages[params.get("pageToken") ?? ""];
+        return HttpResponse.json({
+          messages: page?.ids.map((id) => ({ id, threadId: id })),
+          ...(page?.next ? { nextPageToken: page.next } : {}),
+        });
+      }),
+      http.get(url("messages/:id"), ({ params }) =>
+        HttpResponse.json(gmailMessage(String(params.id))),
+      ),
+    );
+    return listCalls;
+  }
+
+  it("lists every id once, then pages through them in reverse", async () => {
+    const listCalls = serveSixMessages();
+    const gmail = provider();
+    const query = {
+      mailboxId: asMailboxId("INBOX"),
+      search: "report",
+      order: "oldest",
+      limit: 4,
+    } as const;
+
+    const first = await gmail.listMessages(query);
+    expect(first.items.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(listCalls).toHaveLength(3);
+    expect(listCalls[0]?.get("maxResults")).toBe("500");
+    expect(listCalls[0]?.get("q")).toBe("report");
+    expect(listCalls[0]?.getAll("labelIds")).toEqual(["INBOX"]);
+
+    const second = await gmail.listMessages({
+      ...query,
+      ...(first.nextCursor ? { cursor: first.nextCursor } : {}),
+    });
+    expect(second.items.map((m) => m.id)).toEqual(["m5", "m6"]);
+    expect(second.nextCursor).toBeUndefined();
+    // The second page came from the snapshot: no new list requests.
+    expect(listCalls).toHaveLength(3);
+  });
+
+  it("lists again when the snapshot is gone or belongs to another list", async () => {
+    const listCalls = serveSixMessages();
+    const query = {
+      mailboxId: asMailboxId("INBOX"),
+      order: "oldest",
+      limit: 4,
+    } as const;
+    const { nextCursor } = await provider().listMessages(query);
+    expect(nextCursor).toBeDefined();
+
+    // E.g. after a reload: a new provider doesn't know the snapshot.
+    const later = await provider().listMessages({
+      ...query,
+      ...(nextCursor ? { cursor: nextCursor } : {}),
+    });
+    expect(later.items.map((m) => m.id)).toEqual(["m5", "m6"]);
+    expect(listCalls).toHaveLength(6);
+
+    const gmail = provider();
+    const own = await gmail.listMessages(query);
+    const other = await gmail.listMessages({
+      ...query,
+      search: "something else",
+      ...(own.nextCursor ? { cursor: own.nextCursor } : {}),
+    });
+    expect(other.items.map((m) => m.id)).toEqual(["m5", "m6"]);
+    expect(listCalls.at(-1)?.get("q")).toBe("something else");
   });
 });
