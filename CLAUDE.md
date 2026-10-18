@@ -131,3 +131,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Files get into a mail through the paperclip (file picker), by dropping them onto the composer, by pasting, or by dropping them anywhere on the app while no composer is open (that starts a new mail).
   - Images dropped or pasted into the text are inline, like Gmail; other files, and images dropped elsewhere on the composer, are attachments.
   - At most 25 MB of attachments per mail (Gmail's limit, inline images included), with a clear message beyond that. Files are saved with the draft; drafts with more than 1 MB of files save every 30 s. Large mails use Gmail's resumable upload.
+- **Live updates decisions:**
+  - Every connected account is checked for changes every 60 s while the app is in front and every 5 min in the background, and immediately when the tab comes back or the network returns. Gmail uses its history API, behind a provider-neutral `changesSince(token)`.
+  - Changes are applied to cached lists, counts and the open message in place (no reloading, no jumping). A "↑ N new messages" button appears when the list is scrolled down. Open searches refresh.
+  - Desktop notifications: a bar asks once; only new unread Inbox mail, only while the app isn't in front, grouped when several arrive; clicking opens the message.
+  - The tab title shows the unread count of all inboxes across accounts, or "Reconnect" when Google access has run out (it can only be renewed on user interaction).
+  - The demo account receives a message every couple of minutes, so this can be tried without Gmail.

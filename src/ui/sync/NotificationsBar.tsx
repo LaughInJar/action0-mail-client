@@ -1,0 +1,57 @@
+import { useState } from "react";
+import { readJson, writeJson } from "../../lib/storage";
+import { COARSE_POINTER_QUERY } from "../layout/useBreakpoint";
+
+/** localStorage setting: the bar was answered and isn't shown again. */
+const ASKED_KEY = "a0.settings.notificationsAsked";
+
+/**
+ * Phones only show notifications from installed apps (service worker), so
+ * they aren't offered on touch devices.
+ */
+const askable = () =>
+  typeof Notification !== "undefined" &&
+  Notification.permission === "default" &&
+  !window.matchMedia(COARSE_POINTER_QUERY).matches &&
+  readJson(window.localStorage, ASKED_KEY) !== true;
+
+/**
+ * Asks once whether to show desktop notifications for new mail. The
+ * browser's own permission prompt only comes after "Turn on".
+ */
+export function NotificationsBar() {
+  const [visible, setVisible] = useState(askable);
+  if (!visible) return null;
+  const done = () => {
+    writeJson(window.localStorage, ASKED_KEY, true);
+    setVisible(false);
+  };
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100"
+    >
+      <span className="min-w-0 flex-1">
+        Get a notification when new mail arrives while you’re in another tab or
+        app?
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          done();
+          void Notification.requestPermission();
+        }}
+        className="rounded-md bg-blue-600 px-3 py-1 font-medium text-white hover:bg-blue-700 pointer-coarse:min-h-11"
+      >
+        Turn on notifications
+      </button>
+      <button
+        type="button"
+        onClick={done}
+        className="rounded-md px-3 py-1 hover:bg-blue-100 dark:hover:bg-blue-900 pointer-coarse:min-h-11"
+      >
+        Not now
+      </button>
+    </div>
+  );
+}

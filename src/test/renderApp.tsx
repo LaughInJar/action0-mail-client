@@ -41,7 +41,9 @@ export function renderApp({
   if (signedIn) saveAccounts(window.localStorage, [DEMO_ACCOUNT]);
 
   const services = createAppServices({
-    modules: modules ?? [createDemoModule({ latencyMs: 0, data })],
+    modules: modules ?? [
+      createDemoModule({ latencyMs: 0, data, arrivalEveryMs: false }),
+    ],
     ...(setups ? { createSetups: setups } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.

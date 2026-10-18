@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { isMailError } from "../../core/errors";
 import { asAttachmentId, asMessageId, type Cursor } from "../../core/ids";
-import { createDemoData, DEMO_MAILBOX } from "./demoData";
+import { createDemoArrival, createDemoData, DEMO_MAILBOX } from "./demoData";
 import { FakeMailProvider } from "./FakeMailProvider";
 
 const provider = () =>
@@ -314,5 +314,43 @@ describe("FakeMailProvider drafts and sending", () => {
     await expect(fake.searchContacts("ann")).rejects.toMatchObject({
       code: "unavailable",
     });
+  });
+});
+
+describe("FakeMailProvider.changesSince", () => {
+  it("reports writes since the token", async () => {
+    const fake = provider();
+    const start = await fake.changesSince(undefined);
+    await fake.archive([asMessageId("welcome")]);
+    await fake.deleteForever([asMessageId("trash-1")]);
+    const set = await fake.changesSince(start.token);
+    expect(
+      set.changes.map((c) =>
+        c.kind === "removed" ? `removed:${c.id}` : `${c.kind}:${c.message.id}`,
+      ),
+    ).toEqual(["updated:welcome", "removed:trash-1"]);
+    expect((await fake.changesSince(set.token)).changes).toEqual([]);
+  });
+
+  it("lets demo mail arrive when it's due", async () => {
+    let now = 0;
+    const fake = new FakeMailProvider(createDemoData(0), {
+      now: () => now,
+      arrivals: { everyMs: 60_000, create: createDemoArrival },
+    });
+    const start = await fake.changesSince(undefined);
+    now = 30_000;
+    expect((await fake.changesSince(start.token)).changes).toEqual([]);
+    now = 61_000;
+    const set = await fake.changesSince(start.token);
+    expect(set.changes).toEqual([
+      expect.objectContaining({
+        kind: "added",
+        message: expect.objectContaining({
+          mailboxIds: [DEMO_MAILBOX.inbox],
+          flags: { seen: false, flagged: false },
+        }) as unknown,
+      }),
+    ]);
   });
 });

@@ -1,8 +1,12 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import type { Cursor, MailboxId } from "../core/ids";
+import type { Cursor, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent, MessageChange } from "../core/intents";
 import type { Mailbox, Message, MessageSummary, Page } from "../core/model";
-import type { MessageOrder, ProviderCapabilities } from "../core/provider";
+import type {
+  MailChange,
+  MessageOrder,
+  ProviderCapabilities,
+} from "../core/provider";
 
 /** Cached shape of a message list (an infinite query). */
 export type MessageListData = InfiniteData<
@@ -296,6 +300,42 @@ function insertByDate(
   return pages.map((p, i) =>
     i === pages.length - 1 ? { ...p, items: [...p.items, row] } : p,
   );
+}
+
+/**
+ * Applies changes reported by the provider (see `MailProvider.changesSince`)
+ * to a cached list: rows update in place, leave when they no longer belong,
+ * and new ones come in at their date position (within the loaded pages).
+ */
+export function applyServerChanges(
+  data: MessageListData,
+  mailbox: Mailbox,
+  changes: readonly MailChange[],
+  isolating: ReadonlySet<MailboxId> = new Set(),
+  order: MessageOrder = "newest",
+): MessageListData {
+  const latest = new Map<MessageId, MessageSummary | null>();
+  for (const change of changes)
+    latest.set(
+      change.kind === "removed" ? change.id : change.message.id,
+      change.kind === "removed" ? null : change.message,
+    );
+  if (latest.size === 0) return data;
+
+  const present = new Set<MessageId>();
+  let pages: Page<MessageSummary>[] = data.pages.map((page) => ({
+    ...page,
+    items: page.items.flatMap((item) => {
+      present.add(item.id);
+      if (!latest.has(item.id)) return [item];
+      const next = latest.get(item.id);
+      return next && belongsTo(mailbox, next, isolating) ? [next] : [];
+    }),
+  }));
+  for (const [id, message] of latest)
+    if (message && !present.has(id) && belongsTo(mailbox, message, isolating))
+      pages = insertByDate(pages, message, order);
+  return { ...data, pages };
 }
 
 /** Applies a change to a cached full message. */

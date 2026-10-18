@@ -5,8 +5,10 @@ import {
   asCursor,
   asDraftId,
   asMessageId,
+  asSyncToken,
   asThreadId,
   type DraftId,
+  type SyncToken,
   type AttachmentId,
   type MailboxId,
   type MessageId,
@@ -21,7 +23,9 @@ import type {
   Page,
 } from "../../core/model";
 import type {
+  ChangeSet,
   ListMessagesQuery,
+  MailChange,
   MailProvider,
   MutationResult,
   ProviderCapabilities,
@@ -49,6 +53,17 @@ export interface FakeMailProviderOptions {
   readonly failWrites?: boolean;
   /** Makes contact searches fail as `unavailable` (like a disabled People API). */
   readonly contactsUnavailable?: boolean;
+  /**
+   * New mail "arrives" this often: checked by {@link FakeMailProvider.changesSince},
+   * so no timers run inside the provider.
+   */
+  readonly arrivals?: {
+    readonly everyMs: number;
+    /** The `count`th arriving message, received at `now`. */
+    readonly create: (now: number, count: number) => Message;
+  };
+  /** Clock for arrivals (tests). */
+  readonly now?: () => number;
 }
 
 /**
@@ -88,6 +103,17 @@ export class FakeMailProvider implements MailProvider {
     { readonly input: DraftInput; readonly messageId: MessageId }
   >();
   #nextId = 1;
+  /** Every change to the messages, for {@link changesSince}. */
+  readonly #log: {
+    readonly version: number;
+    readonly id: MessageId;
+    readonly kind: "added" | "updated" | "removed";
+  }[] = [];
+  #version = 0;
+  readonly #arrivals: FakeMailProviderOptions["arrivals"];
+  readonly #now: () => number;
+  #lastArrival: number;
+  #arrived = 0;
   #messages: Message[];
 
   constructor(data: FakeMailData, options: FakeMailProviderOptions = {}) {
@@ -99,6 +125,9 @@ export class FakeMailProvider implements MailProvider {
     this.#latencyMs = options.latencyMs ?? 0;
     this.failWrites = options.failWrites ?? false;
     this.contactsUnavailable = options.contactsUnavailable ?? false;
+    this.#arrivals = options.arrivals;
+    this.#now = options.now ?? Date.now;
+    this.#lastArrival = this.#now();
     if (data.contacts)
       this.capabilities = { ...this.capabilities, contacts: true };
   }
@@ -285,7 +314,9 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<MutationResult> {
     await this.#write([], signal, (message) => message);
     const gone = new Set(ids);
-    this.#messages = this.#messages.filter((message) => !gone.has(message.id));
+    this.#setMessages(
+      this.#messages.filter((message) => !gone.has(message.id)),
+    );
     return {};
   }
 
@@ -313,10 +344,10 @@ export class FakeMailProvider implements MailProvider {
       throw new MailError("not-found", `No draft ${id}`, { status: 404 });
     // Like Gmail: every save is a new message.
     const message = this.#composeMessage(draft, this.#roleIds("drafts"), true);
-    this.#messages = [
+    this.#setMessages([
       ...this.#messages.filter((m) => m.id !== previous?.messageId),
       message,
-    ];
+    ]);
     this.#drafts.set(id, { input: { ...draft, id }, messageId: message.id });
     return { id, messageId: message.id };
   }
@@ -354,7 +385,7 @@ export class FakeMailProvider implements MailProvider {
     if (!draft)
       throw new MailError("not-found", `No draft ${id}`, { status: 404 });
     this.#drafts.delete(id);
-    this.#messages = this.#messages.filter((m) => m.id !== draft.messageId);
+    this.#setMessages(this.#messages.filter((m) => m.id !== draft.messageId));
   }
 
   async sendDraft(
@@ -375,10 +406,10 @@ export class FakeMailProvider implements MailProvider {
       [...this.#roleIds("sent"), ...(toMe ? this.#roleIds("inbox") : [])],
       !toMe,
     );
-    this.#messages = [
+    this.#setMessages([
       ...this.#messages.filter((m) => m.id !== saved.messageId),
       sent,
-    ];
+    ]);
     return { messageId: sent.id };
   }
 
@@ -456,6 +487,63 @@ export class FakeMailProvider implements MailProvider {
     }
   }
 
+  async changesSince(
+    token: SyncToken | undefined,
+    signal?: AbortSignal,
+  ): Promise<ChangeSet> {
+    await this.#delay(signal);
+    this.#deliverDue();
+    const current = asSyncToken(String(this.#version));
+    if (token === undefined)
+      return { token: current, reset: false, changes: [] };
+    const since = Number(token);
+    const kinds = new Map<MessageId, "added" | "updated" | "removed">();
+    for (const entry of this.#log) {
+      if (entry.version <= since) continue;
+      const previous = kinds.get(entry.id);
+      kinds.set(
+        entry.id,
+        previous === "added" && entry.kind === "updated" ? "added" : entry.kind,
+      );
+    }
+    const changes = [...kinds].map(([id, kind]): MailChange => {
+      const message = this.#messages.find((m) => m.id === id);
+      if (!message || kind === "removed") return { kind: "removed", id };
+      return { kind, message: toSummary(message) };
+    });
+    return { token: current, reset: false, changes };
+  }
+
+  /** Lets demo mail arrive when it's due. */
+  #deliverDue() {
+    const arrivals = this.#arrivals;
+    const now = this.#now();
+    if (!arrivals || now - this.#lastArrival < arrivals.everyMs) return;
+    this.#lastArrival = now;
+    this.#arrived += 1;
+    this.#setMessages([...this.#messages, arrivals.create(now, this.#arrived)]);
+  }
+
+  /** Replaces the messages, logging what changed. */
+  #setMessages(next: Message[]) {
+    const before = new Map(this.#messages.map((m) => [m.id, m]));
+    const version = ++this.#version;
+    const ids = new Set<MessageId>();
+    for (const message of next) {
+      ids.add(message.id);
+      const old = before.get(message.id);
+      if (old !== message)
+        this.#log.push({
+          version,
+          id: message.id,
+          kind: old ? "updated" : "added",
+        });
+    }
+    for (const id of before.keys())
+      if (!ids.has(id)) this.#log.push({ version, id, kind: "removed" });
+    this.#messages = next;
+  }
+
   async #write(
     ids: readonly MessageId[],
     signal: AbortSignal | undefined,
@@ -463,8 +551,10 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<MutationResult> {
     await this.#refuseIfFailing(signal);
     const targets = new Set(ids);
-    this.#messages = this.#messages.map((message) =>
-      targets.has(message.id) ? update(message) : message,
+    this.#setMessages(
+      this.#messages.map((message) =>
+        targets.has(message.id) ? update(message) : message,
+      ),
     );
     return {};
   }

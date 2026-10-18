@@ -118,6 +118,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   else
     body = (
       <MessageList
+        key={listKey}
         accountId={route.accountId}
         allowDrag={!isolated}
         items={list.data}

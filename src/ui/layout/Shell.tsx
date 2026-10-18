@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useRoute, useUi } from "../../state/context";
+import { useRoute, useRouter, useUi } from "../../state/context";
 import { useActionCommands } from "../actions/useActionCommands";
 import { useMailActions } from "../actions/useMailActions";
 import { useUndo } from "../actions/useUndo";
@@ -10,6 +10,10 @@ import { useComposeActions } from "../composer/useComposeActions";
 import { useComposeCommands } from "../composer/useComposeCommands";
 import { useComposerEffects } from "../composer/useComposerEffects";
 import { useFileDrop } from "../composer/useFileDrop";
+import { NotificationsBar } from "../sync/NotificationsBar";
+import { notifyArrivals } from "../sync/notifications";
+import { useDocumentTitle } from "../sync/useDocumentTitle";
+import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
@@ -50,6 +54,11 @@ function MailApp() {
   useComposerEffects(breakpoint, compose);
   useComposeCommands(compose);
   const fileDrop = useFileDrop(compose);
+  const router = useRouter();
+  useMailSync((arrivals) => {
+    notifyArrivals(arrivals, router);
+  });
+  useDocumentTitle();
   const undo = useUndo(actions, compose);
   useActionCommands(actions, undo);
 
@@ -122,6 +131,7 @@ function MailApp() {
   return (
     <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
       <ReconnectBar />
+      <NotificationsBar />
       <div className="flex min-h-0 flex-1">{content}</div>
       <ShortcutHelp />
       <MailboxPickerHost />

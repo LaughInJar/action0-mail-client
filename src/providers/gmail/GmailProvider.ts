@@ -10,11 +10,13 @@ import {
   asCursor,
   asDraftId,
   asMessageId,
+  asSyncToken,
   type AttachmentId,
   type Cursor,
   type DraftId,
   type MailboxId,
   type MessageId,
+  type SyncToken,
 } from "../../core/ids";
 import type {
   EmailAddress,
@@ -25,7 +27,9 @@ import type {
   Page,
 } from "../../core/model";
 import type {
+  ChangeSet,
   ListMessagesQuery,
+  MailChange,
   MailProvider,
   MutationResult,
   ProviderCapabilities,
@@ -45,7 +49,9 @@ import { getHeader } from "./mime";
 import type {
   GmailAttachment,
   GmailDraft,
+  GmailHistoryResponse,
   GmailListDraftsResponse,
+  GmailProfile,
   PeoplePerson,
   PeopleSearchResponse,
   GmailLabel,
@@ -117,6 +123,9 @@ function listFilter(
     q: search?.trim() || undefined,
   };
 }
+
+/** More changes than this at once: callers reload instead. */
+const MAX_CHANGES = 100;
 
 /** Oldest-first id lists kept for paging (each holds ids only). */
 const MAX_SNAPSHOTS = 5;
@@ -352,6 +361,94 @@ export class GmailProvider implements MailProvider {
     } catch (error) {
       throw contactsError(error);
     }
+  }
+
+  async changesSince(
+    token: SyncToken | undefined,
+    signal?: AbortSignal,
+  ): Promise<ChangeSet> {
+    if (token === undefined) return this.#startOver(signal, false);
+    const added = new Set<string>();
+    const touched = new Set<string>();
+    const deleted = new Set<string>();
+    let latest: string | undefined;
+    let pageToken: string | undefined;
+    try {
+      do {
+        const page = await this.#http.get<GmailHistoryResponse>(
+          "history",
+          {
+            startHistoryId: token,
+            historyTypes: [
+              "messageAdded",
+              "messageDeleted",
+              "labelAdded",
+              "labelRemoved",
+            ],
+            maxResults: 500,
+            pageToken,
+          },
+          signal,
+        );
+        for (const record of page.history ?? []) {
+          for (const { message } of record.messagesAdded ?? []) {
+            added.add(message.id);
+            touched.add(message.id);
+          }
+          for (const { message } of [
+            ...(record.labelsAdded ?? []),
+            ...(record.labelsRemoved ?? []),
+          ])
+            touched.add(message.id);
+          for (const { message } of record.messagesDeleted ?? [])
+            deleted.add(message.id);
+        }
+        latest = page.historyId ?? latest;
+        pageToken = page.nextPageToken;
+      } while (pageToken !== undefined);
+    } catch (error) {
+      // History this old is gone: start over.
+      if (isMailError(error, "not-found")) return this.#startOver(signal, true);
+      throw error;
+    }
+
+    for (const id of deleted) touched.delete(id);
+    if (touched.size + deleted.size > MAX_CHANGES)
+      return this.#startOver(signal, true);
+    const summaries = await this.#summaries([...touched], signal);
+    const found = new Set(summaries.map((message) => message.id as string));
+    return {
+      token: asSyncToken(latest ?? token),
+      reset: false,
+      changes: [
+        ...summaries.map((message): MailChange =>
+          added.has(message.id)
+            ? { kind: "added", message }
+            : { kind: "updated", message },
+        ),
+        // Deleted, or gone before we could read it.
+        ...[...deleted, ...[...touched].filter((id) => !found.has(id))].map(
+          (id): MailChange => ({ kind: "removed", id: asMessageId(id) }),
+        ),
+      ],
+    };
+  }
+
+  /** A fresh token (the current history id); `reset` asks callers to reload. */
+  async #startOver(
+    signal: AbortSignal | undefined,
+    reset: boolean,
+  ): Promise<ChangeSet> {
+    const profile = await this.#http.get<GmailProfile>(
+      "profile",
+      undefined,
+      signal,
+    );
+    return {
+      token: asSyncToken(profile.historyId ?? ""),
+      reset,
+      changes: [],
+    };
   }
 
   /** An attachment's bytes: loaded already, or fetched from its message. */

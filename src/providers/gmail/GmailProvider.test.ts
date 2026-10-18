@@ -9,6 +9,7 @@ import {
   asDraftId,
   asMailboxId,
   asMessageId,
+  asSyncToken,
   asThreadId,
 } from "../../core/ids";
 import {
@@ -908,5 +909,104 @@ describe("GmailProvider, large drafts", () => {
       messageId: "m1",
     });
     expect(types).toEqual(["resumable", "multipart"]);
+  });
+});
+
+describe("GmailProvider.changesSince", () => {
+  it("starts from the profile's history id", async () => {
+    server.use(
+      http.get(url("profile"), () =>
+        HttpResponse.json({ emailAddress: "me@example.com", historyId: "100" }),
+      ),
+    );
+    expect(await provider().changesSince(undefined)).toEqual({
+      token: "100",
+      reset: false,
+      changes: [],
+    });
+  });
+
+  it("reports added, changed and deleted messages since the token", async () => {
+    const asked: URLSearchParams[] = [];
+    server.use(
+      http.get(url("history"), ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        asked.push(params);
+        return HttpResponse.json(
+          params.get("pageToken") === null
+            ? {
+                history: [
+                  { id: "101", messagesAdded: [{ message: { id: "new" } }] },
+                  {
+                    id: "102",
+                    labelsAdded: [
+                      { message: { id: "old" }, labelIds: ["STARRED"] },
+                    ],
+                  },
+                ],
+                nextPageToken: "p2",
+                historyId: "103",
+              }
+            : {
+                history: [
+                  {
+                    id: "103",
+                    messagesDeleted: [{ message: { id: "gone" } }],
+                    labelsRemoved: [{ message: { id: "gone" } }],
+                  },
+                ],
+                historyId: "104",
+              },
+        );
+      }),
+      http.get(url("messages/:id"), ({ params }) =>
+        params.id === "old" || params.id === "new"
+          ? HttpResponse.json(gmailMessage(params.id))
+          : HttpResponse.json({ error: { message: "x" } }, { status: 404 }),
+      ),
+    );
+    const set = await provider().changesSince(asSyncToken("100"));
+    expect(asked[0]?.get("startHistoryId")).toBe("100");
+    expect(asked[0]?.getAll("historyTypes")).toEqual([
+      "messageAdded",
+      "messageDeleted",
+      "labelAdded",
+      "labelRemoved",
+    ]);
+    expect(set.token).toBe("104");
+    expect(set.reset).toBe(false);
+    expect(
+      set.changes.map((c) =>
+        c.kind === "removed" ? `removed:${c.id}` : `${c.kind}:${c.message.id}`,
+      ),
+    ).toEqual(["added:new", "updated:old", "removed:gone"]);
+  });
+
+  it("starts over when the history is too old or too long", async () => {
+    server.use(
+      http.get(url("history"), ({ request }) =>
+        new URL(request.url).searchParams.get("startHistoryId") === "1"
+          ? HttpResponse.json({ error: { message: "old" } }, { status: 404 })
+          : HttpResponse.json({
+              history: Array.from({ length: 101 }, (_, i) => ({
+                id: String(i),
+                messagesAdded: [{ message: { id: `m${String(i)}` } }],
+              })),
+              historyId: "500",
+            }),
+      ),
+      http.get(url("profile"), () =>
+        HttpResponse.json({ emailAddress: "me@example.com", historyId: "900" }),
+      ),
+    );
+    expect(await provider().changesSince(asSyncToken("1"))).toEqual({
+      token: "900",
+      reset: true,
+      changes: [],
+    });
+    expect(await provider().changesSince(asSyncToken("2"))).toMatchObject({
+      token: "900",
+      reset: true,
+    });
   });
 });

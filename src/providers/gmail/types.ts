@@ -64,6 +64,26 @@ export interface GmailProfile {
   emailAddress: string;
   messagesTotal?: number;
   threadsTotal?: number;
+  historyId?: string;
+}
+
+/** A message reference in a history record. */
+interface GmailHistoryMessage {
+  message: { id: string; threadId?: string; labelIds?: string[] };
+}
+
+/** Response of `history.list`. */
+export interface GmailHistoryResponse {
+  history?: {
+    id: string;
+    messagesAdded?: GmailHistoryMessage[];
+    messagesDeleted?: GmailHistoryMessage[];
+    labelsAdded?: (GmailHistoryMessage & { labelIds?: string[] })[];
+    labelsRemoved?: (GmailHistoryMessage & { labelIds?: string[] })[];
+  }[];
+  nextPageToken?: string;
+  /** The mailbox's current history id. */
+  historyId?: string;
 }
 
 export interface GmailAttachment {

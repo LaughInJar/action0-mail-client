@@ -35,6 +35,12 @@ export type AttachmentId = Brand<string, "AttachmentId">;
 export type DraftId = Brand<string, "DraftId">;
 
 /**
+ * Opaque position in an account's change history (Gmail `historyId`, a
+ * Graph delta link). Only the provider that issued it interprets it.
+ */
+export type SyncToken = Brand<string, "SyncToken">;
+
+/**
  * Opaque pagination cursor, e.g. a Gmail `pageToken`, a Graph `@odata.nextLink`
  * or an IMAP UID range. Callers pass it back unchanged.
  */
@@ -53,5 +59,7 @@ export const asAttachmentId = (value: string): AttachmentId =>
   value as AttachmentId;
 /** Brands a raw string as a {@link DraftId}. */
 export const asDraftId = (value: string): DraftId => value as DraftId;
+/** Brands a raw string as a {@link SyncToken}. */
+export const asSyncToken = (value: string): SyncToken => value as SyncToken;
 /** Brands a raw string as a {@link Cursor}. */
 export const asCursor = (value: string): Cursor => value as Cursor;
