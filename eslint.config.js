@@ -102,4 +102,9 @@ export default defineConfig([
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },
+  {
+    // Plain scripts served as they are (no bundling).
+    files: ["public/**/*.js"],
+    languageOptions: { sourceType: "script", globals: globals.browser },
+  },
 ]);

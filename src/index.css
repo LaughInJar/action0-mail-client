@@ -1,6 +1,32 @@
 @import "tailwindcss";
 
+/*
+ * `dark:` means the theme chosen in this browser (`data-theme` on <html>),
+ * or the OS setting when none is chosen (see src/state/theme.ts).
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
+
 @layer base {
+  /* Scrollbars, dropdowns and other native controls follow the theme. */
+  :root {
+    color-scheme: light dark;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
   html,
   body,
   #root {

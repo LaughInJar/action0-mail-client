@@ -142,3 +142,7 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - The production CSP allows `connect-src https:` so one-click requests can reach the sender's server. Rationale: remote images may already load from anywhere once allowed, so this barely widens what the app can reach.
   - Labels: "Create label 'X'" in the Labels and Move pickers (creates and applies), "New label" in the tree, a ⋯ menu on labels in the tree (button on the selected label, right-click, long-press) and a "Manage labels" list that includes hidden labels.
   - Rename, colour (the provider's palette), parent and "show in folder list" are editable and undoable; renaming a parent renames its sublabels. Deleting a label asks for confirmation. System mailboxes can't be edited.
+- **Theme decisions:**
+  - A System / Light / Dark switch: three small icon buttons next to "action0" at the top left, the current one highlighted. System is the default and follows the OS.
+  - The choice is a per-browser setting (localStorage), applied before the first paint so there's no white flash. Native controls (scrollbars, dropdowns) and the phone's address bar follow it.
+  - HTML mail keeps its own design (light) in dark mode; plain-text mail follows the theme. No keyboard shortcut.

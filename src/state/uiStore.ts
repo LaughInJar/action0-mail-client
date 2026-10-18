@@ -10,6 +10,7 @@ import type { MailIntent } from "../core/intents";
 import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
 import * as selection from "./selection";
+import { readTheme, saveTheme, type ThemeMode } from "./theme";
 
 /** A short notification at the bottom of the screen, optionally undoable. */
 export interface Toast {
@@ -162,6 +163,8 @@ export interface UiState extends selection.SelectionState {
   readonly listKey: string | null;
   /** Date order of message lists. Persisted. */
   readonly listOrder: MessageOrder;
+  /** Colour theme. Persisted under its own key (see `state/theme.ts`). */
+  readonly theme: ThemeMode;
   /** Text of the folder filter above the tree. Session only. */
   readonly folderFilter: string;
   /** Messages whose remote content the user allowed. Session only. */
@@ -216,6 +219,7 @@ export interface UiActions {
   readonly allowRemoteContent: (id: MessageId) => void;
   readonly setColumnWidth: (index: 0 | 1, width: number) => void;
   readonly setListOrder: (order: MessageOrder) => void;
+  readonly setTheme: (theme: ThemeMode) => void;
   readonly setFolderFilter: (text: string) => void;
   readonly toggleNode: (key: string) => void;
   readonly setDrawerOpen: (open: boolean) => void;
@@ -291,8 +295,9 @@ interface PersistedUi {
 }
 
 /**
- * Creates the UI store. Only column widths, tree expansion and the list
- * order are persisted (to `storage`, i.e. localStorage); nothing that contains mail.
+ * Creates the UI store. Only column widths, tree expansion, the list order
+ * and the theme are persisted (to `storage`, i.e. localStorage); nothing
+ * that contains mail.
  */
 export function createUiStore(storage: Storage | undefined): UiStore {
   return createStore<UiState & UiActions>()(
@@ -311,6 +316,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           columnWidths: [COLUMN_LIMITS[0].initial, COLUMN_LIMITS[1].initial],
           toggledNodes: new Set(),
           listOrder: "newest",
+          theme: readTheme(storage),
           folderFilter: "",
           drawerOpen: false,
           helpOpen: false,
@@ -372,6 +378,10 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setListOrder: (listOrder) => {
             set({ listOrder });
+          },
+          setTheme: (theme) => {
+            saveTheme(storage, theme);
+            set({ theme });
           },
           setFolderFilter: (folderFilter) => {
             set({ folderFilter });

@@ -30,6 +30,7 @@ import { LabelMenuHost } from "../labels/LabelMenu";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
+import { useApplyTheme } from "./useApplyTheme";
 import { useBreakpoint } from "./useBreakpoint";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useNavigationDefaults } from "./useNavigationDefaults";
@@ -37,6 +38,7 @@ import { useNavigationDefaults } from "./useNavigationDefaults";
 /** The app's top-level layout: the welcome screen, or the mail UI. */
 export function Shell() {
   const accounts = useAccounts();
+  useApplyTheme();
   return accounts.length === 0 ? <Welcome /> : <MailApp />;
 }
 

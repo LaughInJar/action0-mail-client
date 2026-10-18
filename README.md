@@ -18,6 +18,7 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Manage labels: create one right from the Labels or Move to… picker (type a name that doesn't exist yet; "Work/2026" nests it under Work), or with **New label** below the folder tree. Rename, recolour, move, hide and delete labels from a label's menu: the ⋯ button on the selected label, a right-click, a long press on touch screens, or <kbd>Shift</kbd>+<kbd>F10</kbd>. **Manage labels** lists all of them, hidden ones included. Changes can be undone (<kbd>z</kbd>); deleting asks first.
 - Unsubscribe from newsletters with one button next to the sender. It uses the sender's one-click unsubscribe (RFC 8058) when there is one, otherwise sends the unsubscribe mail, otherwise opens the sender's unsubscribe page. It can't be undone, so it asks first.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
+- Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
 
@@ -174,7 +175,7 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
 | Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
 | sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                                                                               | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order                                                                                                                                             | Until sign-out                      |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme                                                                                                                                      | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 
