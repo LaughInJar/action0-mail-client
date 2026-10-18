@@ -1,7 +1,10 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { useEffect, type ReactNode } from "react";
-import { AccountRegistryContext } from "../accounts/context";
+import {
+  AccountRegistryContext,
+  ProviderSetupContext,
+} from "../accounts/context";
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
 import { CommandRegistryContext } from "../keyboard/context";
 import { RouterContext, UiStoreContext } from "../state/context";
@@ -48,7 +51,9 @@ export function AppProviders({
       <UiStoreContext value={services.uiStore}>
         <RouterContext value={services.router}>
           <CommandRegistryContext value={commands}>
-            {children}
+            <ProviderSetupContext value={services.setups}>
+              {children}
+            </ProviderSetupContext>
           </CommandRegistryContext>
         </RouterContext>
       </UiStoreContext>

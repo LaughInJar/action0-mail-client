@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
 import { AccountRegistry } from "../accounts/AccountRegistry";
-import type { ProviderModule } from "../accounts/types";
+import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { queryKeys } from "../data/keys";
 import { createPersistOptions, createQueryClient } from "../data/queryClient";
 import { CommandRegistry } from "../keyboard/registry";
@@ -10,6 +10,7 @@ import { createDemoModule } from "../providers/fake/module";
 import { createHashRouter, type HashRouter } from "../state/router";
 import { createUiStore, type UiStore } from "../state/uiStore";
 import type { AppConfig } from "./config";
+import { createGoogleSetup, storedGoogleClientId } from "./googleSetup";
 
 /** Everything the UI needs, created once at startup (or per test). */
 export interface AppServices {
@@ -20,6 +21,8 @@ export interface AppServices {
   readonly uiStore: UiStore;
   readonly router: HashRouter;
   readonly commands: CommandRegistry;
+  /** Providers the user can configure at runtime (e.g. Google's client ID). */
+  readonly setups: readonly ProviderSetup[];
 }
 
 /** Inputs of {@link createAppServices}. */
@@ -31,6 +34,10 @@ export interface AppServicesOptions {
   readonly sessionStorage: Storage | undefined;
   readonly version: string;
   readonly window?: Window;
+  /** Creates the runtime provider setups, which need the registry. */
+  readonly createSetups?: (
+    registry: AccountRegistry,
+  ) => readonly ProviderSetup[];
 }
 
 /** The composition root: wires the layers together. */
@@ -54,23 +61,40 @@ export function createAppServices(options: AppServicesOptions): AppServices {
     uiStore: createUiStore(options.localStorage),
     router: createHashRouter(options.window ?? window),
     commands: new CommandRegistry(),
+    setups: options.createSetups?.(registry) ?? [],
   };
 }
 
-/** Provider modules for this build: Gmail (if configured) and the demo account. */
+/**
+ * Provider modules available at startup: Gmail, if a client ID is known
+ * (from the build or, failing that, from this browser), and the demo account.
+ */
 export function createDefaultModules(
   config: AppConfig,
   sessionStorage: Storage | undefined,
+  localStorage: Storage | undefined,
 ): ProviderModule[] {
+  const clientId = config.googleClientId ?? storedGoogleClientId(localStorage);
   return [
-    ...(config.googleClientId === undefined
+    ...(clientId === undefined
       ? []
-      : [
-          createGmailModule({
-            clientId: config.googleClientId,
-            tokenStorage: sessionStorage,
-          }),
-        ]),
+      : [createGmailModule({ clientId, tokenStorage: sessionStorage })]),
     createDemoModule(),
+  ];
+}
+
+/** Runtime setups: Google's client ID can be entered in the Add account wizard. */
+export function createDefaultSetups(
+  config: AppConfig,
+  sessionStorage: Storage | undefined,
+  localStorage: Storage | undefined,
+): (registry: AccountRegistry) => readonly ProviderSetup[] {
+  return (registry) => [
+    createGoogleSetup({
+      registry,
+      buildClientId: config.googleClientId,
+      settings: localStorage,
+      tokenStorage: sessionStorage,
+    }),
   ];
 }

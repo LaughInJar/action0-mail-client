@@ -12,6 +12,7 @@ import { Welcome } from "../welcome/Welcome";
 import { Drawer } from "./Drawer";
 import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
+import { AddAccountDialog } from "../accounts/AddAccountDialog";
 import { ConfirmHost } from "../common/ConfirmDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
@@ -113,6 +114,7 @@ function MailApp() {
       <ShortcutHelp />
       <MailboxPickerHost />
       <ConfirmHost />
+      <AddAccountDialog />
       <ToastHost onUndo={actions.undo} />
     </div>
   );

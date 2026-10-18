@@ -72,6 +72,8 @@ export interface UiState extends selection.SelectionState {
   readonly dragging: DragState | null;
   readonly picker: PickerState | null;
   readonly confirm: ConfirmState | null;
+  /** The Add account dialog is open. */
+  readonly addAccountOpen: boolean;
 }
 
 /** State transitions. */
@@ -108,6 +110,7 @@ export interface UiActions {
   readonly setDragging: (dragging: DragState | null) => void;
   readonly setPicker: (picker: PickerState | null) => void;
   readonly setConfirm: (confirm: ConfirmState | null) => void;
+  readonly setAddAccountOpen: (open: boolean) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -165,6 +168,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           dragging: null,
           picker: null,
           confirm: null,
+          addAccountOpen: false,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -237,6 +241,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setConfirm: (confirm) => {
             set({ confirm });
+          },
+          setAddAccountOpen: (addAccountOpen) => {
+            set({ addAccountOpen });
           },
         };
       },

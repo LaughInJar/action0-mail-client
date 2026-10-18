@@ -8,7 +8,7 @@ Every feature goes through these steps, one feature at a time. Never skip or mer
 
 1. **Plan**: discuss and plan the feature with the user. Wait for explicit approval.
 2. **Code outline**: show the planned code changes, as a diff or a detailed outline with comments. Discuss, then wait for explicit approval.
-3. **Implement**: build it, then ask the user to try it and wait until they confirm it works.
+3. **Implement**: build it, then ask the user to try it and wait until they confirm it works. With every request to test, include a recap: a checklist of everything to test, and for each item how best to test it (demo or real account, exact steps, what should happen). Call out what automated tests and the headless browser couldn't verify.
 4. **Commit and push**: only after step 3 is confirmed. Work happens on a feature branch; push it and open a pull request. `main` is protected: CI (the `check` job) must pass, and the user merges.
 
 Whenever a decision is needed from the user, offer multiple-choice options (AskUserQuestion) with the recommended option first. Never make the user type out an answer.
@@ -108,3 +108,8 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Delete moves to Trash and Shift+S reports spam. Inside Trash and Spam the same key undoes it: Delete restores, Shift+S means "not spam".
   - Trash and Spam become drag and picker targets. Trashed or spam messages appear in no other list.
   - Permanent deletion is included: "Delete forever" (Shift+Delete, in Trash and Spam only) and "Empty Trash/Spam". It always asks for confirmation, with Cancel as the default button. This needs the full-access scope `https://mail.google.com/`, so accounts reconnect once.
+- **Add account wizard decisions:**
+  - "Add account" opens a wizard: choose the account type, then authorize.
+  - When Google isn't configured, the wizard shows the Google Cloud checklist and accepts the client ID. It's stored as a setting in the browser; `VITE_GOOGLE_CLIENT_ID` still works and takes precedence.
+  - Account types that don't exist yet (Exchange, IMAP) appear as greyed-out "coming later" cards.
+  - After connecting, the new account's Inbox opens.

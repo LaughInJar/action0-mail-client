@@ -1,5 +1,5 @@
 import type { AccountId } from "../core/ids";
-import type { ProviderType } from "../core/model";
+import type { Account, ProviderType } from "../core/model";
 import { Emitter } from "../lib/emitter";
 import { loadAccounts, saveAccounts } from "./accountStorage";
 import type { AccountHandle, ProviderModule } from "./types";
@@ -18,29 +18,58 @@ export interface AccountRegistryOptions {
  * Framework-agnostic; React reads it through `useSyncExternalStore`.
  */
 export class AccountRegistry {
-  readonly #modules: ReadonlyMap<ProviderType, ProviderModule>;
+  readonly #modules = new Map<ProviderType, ProviderModule>();
   readonly #storage: Storage | undefined;
   readonly #onRemove: ((accountId: AccountId) => void) | undefined;
   readonly #emitter = new Emitter();
   #handles: readonly AccountHandle[] = [];
+  /** Persisted accounts whose provider isn't registered (yet); kept, not loaded. */
+  #dormant: readonly Account[] = [];
+  #moduleList: readonly ProviderModule[] = [];
 
   constructor({ modules, storage, onRemove }: AccountRegistryOptions) {
-    this.#modules = new Map(modules.map((module) => [module.type, module]));
+    for (const module of modules) this.#modules.set(module.type, module);
+    this.#moduleList = [...this.#modules.values()];
     this.#storage = storage;
     this.#onRemove = onRemove;
   }
 
-  /** Recreates the persisted accounts. Accounts without a registered module are kept but not loaded. */
+  /**
+   * Recreates the persisted accounts. Accounts whose provider isn't
+   * registered stay dormant (still persisted) until it is.
+   */
   restore(): void {
-    this.#handles = loadAccounts(this.#storage).flatMap((account) => {
-      const module = this.#modules.get(account.type);
-      if (!module) return [];
-      const auth = module.restore(account);
-      return [
-        { account, auth, provider: module.createProvider(account, auth) },
-      ];
-    });
+    const accounts = loadAccounts(this.#storage);
+    this.#handles = accounts.flatMap((account) => this.#load(account));
+    this.#dormant = accounts.filter(
+      (account) => !this.#modules.has(account.type),
+    );
     this.#emitter.emit();
+  }
+
+  /**
+   * Adds or replaces the module of a provider type at runtime (e.g. after
+   * the user entered Google's client ID) and loads its dormant accounts.
+   */
+  registerModule(module: ProviderModule): void {
+    this.#modules.set(module.type, module);
+    this.#moduleList = [...this.#modules.values()];
+    const waking = this.#dormant.filter(
+      (account) => account.type === module.type,
+    );
+    this.#dormant = this.#dormant.filter(
+      (account) => account.type !== module.type,
+    );
+    this.#handles = [
+      ...this.#handles,
+      ...waking.flatMap((account) => this.#load(account)),
+    ];
+    this.#emitter.emit();
+  }
+
+  /** Whether accounts of this type can be added right now. */
+  hasModule(type: ProviderType): boolean {
+    return this.#modules.has(type);
   }
 
   /** Current accounts. The array identity only changes when the list changes. */
@@ -50,10 +79,8 @@ export class AccountRegistry {
     return this.#handles.find((handle) => handle.account.id === id);
   }
 
-  /** Provider types that can be added. */
-  availableModules(): readonly ProviderModule[] {
-    return [...this.#modules.values()];
-  }
+  /** Provider modules that can add accounts. The array identity changes only when they change. */
+  availableModules = (): readonly ProviderModule[] => this.#moduleList;
 
   /**
    * Connects a new account interactively. Must be called from a user
@@ -94,11 +121,18 @@ export class AccountRegistry {
   subscribe = (listener: () => void): (() => void) =>
     this.#emitter.subscribe(listener);
 
+  #load(account: Account): AccountHandle[] {
+    const module = this.#modules.get(account.type);
+    if (!module) return [];
+    const auth = module.restore(account);
+    return [{ account, auth, provider: module.createProvider(account, auth) }];
+  }
+
   #persist() {
-    saveAccounts(
-      this.#storage,
-      this.#handles.map((handle) => handle.account),
-    );
+    saveAccounts(this.#storage, [
+      ...this.#handles.map((handle) => handle.account),
+      ...this.#dormant,
+    ]);
     this.#emitter.emit();
   }
 }

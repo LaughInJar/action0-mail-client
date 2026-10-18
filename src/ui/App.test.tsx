@@ -19,10 +19,11 @@ const mailFrame = () => screen.findByTitle(/^Message: /);
 describe("welcome", () => {
   it("offers the demo without an account and connects it with one click", async () => {
     const { user } = renderApp({ signedIn: false });
+    // No Google module and no setup in this test: only the demo is offered.
     expect(
-      screen.getByText(/Google sign-in isn’t configured/),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Try the demo" }));
+      screen.queryByRole("button", { name: /^Google/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Demo account/ }));
     expect(await subject("Welcome to the demo")).toBeInTheDocument();
   });
 });
@@ -285,7 +286,7 @@ describe("accounts", () => {
     await user.click(screen.getByText("Accounts"));
     await user.click(screen.getByRole("button", { name: "Sign out" }));
     expect(
-      await screen.findByRole("button", { name: "Try the demo" }),
+      await screen.findByRole("heading", { name: "Add account" }),
     ).toBeInTheDocument();
     expect(window.localStorage.getItem(ACCOUNTS_KEY)).toBe("[]");
   });

@@ -104,4 +104,26 @@ describe("AccountRegistry", () => {
     registry.restore();
     expect(registry.list().map((h) => h.account.id)).toEqual([jane.id]);
   });
+
+  it("keeps accounts of unregistered providers and loads them once registered", async () => {
+    const storage = new MemoryStorage();
+    await new AccountRegistry({ modules: [gmailLikeModule()], storage }).add(
+      "gmail",
+    );
+
+    // Next start: Google isn't configured yet.
+    const registry = new AccountRegistry({ modules: [], storage });
+    registry.restore();
+    expect(registry.list()).toEqual([]);
+    expect(loadAccounts(storage)).toEqual([jane]);
+
+    const listener = vi.fn();
+    registry.subscribe(listener);
+    const modulesBefore = registry.availableModules();
+    registry.registerModule(gmailLikeModule());
+    expect(registry.hasModule("gmail")).toBe(true);
+    expect(registry.availableModules()).not.toBe(modulesBefore);
+    expect(registry.list().map((h) => h.account)).toEqual([jane]);
+    expect(listener).toHaveBeenCalled();
+  });
 });

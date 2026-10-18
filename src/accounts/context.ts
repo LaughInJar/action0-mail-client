@@ -2,7 +2,8 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import type { AuthSession, AuthStatus } from "../auth/types";
 import type { AccountId } from "../core/ids";
 import type { AccountRegistry } from "./AccountRegistry";
-import type { AccountHandle } from "./types";
+import type { AccountHandle, ProviderModule, ProviderSetup } from "./types";
+import type { ProviderType } from "../core/model";
 
 /** Provides the {@link AccountRegistry} to the UI. */
 export const AccountRegistryContext = createContext<AccountRegistry | null>(
@@ -53,4 +54,20 @@ export function useAuthExpiry(
     auth?.subscribe ?? noSubscription,
     () => auth?.expiresAt,
   );
+}
+
+/** Provides the runtime setups of providers (e.g. Google's client ID). */
+export const ProviderSetupContext = createContext<readonly ProviderSetup[]>([]);
+
+/** The setup of a provider type, if it can be configured at runtime. */
+export function useProviderSetup(
+  type: ProviderType,
+): ProviderSetup | undefined {
+  return useContext(ProviderSetupContext).find((setup) => setup.type === type);
+}
+
+/** Provider modules that can add accounts; re-renders when one is registered. */
+export function useAvailableModules(): readonly ProviderModule[] {
+  const registry = useAccountRegistry();
+  return useSyncExternalStore(registry.subscribe, registry.availableModules);
 }
