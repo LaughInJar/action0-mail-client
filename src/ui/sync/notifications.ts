@@ -1,6 +1,18 @@
 import type { MessageId } from "../../core/ids";
 import type { Arrivals } from "../../data/sync";
 import type { HashRouter } from "../../state/router";
+import { COARSE_POINTER_QUERY } from "../layout/useBreakpoint";
+
+/**
+ * Desktop notifications can be offered. Phones only show notifications from
+ * installed apps (service worker), so they aren't offered on touch devices.
+ */
+export function notificationsSupported(): boolean {
+  return (
+    typeof Notification !== "undefined" &&
+    !window.matchMedia(COARSE_POINTER_QUERY).matches
+  );
+}
 
 /** Desktop notifications exist and may be shown. */
 export function notificationsAllowed(): boolean {

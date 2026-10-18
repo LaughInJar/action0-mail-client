@@ -16,6 +16,7 @@ import type {
   MessageFlags,
   MessageSummary,
   Page,
+  Sender,
 } from "./model";
 
 /**
@@ -54,6 +55,13 @@ export interface ProviderCapabilities {
   readonly manageMailboxes: boolean;
   /** Colours a mailbox may get; empty if colours can't be set. */
   readonly mailboxColors: readonly MailboxColor[];
+  /** Supports {@link MailProvider.listSenders}. */
+  readonly senders: boolean;
+  /**
+   * Supports {@link MailProvider.updateSignature} (it may still be refused
+   * as `unavailable` while the permission for it is missing).
+   */
+  readonly editSignatures: boolean;
 }
 
 /** Date order of a message list. */
@@ -320,4 +328,18 @@ export interface MailProvider {
    * responses). Rejects if the sender couldn't be reached.
    */
   oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void>;
+
+  /** The addresses the account can send from, the default first. */
+  listSenders(signal?: AbortSignal): Promise<readonly Sender[]>;
+
+  /**
+   * Replaces the signature of one of the {@link listSenders} addresses ("" for
+   * none). Rejects with `unavailable` when the account didn't grant the
+   * permission to change settings.
+   */
+  updateSignature(
+    address: string,
+    html: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
 }

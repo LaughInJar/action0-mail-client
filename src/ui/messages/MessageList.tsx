@@ -87,6 +87,7 @@ export function MessageList({
   const coarse = useCoarsePointer();
   const store = useUiStore();
   const focusedId = useUi((state) => state.focusedId);
+  const compact = useUi((state) => state.settings.density === "compact");
   const selectedIds = useUi((state) => state.selectedIds);
   const ids = useMemo(() => items.map((item) => item.id), [items]);
   const pointerType = useRef("mouse");
@@ -238,6 +239,7 @@ export function MessageList({
         id={MESSAGE_LIST_ID}
         data-list-key={listKey}
         role="listbox"
+        data-density={compact ? "compact" : "comfortable"}
         aria-label={
           label ?? (mailbox ? `Messages in ${mailbox.name}` : "Messages")
         }
@@ -283,6 +285,7 @@ export function MessageList({
               showRecipients={showRecipients}
               draggable={allowDrag && !coarse}
               starrable={onToggleStar !== undefined}
+              compact={compact}
             />
           );
         })}

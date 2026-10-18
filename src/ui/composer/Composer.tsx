@@ -4,6 +4,10 @@ import { isValidAddress } from "../../core/addresses";
 import type { AccountId } from "../../core/ids";
 import { useDraftSync } from "../../data/drafts";
 import { buildMailDocument } from "../../security/mailDocument";
+import { sanitizeMailHtml } from "../../security/sanitize";
+import { fromAddress } from "../../core/compose";
+import type { Sender } from "../../core/model";
+import { useSendersOf } from "../../data/senders";
 import { useUi, useUiStore } from "../../state/context";
 import type { ComposerSession, UiActions } from "../../state/uiStore";
 import { formatBytes } from "../common/format";
@@ -82,6 +86,55 @@ function ComposerWindow({
   const composeAccounts = accounts.filter(
     (handle) => handle.provider.capabilities.compose,
   );
+  // Every address of every account that can write mail.
+  const sendersByAccount = useSendersOf(
+    composeAccounts.map((handle) => handle.account.id),
+  );
+  const fromChoices = composeAccounts.flatMap(
+    ({
+      account,
+    }): {
+      readonly accountId: AccountId;
+      readonly sender: Sender;
+    }[] => {
+      const senders = sendersByAccount.get(account.id);
+      return senders?.length
+        ? senders.map((sender) => ({ accountId: account.id, sender }))
+        : [
+            {
+              accountId: account.id,
+              sender: {
+                address: account.email,
+                isDefault: true,
+                signature: "",
+              },
+            },
+          ];
+    },
+  );
+  const fromValue = (accountId: AccountId, address: string) =>
+    `${accountId} ${address.toLowerCase()}`;
+  const currentFrom = fromValue(
+    session.accountId,
+    session.from?.address ??
+      fromChoices.find(
+        (choice) =>
+          choice.accountId === session.accountId && choice.sender.isDefault,
+      )?.sender.address ??
+      "",
+  );
+  /** Sends from another address, or another account (the draft moves). */
+  const chooseFrom = (accountId: AccountId, sender: Sender) => {
+    const signature =
+      session.signature === null
+        ? null
+        : { address: sender.address, html: sender.signature };
+    if (accountId !== session.accountId) {
+      switchAccount(accountId, { from: fromAddress(sender), signature });
+      return;
+    }
+    update({ from: fromAddress(sender), signature });
+  };
 
   const trySend = (skipSubjectCheck = false) => {
     const recipients = [...session.to, ...session.cc, ...session.bcc];
@@ -152,7 +205,10 @@ function ComposerWindow({
     };
   }, []);
 
-  const switchAccount = (accountId: AccountId) => {
+  const switchAccount = (
+    accountId: AccountId,
+    sending: Pick<ComposerSession, "from" | "signature">,
+  ) => {
     if (accountId === session.accountId) return;
     // The draft moves: delete it in the old account, save it in the new one.
     void sync
@@ -161,6 +217,7 @@ function ComposerWindow({
     const { draftId, ...rest } = session;
     store.getState().openComposer({
       ...rest,
+      ...sending,
       accountId,
       ...(rest.threading
         ? {
@@ -284,7 +341,7 @@ function ComposerWindow({
 
       {!minimized && (
         <>
-          {composeAccounts.length > 1 && (
+          {fromChoices.length > 1 && (
             <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
               <label
                 htmlFor="composer-from"
@@ -294,15 +351,25 @@ function ComposerWindow({
               </label>
               <select
                 id="composer-from"
-                value={session.accountId}
+                value={currentFrom}
                 onChange={(event) => {
-                  switchAccount(event.target.value as AccountId);
+                  const choice = fromChoices.find(
+                    ({ accountId, sender }) =>
+                      fromValue(accountId, sender.address) ===
+                      event.target.value,
+                  );
+                  if (choice) chooseFrom(choice.accountId, choice.sender);
                 }}
                 className="min-w-0 flex-1 bg-transparent py-1 text-sm pointer-coarse:min-h-11"
               >
-                {composeAccounts.map(({ account }) => (
-                  <option key={account.id} value={account.id}>
-                    {account.email}
+                {fromChoices.map(({ accountId, sender }) => (
+                  <option
+                    key={fromValue(accountId, sender.address)}
+                    value={fromValue(accountId, sender.address)}
+                  >
+                    {sender.name
+                      ? `${sender.name} <${sender.address}>`
+                      : sender.address}
                   </option>
                 ))}
               </select>
@@ -375,6 +442,14 @@ function ComposerWindow({
               update({ body });
             }}
           />
+          {session.signature?.html && (
+            <SignatureBlock
+              html={session.signature.html}
+              onRemove={() => {
+                update({ signature: null });
+              }}
+            />
+          )}
           {session.quote && (
             <QuotedOriginal
               html={session.quote.html}
@@ -480,6 +555,42 @@ function ComposerWindow({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The signature, exactly as it will be sent (sandboxed, like a mail; your
+ * own signature may show its images). Its text is edited in Settings.
+ */
+function SignatureBlock({
+  html,
+  onRemove,
+}: {
+  html: string;
+  onRemove: () => void;
+}) {
+  const srcDoc = useMemo(
+    () =>
+      buildMailDocument(sanitizeMailHtml(html).html, {
+        allowRemoteContent: true,
+      }),
+    [html],
+  );
+  return (
+    <div className="max-h-[30%] shrink-0 overflow-y-auto px-3 py-1.5">
+      <div className="group/signature relative rounded border border-dashed border-zinc-300 dark:border-zinc-700">
+        <SafeHtmlFrame srcDoc={srcDoc} title="Signature" shortcuts={false} />
+        <button
+          type="button"
+          aria-label="Remove the signature"
+          title="Remove the signature"
+          onClick={onRemove}
+          className="absolute top-1 right-1 grid size-6 place-items-center rounded bg-white/90 text-zinc-500 shadow-sm hover:text-zinc-900 dark:bg-zinc-800/90 dark:text-zinc-300 dark:hover:text-white pointer-coarse:size-11"
+        >
+          <Icon name="x" className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,11 @@ import type { DraftId } from "../core/ids";
 import type { EmailAddress } from "../core/model";
 import { editorHtmlToMail, htmlToText } from "./html";
 import type { Quote } from "./quote";
+import {
+  signatureBlock,
+  signatureText,
+  type ComposerSignature,
+} from "./signature";
 
 /** The editable content of a composer. */
 export interface ComposerContent {
@@ -27,20 +32,40 @@ export interface ComposerContent {
   /** Files, and inline images (referenced from the text or quote as `cid:`). */
   readonly attachments: readonly OutgoingAttachment[];
   readonly threading?: Threading;
+  /** One of the account's addresses; the provider's default if absent. */
+  readonly from?: EmailAddress;
+  /**
+   * The signature block under the text, sent as it is. `null`: the user
+   * removed it (changing From doesn't bring one back); absent: not known yet.
+   */
+  readonly signature?: ComposerSignature | null;
 }
 
-/** The whole mail body: what the user wrote, then the quote. */
+/** The whole mail body: what the user wrote, the signature, then the quote. */
 export function mailBody(
   body: string,
   quote: Quote | undefined,
+  signature?: string,
 ): { readonly html: string; readonly text: string } {
   const own = editorHtmlToMail(body);
-  const ownText = htmlToText(own);
+  const parts = [own];
+  const texts = [htmlToText(own)];
+  if (signature) {
+    parts.push(signatureBlock(signature));
+    texts.push(signatureText(signature));
+  }
+  if (quote) {
+    parts.push(quote.html);
+    texts.push(quote.text);
+  }
   return {
-    html: quote ? `${own}<br>${quote.html}` : own,
-    text: quote ? `${ownText}\n\n${quote.text}`.trim() : ownText,
+    html: parts.join("<br>"),
+    text: texts.join("\n\n").trim(),
   };
 }
+
+/** The signature HTML a composer sends ("" for none). */
+const signatureOf = (content: ComposerContent) => content.signature?.html ?? "";
 
 const valid = (list: readonly EmailAddress[]) =>
   list.filter((address) => isValidAddress(address.address));
@@ -53,9 +78,14 @@ export function draftInputOf(
   content: ComposerContent,
   id?: DraftId,
 ): DraftInput {
-  const { html, text } = mailBody(content.body, content.quote);
+  const { html, text } = mailBody(
+    content.body,
+    content.quote,
+    signatureOf(content),
+  );
   return {
     ...(id === undefined ? {} : { id }),
+    ...(content.from ? { from: content.from } : {}),
     to: valid(content.to),
     cc: valid(content.cc),
     bcc: valid(content.bcc),
@@ -80,7 +110,7 @@ function sentAttachments(
 
 /** Bytes of attachments the mail would carry (each save uploads them again). */
 export function sentBytes(content: ComposerContent): number {
-  const { html } = mailBody(content.body, content.quote);
+  const { html } = mailBody(content.body, content.quote, signatureOf(content));
   return sentAttachments(content, html).reduce(
     (sum, part) => sum + part.size,
     0,

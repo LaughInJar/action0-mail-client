@@ -143,13 +143,21 @@ export interface RichTextEditorProps {
   readonly onChange: (html: string) => void;
   /** Put the cursor into the text right away (at its start). */
   readonly focusOnOpen: boolean;
-  /** URLs that show inline images, by Content-ID. */
-  readonly imageUrls: Readonly<Record<string, string>>;
+  /**
+   * URLs that show inline images, by Content-ID. Without them (and
+   * `onFiles`) the editor has no inline images (signatures).
+   */
+  readonly imageUrls?: Readonly<Record<string, string>>;
   /**
    * Files dropped or pasted into the text. Returns the images to show inline
    * there; the others became attachments (or nothing, if they don't fit).
    */
-  readonly onFiles: (files: readonly File[]) => readonly InlineImageRef[];
+  readonly onFiles?: (files: readonly File[]) => readonly InlineImageRef[];
+  /** DOM id of the text; defaults to {@link COMPOSER_BODY_ID}. */
+  readonly id?: string;
+  /** Accessible name of the text. */
+  readonly label?: string;
+  readonly placeholder?: string;
 }
 
 /**
@@ -163,6 +171,9 @@ export function RichTextEditor({
   focusOnOpen,
   imageUrls,
   onFiles,
+  id = COMPOSER_BODY_ID,
+  label = "Message",
+  placeholder = "Write your message…",
 }: RichTextEditorProps) {
   const changed = useRef(onChange);
   const filesAdded = useRef(onFiles);
@@ -186,7 +197,7 @@ export function RichTextEditor({
           HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
         },
       }),
-      Placeholder.configure({ placeholder: "Write your message…" }),
+      Placeholder.configure({ placeholder }),
       CidImage,
     ],
     content: initialHtml,
@@ -194,30 +205,24 @@ export function RichTextEditor({
     editorProps: {
       handleDrop: (view, event, _slice, moved) => {
         const files = Array.from(event.dataTransfer?.files ?? []);
-        if (moved || files.length === 0) return false;
+        const add = filesAdded.current;
+        if (moved || files.length === 0 || !add) return false;
         event.preventDefault();
-        insertImages(
-          view,
-          dropPosition(view, event),
-          filesAdded.current(files),
-        );
+        insertImages(view, dropPosition(view, event), add(files));
         return true;
       },
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []);
-        if (files.length === 0) return false;
-        insertImages(
-          view,
-          view.state.selection.from,
-          filesAdded.current(files),
-        );
+        const add = filesAdded.current;
+        if (files.length === 0 || !add) return false;
+        insertImages(view, view.state.selection.from, add(files));
         return true;
       },
       attributes: {
-        id: COMPOSER_BODY_ID,
+        id,
         role: "textbox",
         "aria-multiline": "true",
-        "aria-label": "Message",
+        "aria-label": label,
         class:
           "min-h-full px-4 py-3 text-sm leading-relaxed outline-none [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-300 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-600 dark:[&_blockquote]:text-zinc-400 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:m-0 [&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-zinc-400 [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_ul]:list-disc [&_ul]:pl-6",
       },
@@ -229,6 +234,7 @@ export function RichTextEditor({
 
   // Images whose file loads later (reopened drafts, forwards) appear then.
   useEffect(() => {
+    if (!imageUrls) return;
     shownImages.clear();
     for (const [contentId, url] of Object.entries(imageUrls))
       shownImages.set(contentId, url);
@@ -252,11 +258,12 @@ export function RichTextEditor({
   }, [editor, imageUrls]);
 
   // The URLs belong to this editor's files; a later editor gets its own.
+  const ownsImages = imageUrls !== undefined;
   useEffect(
     () => () => {
-      shownImages.clear();
+      if (ownsImages) shownImages.clear();
     },
-    [],
+    [ownsImages],
   );
 
   const onKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {

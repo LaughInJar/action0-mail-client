@@ -3,7 +3,7 @@
  * replies and forwards (recipients, subjects, threading headers).
  */
 import type { AttachmentId, DraftId, MessageId, ThreadId } from "./ids";
-import type { AttachmentInfo, EmailAddress, Message } from "./model";
+import type { AttachmentInfo, EmailAddress, Message, Sender } from "./model";
 
 /** Where the bytes of an attachment are: a part of another message. */
 export interface PartSource {
@@ -81,6 +81,8 @@ export interface DraftInput {
   /** Files and inline images. */
   readonly attachments: readonly OutgoingAttachment[];
   readonly threading?: Threading;
+  /** One of the account's {@link Sender} addresses; the provider's default if absent. */
+  readonly from?: EmailAddress;
 }
 
 /** A saved draft. */
@@ -144,6 +146,36 @@ export function replyRecipients(
   const cc =
     mode === "reply-all" ? uniqueAddresses(notMine(original.cc), to) : [];
   return { to, cc };
+}
+
+/**
+ * The address to answer `original` from: the one of yours it was sent to
+ * (To, then Cc), or else your default. Undefined without senders.
+ */
+export function replyFrom(
+  original: Message,
+  senders: readonly Sender[],
+): Sender | undefined {
+  for (const recipient of [...original.to, ...original.cc]) {
+    const mine = senders.find((sender) =>
+      sameAddress(sender.address, recipient.address),
+    );
+    if (mine) return mine;
+  }
+  return defaultSender(senders);
+}
+
+/** The sender for new mail. */
+export function defaultSender(senders: readonly Sender[]): Sender | undefined {
+  return senders.find((sender) => sender.isDefault) ?? senders[0];
+}
+
+/** A sender as the From address. */
+export function fromAddress(sender: Sender): EmailAddress {
+  return {
+    address: sender.address,
+    ...(sender.name ? { name: sender.name } : {}),
+  };
 }
 
 const REPLY_PREFIX = /^\s*(re|aw|sv|antw|vs)(\[\d+\])?\s*:/i;

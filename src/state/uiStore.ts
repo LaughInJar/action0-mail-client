@@ -11,6 +11,12 @@ import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
 import * as selection from "./selection";
 import { readTheme, saveTheme, type ThemeMode } from "./theme";
+import {
+  DEFAULT_SETTINGS,
+  MAX_TRUSTED_SENDERS,
+  parseSettings,
+  type AppSettings,
+} from "./settings";
 
 /** A short notification at the bottom of the screen, optionally undoable. */
 export interface Toast {
@@ -165,6 +171,8 @@ export interface UiState extends selection.SelectionState {
   readonly listOrder: MessageOrder;
   /** Colour theme. Persisted under its own key (see `state/theme.ts`). */
   readonly theme: ThemeMode;
+  /** App settings. Persisted. */
+  readonly settings: AppSettings;
   /** Text of the folder filter above the tree. Session only. */
   readonly folderFilter: string;
   /** Messages whose remote content the user allowed. Session only. */
@@ -215,11 +223,16 @@ export interface UiActions {
   readonly removeFromList: (
     removed: ReadonlySet<MessageId>,
     next: MessageId | null,
+    options?: { readonly open?: boolean },
   ) => void;
   readonly allowRemoteContent: (id: MessageId) => void;
   readonly setColumnWidth: (index: 0 | 1, width: number) => void;
   readonly setListOrder: (order: MessageOrder) => void;
   readonly setTheme: (theme: ThemeMode) => void;
+  readonly updateSettings: (patch: Partial<AppSettings>) => void;
+  /** Remote images of this sender load without asking (in "trusted" mode). */
+  readonly trustSender: (address: string) => void;
+  readonly untrustSender: (address: string) => void;
   readonly setFolderFilter: (text: string) => void;
   readonly toggleNode: (key: string) => void;
   readonly setDrawerOpen: (open: boolean) => void;
@@ -292,12 +305,14 @@ interface PersistedUi {
   columnWidths?: unknown;
   toggledNodes?: unknown;
   listOrder?: unknown;
+  settings?: unknown;
 }
 
 /**
- * Creates the UI store. Only column widths, tree expansion, the list order
- * and the theme are persisted (to `storage`, i.e. localStorage); nothing
- * that contains mail.
+ * Creates the UI store. Only column widths, tree expansion, the list order,
+ * the theme and the app settings are persisted (to `storage`, i.e.
+ * localStorage); nothing that contains mail (trusted senders are addresses
+ * the user chose to trust, kept like a setting).
  */
 export function createUiStore(storage: Storage | undefined): UiStore {
   return createStore<UiState & UiActions>()(
@@ -317,6 +332,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           toggledNodes: new Set(),
           listOrder: "newest",
           theme: readTheme(storage),
+          settings: DEFAULT_SETTINGS,
           folderFilter: "",
           drawerOpen: false,
           helpOpen: false,
@@ -361,8 +377,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           clearSelection: () => {
             update(selection.clearSelection);
           },
-          removeFromList: (removed, next) => {
-            update((s) => selection.removeFromList(s, removed, next));
+          removeFromList: (removed, next, options) => {
+            update((s) => selection.removeFromList(s, removed, next, options));
           },
           allowRemoteContent: (id) => {
             set((s) => ({
@@ -382,6 +398,32 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setTheme: (theme) => {
             saveTheme(storage, theme);
             set({ theme });
+          },
+          updateSettings: (patch) => {
+            set((s) => ({ settings: { ...s.settings, ...patch } }));
+          },
+          trustSender: (address) => {
+            const lower = address.toLowerCase();
+            set((s) => ({
+              settings: {
+                ...s.settings,
+                trustedSenders: [
+                  ...s.settings.trustedSenders.filter((a) => a !== lower),
+                  lower,
+                ].slice(-MAX_TRUSTED_SENDERS),
+              },
+            }));
+          },
+          untrustSender: (address) => {
+            const lower = address.toLowerCase();
+            set((s) => ({
+              settings: {
+                ...s.settings,
+                trustedSenders: s.settings.trustedSenders.filter(
+                  (a) => a !== lower,
+                ),
+              },
+            }));
           },
           setFolderFilter: (folderFilter) => {
             set({ folderFilter });
@@ -529,10 +571,11 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           columnWidths: state.columnWidths,
           toggledNodes: [...state.toggledNodes],
           listOrder: state.listOrder,
+          settings: state.settings,
         }),
         merge: (persisted, current) => {
-          const { columnWidths, toggledNodes, listOrder } = (persisted ??
-            {}) as PersistedUi;
+          const { columnWidths, toggledNodes, listOrder, settings } =
+            (persisted ?? {}) as PersistedUi;
           const widths =
             Array.isArray(columnWidths) &&
             columnWidths.length === 2 &&
@@ -552,6 +595,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             columnWidths: widths,
             toggledNodes: new Set(toggledKeys),
             listOrder: listOrder === "oldest" ? "oldest" : "newest",
+            settings: parseSettings(settings),
           };
         },
       },

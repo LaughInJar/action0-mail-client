@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { FakeMailProvider } from "../providers/fake/FakeMailProvider";
 import { demoHash, renderApp } from "../test/renderApp";
-import { MARK_READ_DELAY_MS } from "./reader/useMarkReadOnView";
+import { MARK_READ_DELAY_MS } from "../state/settings";
 
 const subject = (name: string) =>
   screen.findByRole("heading", { level: 1, name });

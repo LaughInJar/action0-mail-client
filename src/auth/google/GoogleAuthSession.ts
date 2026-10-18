@@ -76,7 +76,10 @@ export class GoogleAuthSession implements AuthSession {
     );
   }
 
-  signIn(): Promise<void> {
+  signIn({
+    askAgain = false,
+  }: { readonly askAgain?: boolean } = {}): Promise<void> {
+    if (askAgain) this.#declined.clear();
     this.#pending ??= this.#requestToken().finally(() => {
       this.#pending = undefined;
     });

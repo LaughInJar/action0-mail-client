@@ -4,6 +4,7 @@ import type { Message } from "../core/model";
 import { editorHtmlToMail, htmlToText, textToHtml } from "./html";
 import { forwardQuote, replyQuote, splitQuote } from "./quote";
 import { draftInputOf, mailBody, mailHtmlToEditor, sentBytes } from "./session";
+import { splitSignature } from "./signature";
 
 const original: Message = {
   id: asMessageId("m1"),
@@ -148,5 +149,55 @@ describe("inline images", () => {
     );
     expect(sentBytes(content)).toBe(10);
     expect(sentBytes({ ...content, body: "<p>Look</p>" })).toBe(0);
+  });
+});
+
+describe("signatures", () => {
+  const signature = '<b style="color:red">Anna</b>';
+
+  it("go between the text and the quote, as they are", () => {
+    const quote = replyQuote(original);
+    const { html, text } = mailBody("<p>Thanks!</p>", quote, signature);
+    expect(html).toBe(
+      `<div>Thanks!</div><br><div class="gmail_signature" data-smartmail="gmail_signature">${signature}</div><br>${quote.html}`,
+    );
+    expect(text.startsWith("Thanks!\n\nAnna\n\n")).toBe(true);
+  });
+
+  it("come out of a reopened draft again", () => {
+    const { html } = mailBody("<p>Thanks!</p>", undefined, signature);
+    expect(splitSignature(html)).toEqual({
+      body: "<div>Thanks!</div>",
+      signature,
+    });
+    expect(splitSignature("<div>Hi</div>")).toEqual({ body: "<div>Hi</div>" });
+  });
+
+  it("send from the chosen address", () => {
+    const input = draftInputOf({
+      to: [{ address: "anna@example.org" }],
+      cc: [],
+      bcc: [],
+      subject: "Hi",
+      body: "<p>Hello</p>",
+      attachments: [],
+      from: { name: "Team", address: "team@example.com" },
+      signature: { address: "team@example.com", html: "Team" },
+    });
+    expect(input.from).toEqual({ name: "Team", address: "team@example.com" });
+    expect(input.html).toContain('class="gmail_signature"');
+  });
+
+  it("are left out when removed", () => {
+    const input = draftInputOf({
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "",
+      body: "<p>Hello</p>",
+      attachments: [],
+      signature: null,
+    });
+    expect(input.html).toBe("<div>Hello</div>");
   });
 });

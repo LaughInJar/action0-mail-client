@@ -162,10 +162,18 @@ export function useMailActions(): MailActions {
       );
       if (removed.size === 0) return;
       const state = store.getState();
+      const { afterRemove } = state.settings;
       const focusLeaves =
         state.focusedId !== null && removed.has(state.focusedId);
-      const next = focusLeaves ? nextAfterRemoval(orderedIds, removed) : null;
-      state.removeFromList(removed, next);
+      const next = focusLeaves
+        ? nextAfterRemoval(
+            orderedIds,
+            removed,
+            afterRemove === "above" ? "above" : "below",
+          )
+        : null;
+      const open = afterRemove !== "list";
+      state.removeFromList(removed, next, { open });
       // On phones the reader is a screen of its own: follow along or go back.
       if (
         focusLeaves &&
@@ -173,9 +181,10 @@ export function useMailActions(): MailActions {
         route.messageId !== undefined
       ) {
         const list = listRoute(route);
-        router.navigate(next === null ? list : { ...list, messageId: next }, {
-          replace: true,
-        });
+        router.navigate(
+          next === null || !open ? list : { ...list, messageId: next },
+          { replace: true },
+        );
       }
     };
 

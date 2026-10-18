@@ -19,6 +19,8 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Unsubscribe from newsletters with one button next to the sender. It uses the sender's one-click unsubscribe (RFC 8058) when there is one, otherwise sends the unsubscribe mail, otherwise opens the sender's unsubscribe page. It can't be undone, so it asks first.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
+- Settings (⚙ next to the theme switch): list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
+- Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
 
@@ -35,14 +37,14 @@ Open <http://localhost:5173/?demo> to start with the demo account. To read your 
 
 ## Setting up Google sign-in
 
-The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. For address suggestions it also asks for read access to your contacts (`contacts.readonly`, `contacts.other.readonly`); that part is optional. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
+The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. For address suggestions it also asks for read access to your contacts (`contacts.readonly`, `contacts.other.readonly`), and for editing your Gmail signatures in Settings it asks for `gmail.settings.basic`; both are optional. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
 
 1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
 2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it. Do the same for the **People API** (address suggestions from your contacts).
 3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
    - **Branding:** an app name and your support email.
    - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
-   - **Data access:** add the scopes `https://mail.google.com/`, `https://www.googleapis.com/auth/contacts.readonly` and `https://www.googleapis.com/auth/contacts.other.readonly`. If you set the app up earlier with fewer scopes, add the missing ones; each account then reconnects once.
+   - **Data access:** add the scopes `https://mail.google.com/`, `https://www.googleapis.com/auth/contacts.readonly`, `https://www.googleapis.com/auth/contacts.other.readonly` and `https://www.googleapis.com/auth/gmail.settings.basic`. If you set the app up earlier with fewer scopes, add the missing ones; each account then reconnects once.
 4. Go to **Clients → Create client**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
@@ -64,7 +66,8 @@ Things to know:
 - `https://mail.google.com/` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
 - Google issues access tokens that last **one hour** and no refresh token to browser apps without a backend. The app refreshes the token on your next click or key press shortly before it expires (the Google popup opens and closes by itself while you're signed in to Google). If that's not possible, a bar offers a one-click **Reconnect**. On touch devices the popup would open as a new tab, so there the bar appears a few minutes before expiry instead.
 - Live updates need a valid Google token too. If the tab sits unused for more than an hour, the token can't be renewed without a click, so updates and notifications pause; the tab title then says "Reconnect".
-- A message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read.
+- By default a message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read (Settings can change that).
+- If you declined the settings permission, signatures can't be saved; Settings then offers **Allow editing**, which asks Google again.
 
 ### Troubleshooting Google sign-in
 
@@ -175,7 +178,7 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
 | Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
 | sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                                                                               | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme                                                                                                                                      | Until sign-out                      |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the addresses of senders you trust with remote images)                                                          | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

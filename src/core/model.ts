@@ -190,6 +190,17 @@ export interface Message extends MessageSummary {
   readonly attachments: readonly AttachmentInfo[];
 }
 
+/** An address the account can send from (Gmail: its send-as addresses). */
+export interface Sender {
+  readonly address: string;
+  /** Display name for the From header. */
+  readonly name?: string;
+  /** Used for new mail. */
+  readonly isDefault: boolean;
+  /** HTML signature as stored with the provider (unsanitized); "" for none. */
+  readonly signature: string;
+}
+
 /** One page of a paginated result. */
 export interface Page<T> {
   readonly items: readonly T[];

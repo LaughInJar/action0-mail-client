@@ -20,7 +20,8 @@ export interface RouteSearch {
  * Navigation state kept in the URL hash:
  * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]][&compose=…]`,
  * or `null` for `#/` (on phones: the folder tree). With a search,
- * `mailboxId` is the mailbox it was started from.
+ * `mailboxId` is the mailbox it was started from. A `settings` flag after
+ * it (see {@link formatLocation}) means Settings is open over the route.
  */
 export type Route = {
   readonly accountId: AccountId;
@@ -89,12 +90,34 @@ export function listRoute(route: NonNullable<Route>): NonNullable<Route> {
   return list;
 }
 
+/** True if the hash has the `settings` flag (Settings is open over the route). */
+export function hasSettingsFlag(hash: string): boolean {
+  const [, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
+  return new URLSearchParams(query).has("settings");
+}
+
+/** A location hash: the route, plus the `settings` flag while Settings is open. */
+export function formatLocation(route: Route, settings: boolean): string {
+  const hash = formatRoute(route);
+  if (!settings) return hash;
+  return `${hash}${hash.includes("?") ? "&" : "?"}settings`;
+}
+
 /** Hash-based router. */
 export interface HashRouter {
   /** Current route; the object identity only changes when the route changes. */
   readonly getRoute: () => Route;
-  /** Navigates; `replace` avoids a new history entry. */
+  /**
+   * Navigates; `replace` avoids a new history entry. A new entry closes
+   * Settings; replacing keeps it open.
+   */
   readonly navigate: (route: Route, options?: { replace?: boolean }) => void;
+  /** Settings is open (over the current route), so Back closes it. */
+  readonly isSettingsOpen: () => boolean;
+  /** Opens Settings as a new history entry. */
+  readonly openSettings: () => void;
+  /** Closes Settings: Back if it was opened here, else the flag is removed. */
+  readonly closeSettings: () => void;
   /** True if going back stays inside the app. */
   readonly canGoBack: () => boolean;
   readonly back: () => void;
@@ -105,6 +128,8 @@ export interface HashRouter {
 interface HistoryState {
   /** Number of in-app history entries below this one. */
   a0Depth?: number;
+  /** This entry was added by opening Settings. */
+  a0Settings?: boolean;
 }
 
 const depthOf = (state: unknown): number =>
@@ -116,11 +141,15 @@ const depthOf = (state: unknown): number =>
 export function createHashRouter(win: Window = window): HashRouter {
   const emitter = new Emitter();
   let current = parseHash(win.location.hash);
+  let settings = hasSettingsFlag(win.location.hash);
 
   const sync = () => {
     const next = parseHash(win.location.hash);
-    if (formatRoute(next) === formatRoute(current)) return;
-    current = next;
+    const nextSettings = hasSettingsFlag(win.location.hash);
+    const routeChanged = formatRoute(next) !== formatRoute(current);
+    if (!routeChanged && nextSettings === settings) return;
+    if (routeChanged) current = next;
+    settings = nextSettings;
     emitter.emit();
   };
   win.addEventListener("popstate", sync);
@@ -129,12 +158,40 @@ export function createHashRouter(win: Window = window): HashRouter {
   return {
     getRoute: () => current,
     navigate: (route, { replace = false } = {}) => {
-      const url = formatRoute(route);
-      if (url === formatRoute(current)) return;
+      const url = formatLocation(route, replace && settings);
+      if (url === formatLocation(current, settings)) return;
       const depth = depthOf(win.history.state);
-      if (replace) win.history.replaceState({ a0Depth: depth }, "", url);
+      if (replace)
+        win.history.replaceState(
+          { ...(win.history.state as HistoryState | null), a0Depth: depth },
+          "",
+          url,
+        );
       else win.history.pushState({ a0Depth: depth + 1 }, "", url);
       sync();
+    },
+    isSettingsOpen: () => settings,
+    openSettings: () => {
+      if (settings) return;
+      win.history.pushState(
+        { a0Depth: depthOf(win.history.state) + 1, a0Settings: true },
+        "",
+        formatLocation(current, true),
+      );
+      sync();
+    },
+    closeSettings: () => {
+      if (!settings) return;
+      if ((win.history.state as HistoryState | null)?.a0Settings === true)
+        win.history.back();
+      else {
+        win.history.replaceState(
+          win.history.state,
+          "",
+          formatLocation(current, false),
+        );
+        sync();
+      }
     },
     canGoBack: () => depthOf(win.history.state) > 0,
     back: () => {

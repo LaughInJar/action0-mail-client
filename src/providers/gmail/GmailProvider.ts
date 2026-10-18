@@ -23,6 +23,7 @@ import type {
   Mailbox,
   MailboxColor,
   Message,
+  Sender,
   MessageFlags,
   MessageSummary,
   Page,
@@ -38,6 +39,7 @@ import type {
   ProviderCapabilities,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
+import { parseAddressList } from "./addresses";
 import { buildMessage } from "../mime/buildMessage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
 import type { GmailHttp, QueryParams } from "./http";
@@ -57,6 +59,7 @@ import {
 import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
 import { getHeader } from "./mime";
 import type {
+  GmailListSendAsResponse,
   GmailAttachment,
   GmailDraft,
   GmailHistoryResponse,
@@ -201,6 +204,8 @@ export class GmailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: GMAIL_LABEL_COLORS,
+    senders: true,
+    editSignatures: true,
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;
@@ -339,9 +344,11 @@ export class GmailProvider implements MailProvider {
       );
     const message = toMessage(raw);
     const inReplyTo = getHeader(raw.payload?.headers, "In-Reply-To")?.trim();
+    const [from] = parseAddressList(getHeader(raw.payload?.headers, "From"));
     return {
       id: asDraftId(draft.id),
       messageId: message.id,
+      ...(from ? { from } : {}),
       to: message.to,
       cc: message.cc,
       bcc: message.bcc,
@@ -600,6 +607,50 @@ export class GmailProvider implements MailProvider {
     return sendOneClickUnsubscribe(url, this.#fetch, signal);
   }
 
+  /** Verified send-as addresses (the primary one always), the default first. */
+  async listSenders(signal?: AbortSignal): Promise<readonly Sender[]> {
+    const { sendAs = [] } = await this.#http.get<GmailListSendAsResponse>(
+      "settings/sendAs",
+      undefined,
+      signal,
+    );
+    return sendAs
+      .filter(
+        (entry) =>
+          entry.isPrimary === true || entry.verificationStatus === "accepted",
+      )
+      .map((entry): Sender => ({
+        address: entry.sendAsEmail,
+        ...(entry.displayName ? { name: entry.displayName } : {}),
+        isDefault: entry.isDefault === true,
+        signature: entry.signature ?? "",
+      }))
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  }
+
+  /** Needs the `gmail.settings.basic` permission; without it: `unavailable`. */
+  async updateSignature(
+    address: string,
+    html: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      await this.#http.patch(
+        `settings/sendAs/${encodeURIComponent(address)}`,
+        { signature: html },
+        signal,
+      );
+    } catch (error) {
+      if (isMailError(error) && error.status === 403)
+        throw new MailError(
+          "unavailable",
+          "Changing Gmail settings wasn’t allowed for this account.",
+          { status: 403, cause: error },
+        );
+      throw error;
+    }
+  }
+
   /** A user label (system labels and the tree's own nodes can't be changed). */
   async #userLabel(id: MailboxId, signal?: AbortSignal): Promise<GmailLabel> {
     const invalid = inventedIdError([id]);
@@ -671,8 +722,9 @@ export class GmailProvider implements MailProvider {
         };
       }),
     );
-    // No From header: Gmail fills in the account's address and name.
+    // Without a From header Gmail uses the account's default address.
     return buildMessage({
+      ...(draft.from ? { from: draft.from } : {}),
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,

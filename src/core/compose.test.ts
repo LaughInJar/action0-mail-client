@@ -1,13 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  defaultSender,
   forwardSubject,
+  replyFrom,
   replyRecipients,
   replySubject,
   threadingFor,
 } from "./compose";
 import { asMessageId, asThreadId } from "./ids";
-import type { EmailAddress, Message } from "./model";
+import type { EmailAddress, Message, Sender } from "./model";
 
 const ME = "me@example.com";
 const anna: EmailAddress = { name: "Anna", address: "anna@example.org" };
@@ -99,5 +101,30 @@ describe("threadingFor", () => {
       threadId: "t1",
       references: ["<m0@example.org>"],
     });
+  });
+});
+
+describe("replyFrom", () => {
+  const senders: Sender[] = [
+    { address: "other@example.com", isDefault: false, signature: "" },
+    { address: "me@example.com", isDefault: true, signature: "" },
+    { address: "team@example.com", isDefault: false, signature: "" },
+  ];
+
+  it("answers from the address the mail was sent to", () => {
+    expect(replyFrom(original(), senders)?.address).toBe("me@example.com");
+    expect(
+      replyFrom(
+        original({ to: [bob], cc: [{ address: "Team@Example.com" }] }),
+        senders,
+      )?.address,
+    ).toBe("team@example.com");
+  });
+
+  it("falls back to the default address", () => {
+    expect(replyFrom(original({ to: [bob], cc: [] }), senders)?.address).toBe(
+      "me@example.com",
+    );
+    expect(defaultSender([])).toBeUndefined();
   });
 });

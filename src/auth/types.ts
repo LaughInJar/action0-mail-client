@@ -24,9 +24,11 @@ export interface AuthSession {
 
   /**
    * Interactive (re-)authentication. Must be called from a user gesture,
-   * because it may open a popup. Concurrent calls share one attempt.
+   * because it may open a popup. Concurrent calls share one attempt. With
+   * `askAgain`, optional permissions the user declined before are asked
+   * for again (e.g. "Allow editing" for signatures).
    */
-  signIn(): Promise<void>;
+  signIn(options?: { readonly askAgain?: boolean }): Promise<void>;
 
   /** Revokes and forgets the credentials. */
   signOut(): Promise<void>;

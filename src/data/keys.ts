@@ -35,6 +35,7 @@ export const queryKeys = {
       mailboxId,
       { search: search ?? "", order },
     ] as const,
+  senders: (accountId: AccountId) => ["acct", accountId, "senders"] as const,
   message: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "message", messageId] as const,
   inlineImages: (accountId: AccountId, messageId: MessageId) =>

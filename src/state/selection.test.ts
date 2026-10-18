@@ -93,6 +93,12 @@ describe("nextAfterRemoval", () => {
     expect(nextAfterRemoval(ids, set("a", "c"))).toBe("d");
   });
 
+  it("goes up instead when asked to", () => {
+    expect(nextAfterRemoval(ids, set("c"), "above")).toBe("b");
+    expect(nextAfterRemoval(ids, set("b", "d"), "above")).toBe("a");
+    expect(nextAfterRemoval(ids, set("a"), "above")).toBe("b");
+  });
+
   it("falls back to the one above at the end, and to nothing when all are gone", () => {
     expect(nextAfterRemoval(ids, set("e"))).toBe("d");
     expect(nextAfterRemoval(ids, set("d", "e"))).toBe("c");
@@ -107,6 +113,19 @@ describe("removeFromList", () => {
   it("keeps the rest of the selection and the cursor when other rows leave", () => {
     const state = { focusedId: a, selectedIds: set("a", "b"), anchorId: a };
     expect(removeFromList(state, set("d"), null)).toEqual(state);
+  });
+
+  it("can close the message, so j and k continue from the next one", () => {
+    const state = { focusedId: b, selectedIds: set(), anchorId: b };
+    const closed = removeFromList(state, set("b"), c, { open: false });
+    expect(closed).toEqual({
+      focusedId: null,
+      selectedIds: set(),
+      anchorId: c,
+    });
+    const rest = ids.filter((id) => id !== b);
+    expect(moveFocus(closed, rest, 1).focusedId).toBe(c);
+    expect(moveFocus(closed, rest, -1).focusedId).toBe(a);
   });
 
   it("drops removed rows from the selection and moves a removed cursor", () => {

@@ -102,6 +102,23 @@ export interface GmailListDraftsResponse {
   nextPageToken?: string;
 }
 
+/** A send-as address (`settings.sendAs`). */
+export interface GmailSendAs {
+  sendAsEmail: string;
+  displayName?: string;
+  /** HTML. */
+  signature?: string;
+  isPrimary?: boolean;
+  isDefault?: boolean;
+  /** Aliases must be verified before Gmail sends from them. */
+  verificationStatus?: "accepted" | "pending" | "verificationStatusUnspecified";
+}
+
+/** Response of `settings.sendAs.list`. */
+export interface GmailListSendAsResponse {
+  sendAs?: GmailSendAs[];
+}
+
 /** A person from the People API (`readMask=names,emailAddresses`). */
 export interface PeoplePerson {
   names?: { displayName?: string }[];

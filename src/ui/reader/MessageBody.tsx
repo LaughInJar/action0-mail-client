@@ -5,6 +5,7 @@ import { useInlineImages } from "../../data/hooks";
 import { buildMailDocument } from "../../security/mailDocument";
 import { sanitizeMailHtml } from "../../security/sanitize";
 import { useUi } from "../../state/context";
+import { loadsRemoteImages } from "../../state/settings";
 import { Icon } from "../common/Icon";
 import { SafeHtmlFrame } from "./SafeHtmlFrame";
 
@@ -16,7 +17,8 @@ export interface MessageBodyProps {
 
 /**
  * The message content: sanitized HTML in a sandboxed iframe, or plain text.
- * Remote content stays blocked until the user allows it for this message.
+ * Remote content stays blocked until the user allows it for this message
+ * (or the settings allow it: always, or for trusted senders).
  */
 export function MessageBody({ accountId, message }: MessageBodyProps) {
   const html = message.body.html;
@@ -25,8 +27,17 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
     [html],
   );
   const { data: inlineImages } = useInlineImages(accountId, message);
-  const allowed = useUi((state) => state.remoteContentAllowed.has(message.id));
+  const sender = message.from?.address;
+  const allowed = useUi(
+    (state) =>
+      state.remoteContentAllowed.has(message.id) ||
+      loadsRemoteImages(state.settings, sender),
+  );
   const allowRemoteContent = useUi((state) => state.allowRemoteContent);
+  const trustSender = useUi((state) => state.trustSender);
+  const offerTrust = useUi(
+    (state) => state.settings.remoteImages === "trusted",
+  );
 
   const srcDoc = useMemo(
     () =>
@@ -60,6 +71,17 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
             >
               Load images
             </button>
+            {offerTrust && sender && (
+              <button
+                type="button"
+                onClick={() => {
+                  trustSender(sender);
+                }}
+                className="min-w-0 truncate rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
+              >
+                Always from {sender}
+              </button>
+            )}
           </div>
         )}
         <SafeHtmlFrame
