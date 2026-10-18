@@ -34,7 +34,19 @@ export function moveFocus(
   orderedIds: readonly MessageId[],
   delta: number,
 ): SelectionState {
-  const target = neighbour(state.focusedId, orderedIds, delta);
+  // Nothing open after a removal ("back to the list"): continue from there.
+  const resume =
+    state.focusedId === null &&
+    state.anchorId !== null &&
+    orderedIds.includes(state.anchorId)
+      ? state.anchorId
+      : null;
+  const target =
+    resume === null
+      ? neighbour(state.focusedId, orderedIds, delta)
+      : delta > 0
+        ? resume
+        : neighbour(resume, orderedIds, delta);
   if (target === undefined) return state;
   return { ...state, focusedId: target, anchorId: target };
 }
@@ -121,28 +133,33 @@ function range(
 }
 
 /**
- * Where the cursor goes when `removed` messages leave the list: the first
- * remaining message below the lowest removed one, otherwise the nearest one
- * above it, otherwise nothing.
+ * Where the cursor goes when `removed` messages leave the list. Going
+ * `below` (the default): the first remaining message below the lowest
+ * removed one, otherwise the nearest one above. Going `above`: the first
+ * remaining one above the highest removed one, otherwise the nearest one
+ * below. Otherwise nothing.
  */
 export function nextAfterRemoval(
   orderedIds: readonly MessageId[],
   removed: ReadonlySet<MessageId>,
+  direction: "below" | "above" = "below",
 ): MessageId | null {
   const indices = orderedIds.flatMap((id, index) =>
     removed.has(id) ? [index] : [],
   );
+  const first = indices[0];
   const last = indices.at(-1);
-  if (last === undefined) return null;
-  for (let i = last + 1; i < orderedIds.length; i++) {
-    const id = orderedIds[i];
-    if (id !== undefined && !removed.has(id)) return id;
-  }
-  for (let i = last - 1; i >= 0; i--) {
-    const id = orderedIds[i];
-    if (id !== undefined && !removed.has(id)) return id;
-  }
-  return null;
+  if (first === undefined || last === undefined) return null;
+  const remaining = (from: number, step: 1 | -1) => {
+    for (let i = from; i >= 0 && i < orderedIds.length; i += step) {
+      const id = orderedIds[i];
+      if (id !== undefined && !removed.has(id)) return id;
+    }
+    return null;
+  };
+  return direction === "below"
+    ? (remaining(last + 1, 1) ?? remaining(last - 1, -1))
+    : (remaining(first - 1, -1) ?? remaining(first + 1, 1));
 }
 
 /**
@@ -153,15 +170,19 @@ export function removeFromList(
   state: SelectionState,
   removed: ReadonlySet<MessageId>,
   next: MessageId | null,
+  { open = true }: { open?: boolean } = {},
 ): SelectionState {
   const selectedIds = new Set(
     [...state.selectedIds].filter((id) => !removed.has(id)),
   );
   const focusLeft = state.focusedId !== null && removed.has(state.focusedId);
-  const focusedId = focusLeft ? next : state.focusedId;
+  // Not opening `next` ("back to the list"): j/k continue from it.
+  const focusedId = focusLeft ? (open ? next : null) : state.focusedId;
   const anchorId =
-    state.anchorId !== null && removed.has(state.anchorId)
-      ? focusedId
-      : state.anchorId;
+    focusLeft && !open
+      ? next
+      : state.anchorId !== null && removed.has(state.anchorId)
+        ? focusedId
+        : state.anchorId;
   return { focusedId, selectedIds, anchorId };
 }

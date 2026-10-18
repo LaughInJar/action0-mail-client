@@ -12,6 +12,7 @@ import type {
   MailboxColor,
   Message,
   MessageBody,
+  Sender,
   Unsubscribe,
 } from "../../core/model";
 import type { FakeMailData } from "./FakeMailProvider";
@@ -21,6 +22,26 @@ export const DEMO_EMAIL = "demo@example.com";
 
 const id = asMailboxId;
 const ME: EmailAddress = { name: "Demo User", address: DEMO_EMAIL };
+/** A second address of the demo account (like a Gmail alias). */
+const TEAM: EmailAddress = { name: "Demo Team", address: "team@example.com" };
+
+/** The demo account's addresses and signatures. */
+const SENDERS: readonly Sender[] = [
+  {
+    address: DEMO_EMAIL,
+    name: "Demo User",
+    isDefault: true,
+    signature: "<div>Demo User</div><div>action0 demo account</div>",
+  },
+  {
+    address: TEAM.address,
+    name: "Demo Team",
+    isDefault: false,
+    // Colours: formatting the signature editor can't keep.
+    signature:
+      '<div><b style="color:#2563eb">Demo Team</b></div><div style="color:#6b7280">Questions? Just reply to this mail.</div>',
+  },
+];
 
 /** Mailbox ids of the demo account, for tests. */
 export const DEMO_MAILBOX = {
@@ -540,6 +561,8 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
   {
     key: "wide",
     from: PEOPLE[2] ?? ME,
+    // To the second address: replies go out from it.
+    to: [TEAM],
     cc: [PEOPLE[3] ?? ME, PEOPLE[0] ?? ME],
     subject: "Client project overview",
     snippet:
@@ -676,6 +699,7 @@ export function createDemoData(now = Date.now()): FakeMailData {
     me: ME,
     contacts: PEOPLE.filter((person) => !person.address.includes("noreply")),
     mailboxColors: LABEL_COLORS,
+    senders: SENDERS,
   };
 }
 

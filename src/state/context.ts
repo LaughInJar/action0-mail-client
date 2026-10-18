@@ -33,3 +33,9 @@ export function useRoute(): Route {
   const router = useRouter();
   return useSyncExternalStore(router.subscribe, router.getRoute);
 }
+
+/** Whether Settings is open; re-renders when that changes. */
+export function useSettingsOpen(): boolean {
+  const router = useRouter();
+  return useSyncExternalStore(router.subscribe, router.isSettingsOpen);
+}

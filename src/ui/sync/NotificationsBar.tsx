@@ -1,27 +1,26 @@
 import { useState } from "react";
 import { readJson, writeJson } from "../../lib/storage";
-import { COARSE_POINTER_QUERY } from "../layout/useBreakpoint";
+import { useUi } from "../../state/context";
+import { notificationsSupported } from "./notifications";
 
 /** localStorage setting: the bar was answered and isn't shown again. */
 const ASKED_KEY = "a0.settings.notificationsAsked";
 
-/**
- * Phones only show notifications from installed apps (service worker), so
- * they aren't offered on touch devices.
- */
 const askable = () =>
-  typeof Notification !== "undefined" &&
+  notificationsSupported() &&
   Notification.permission === "default" &&
-  !window.matchMedia(COARSE_POINTER_QUERY).matches &&
   readJson(window.localStorage, ASKED_KEY) !== true;
 
 /**
- * Asks once whether to show desktop notifications for new mail. The
- * browser's own permission prompt only comes after "Turn on".
+ * Asks once whether to show desktop notifications for new mail (unless
+ * they're turned off in Settings). The browser's own permission prompt
+ * only comes after "Turn on".
  */
 export function NotificationsBar() {
   const [visible, setVisible] = useState(askable);
-  if (!visible) return null;
+  // Turned off in Settings: never ask.
+  const enabled = useUi((state) => state.settings.notifications);
+  if (!visible || !enabled) return null;
   const done = () => {
     writeJson(window.localStorage, ASKED_KEY, true);
     setVisible(false);

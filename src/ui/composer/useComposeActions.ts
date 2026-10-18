@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useAccountRegistry, useAccounts } from "../../accounts/context";
 import { splitQuote, forwardQuote, replyQuote } from "../../compose/quote";
+import { splitSignature } from "../../compose/signature";
 import { textToHtml } from "../../compose/html";
 import {
   attachmentFromFile,
@@ -10,7 +11,10 @@ import {
 import { megabytes } from "../common/files";
 import {
   attachmentOf,
+  defaultSender,
   forwardSubject,
+  fromAddress,
+  replyFrom,
   replyRecipients,
   replySubject,
   threadingFor,
@@ -18,7 +22,7 @@ import {
 } from "../../core/compose";
 import type { Draft } from "../../core/compose";
 import type { AccountId, DraftId, MessageId } from "../../core/ids";
-import type { Message } from "../../core/model";
+import type { Message, Sender } from "../../core/model";
 import { referencedInlineImages } from "../../data/hooks";
 import { useDraftSync, type DraftSync } from "../../data/drafts";
 import { useRoute, useRouter, useUiStore } from "../../state/context";
@@ -28,9 +32,6 @@ import type {
   UiStore,
 } from "../../state/uiStore";
 import { errorMessage } from "../common/errorMessage";
-
-/** How long a sent mail can be taken back. */
-export const SEND_DELAY_MS = 30_000;
 
 /** Starting, saving, sending and discarding mails. */
 export interface ComposeActions {
@@ -48,7 +49,7 @@ export interface ComposeActions {
   readonly close: () => void;
   /** Deletes the draft and closes the composer (undoable). */
   readonly discard: () => void;
-  /** Queues the mail for sending after {@link SEND_DELAY_MS}. */
+  /** Queues the mail for sending after the undo-send period (a setting). */
   readonly send: () => void;
   /** Takes a queued mail back into the composer (the newest, by default). */
   readonly undoSend: (id?: number) => void;
@@ -157,18 +158,34 @@ export function useComposeActions(): ComposeActions {
       return session;
     };
 
-    /** The full message, then `start` with it. */
+    /** The account's senders; none if they can't be loaded (mail still works). */
+    const sendersOf = (accountId: AccountId) =>
+      sync.senders(accountId).catch((): readonly Sender[] => []);
+
+    /** From and signature of a composer that sends as `sender`. */
+    const sendingAs = (sender: Sender | undefined) =>
+      sender
+        ? {
+            from: fromAddress(sender),
+            signature: { address: sender.address, html: sender.signature },
+          }
+        : {};
+
+    /** The full message and the account's senders, then `start` with them. */
     const withMessage = (
       messageId: MessageId,
       action: string,
-      start: (accountId: AccountId, message: Message) => void,
+      start: (
+        accountId: AccountId,
+        message: Message,
+        senders: readonly Sender[],
+      ) => void,
     ) => {
       const accountId = currentAccount();
       if (!canComposeIn(accountId) || accountId === undefined) return;
-      sync
-        .getMessage(accountId, messageId)
-        .then((message) => {
-          start(accountId, message);
+      Promise.all([sync.getMessage(accountId, messageId), sendersOf(accountId)])
+        .then(([message, senders]) => {
+          start(accountId, message, senders);
         })
         .catch(fail(`Couldn’t ${action}`));
     };
@@ -182,11 +199,19 @@ export function useComposeActions(): ComposeActions {
           .updateComposer(current.key, { window: "docked" }, false);
         return;
       }
-      const { body, quote } = splitQuote(draft.html || textToHtml(draft.text));
+      const split = splitQuote(draft.html || textToHtml(draft.text));
+      const { quote } = split;
+      const { body, signature } = splitSignature(split.body);
       open({
         accountId,
         kind: "draft",
         draftId: draft.id,
+        ...(draft.from ? { from: draft.from } : {}),
+        // No block in the draft: none, or the user removed it; keep it so.
+        signature:
+          signature === undefined
+            ? null
+            : { address: draft.from?.address ?? "", html: signature },
         to: draft.to,
         cc: draft.cc,
         bcc: draft.bcc,
@@ -215,16 +240,34 @@ export function useComposeActions(): ComposeActions {
         }
         const accountId = currentAccount();
         if (!canComposeIn(accountId) || accountId === undefined) return;
-        open({ accountId, kind: "new", focus: "to" });
+        const session = open({ accountId, kind: "new", focus: "to" });
+        // The default address and its signature, once known.
+        void sendersOf(accountId).then((senders) => {
+          const composer = store.getState().composer;
+          if (composer?.key !== session.key || composer.signature !== undefined)
+            return;
+          store
+            .getState()
+            .updateComposer(
+              session.key,
+              sendingAs(defaultSender(senders)),
+              false,
+            );
+        });
       },
 
       reply: (messageId, mode) => {
-        withMessage(messageId, "reply", (accountId, message) => {
+        withMessage(messageId, "reply", (accountId, message, senders) => {
           const me = registry.get(accountId)?.account.email;
-          const { to, cc } = replyRecipients(message, mode, me ? [me] : []);
+          const mine = [
+            ...(me ? [me] : []),
+            ...senders.map((sender) => sender.address),
+          ];
+          const { to, cc } = replyRecipients(message, mode, mine);
           open({
             accountId,
             kind: mode,
+            ...sendingAs(replyFrom(message, senders)),
             to,
             cc,
             showCcBcc: cc.length > 0,
@@ -237,13 +280,14 @@ export function useComposeActions(): ComposeActions {
       },
 
       forward: (messageId) => {
-        withMessage(messageId, "forward", (accountId, message) => {
+        withMessage(messageId, "forward", (accountId, message, senders) => {
           const inline = new Set(
             referencedInlineImages(message).map((image) => image.id),
           );
           open({
             accountId,
             kind: "forward",
+            ...sendingAs(replyFrom(message, senders)),
             subject: forwardSubject(message.subject),
             quote: forwardQuote(message),
             attachments: message.attachments
@@ -319,7 +363,8 @@ export function useComposeActions(): ComposeActions {
           void sync
             .save(current.key, current.accountId, current, current.draftId)
             .catch(() => undefined);
-        store.getState().queueSend(current.key, SEND_DELAY_MS);
+        const { settings, queueSend } = store.getState();
+        queueSend(current.key, settings.undoSendSeconds * 1000);
       },
 
       undoSend: (id) => {

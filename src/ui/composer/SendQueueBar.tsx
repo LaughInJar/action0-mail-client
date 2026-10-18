@@ -4,7 +4,8 @@ import type { ComposeActions } from "./useComposeActions";
 
 /**
  * Mail waiting out its undo period: "Sending in 23 s" with Undo and Send
- * now. Stays until the mail is sent, independent of other toasts.
+ * now (just "Sending…" when undo send is off). Stays until the mail is
+ * sent, independent of other toasts.
  */
 export function SendQueueBar({ actions }: { actions: ComposeActions }) {
   const pending = useUi((state) => state.pendingSends);
@@ -30,6 +31,17 @@ export function SendQueueBar({ actions }: { actions: ComposeActions }) {
         const left = item.sendAt - Math.max(now, item.queuedAt);
         const seconds = Math.max(1, Math.ceil(left / 1000));
         const subject = item.session.subject.trim() || "(no subject)";
+        // Undo send is off: it's on its way already.
+        if (item.sendAt <= item.queuedAt)
+          return (
+            <div
+              key={item.id}
+              role="status"
+              className="pointer-events-auto max-w-full truncate rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Sending “{subject}”…
+            </div>
+          );
         return (
           <div
             key={item.id}

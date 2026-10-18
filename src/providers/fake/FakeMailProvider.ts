@@ -23,6 +23,7 @@ import type {
   MessageFlags,
   MessageSummary,
   Page,
+  Sender,
 } from "../../core/model";
 import type {
   ChangeSet,
@@ -49,6 +50,8 @@ export interface FakeMailData {
   readonly contacts?: readonly EmailAddress[];
   /** Colours labels may get. */
   readonly mailboxColors?: readonly MailboxColor[];
+  /** Addresses the account sends from; by default just `me`, without a signature. */
+  readonly senders?: readonly Sender[];
 }
 
 /** Options of {@link FakeMailProvider}. */
@@ -96,6 +99,8 @@ export class FakeMailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: [],
+    senders: true,
+    editSignatures: true,
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
@@ -103,6 +108,9 @@ export class FakeMailProvider implements MailProvider {
   contactsUnavailable: boolean;
   /** One-click unsubscribe URLs "sent" (the demo never goes online). */
   readonly oneClickRequests: string[] = [];
+  /** Set to refuse signature changes as `unavailable` (a declined permission). */
+  signaturesReadOnly = false;
+  #senders: readonly Sender[];
   #mailboxes: readonly Mailbox[];
   readonly #attachments: Map<string, Blob>;
   readonly #latencyMs: number;
@@ -131,6 +139,14 @@ export class FakeMailProvider implements MailProvider {
     this.#messages = [...data.messages];
     this.#attachments = new Map(data.attachments);
     this.#me = data.me ?? { address: "me@example.com" };
+    this.#senders = data.senders ?? [
+      {
+        address: this.#me.address,
+        ...(this.#me.name ? { name: this.#me.name } : {}),
+        isDefault: true,
+        signature: "",
+      },
+    ];
     this.#contacts = data.contacts ?? [];
     this.#latencyMs = options.latencyMs ?? 0;
     this.failWrites = options.failWrites ?? false;
@@ -411,8 +427,8 @@ export class FakeMailProvider implements MailProvider {
       throw new MailError("not-found", `No draft ${draft.id}`, { status: 404 });
     this.#drafts.delete(draft.id);
     // Like Gmail, mail to yourself is one message in Sent and the Inbox.
-    const toMe = [...draft.to, ...draft.cc, ...draft.bcc].some(
-      (a) => a.address.toLowerCase() === this.#me.address.toLowerCase(),
+    const toMe = [...draft.to, ...draft.cc, ...draft.bcc].some((a) =>
+      this.#isMine(a.address),
     );
     const sent = this.#composeMessage(
       draft,
@@ -469,7 +485,8 @@ export class FakeMailProvider implements MailProvider {
       id,
       threadId: draft.threading?.threadId ?? asThreadId(`t-${id}`),
       mailboxIds,
-      from: this.#me,
+      from:
+        draft.from && this.#isMine(draft.from.address) ? draft.from : this.#me,
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,
@@ -584,6 +601,40 @@ export class FakeMailProvider implements MailProvider {
           ? withMembership(message, [], [id])
           : message,
       ),
+    );
+  }
+
+  async listSenders(signal?: AbortSignal): Promise<readonly Sender[]> {
+    await this.#delay(signal);
+    return this.#senders;
+  }
+
+  async updateSignature(
+    address: string,
+    html: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    if (this.signaturesReadOnly)
+      throw new MailError(
+        "unavailable",
+        "Changing the demo's settings isn't allowed.",
+        { status: 403 },
+      );
+    if (!this.#isMine(address))
+      throw new MailError("not-found", `No sender ${address}`, {
+        status: 404,
+      });
+    this.#senders = this.#senders.map((sender) =>
+      sender.address.toLowerCase() === address.toLowerCase()
+        ? { ...sender, signature: html }
+        : sender,
+    );
+  }
+
+  #isMine(address: string): boolean {
+    return this.#senders.some(
+      (sender) => sender.address.toLowerCase() === address.toLowerCase(),
     );
   }
 

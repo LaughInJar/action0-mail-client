@@ -612,6 +612,23 @@ describe("GmailProvider drafts and sending", () => {
       message: { threadId: "t1" },
     });
     expect(uploads[1]?.raw).toContain("Subject: Two");
+    // Without a chosen address Gmail uses the default one.
+    expect(uploads[0]?.raw).not.toMatch(/^From:/m);
+  });
+
+  it("sends from a chosen address", async () => {
+    let raw = "";
+    server.use(
+      http.post(upload("drafts"), async ({ request }) => {
+        raw = (await readUpload(request)).raw;
+        return HttpResponse.json({ id: "d1", message: { id: "m-a" } });
+      }),
+    );
+    await provider().saveDraft({
+      ...draft,
+      from: { name: "Team", address: "team@example.com" },
+    });
+    expect(raw).toMatch(/^From: Team <team@example\.com>/m);
   });
 
   it("doesn't repeat creating a draft after a server error", async () => {
@@ -1244,5 +1261,90 @@ describe("GmailProvider.oneClickUnsubscribe", () => {
     await expect(
       provider().oneClickUnsubscribe("http://plain.example/u"),
     ).rejects.toMatchObject({ code: "provider" });
+  });
+});
+
+describe("GmailProvider senders and signatures", () => {
+  it("lists verified send-as addresses, the default first", async () => {
+    server.use(
+      http.get(url("settings/sendAs"), () =>
+        HttpResponse.json({
+          sendAs: [
+            {
+              sendAsEmail: "me@example.com",
+              displayName: "Me",
+              signature: "<b>Me</b>",
+              isPrimary: true,
+              isDefault: false,
+            },
+            {
+              sendAsEmail: "team@example.com",
+              isDefault: true,
+              verificationStatus: "accepted",
+            },
+            {
+              sendAsEmail: "unverified@example.com",
+              verificationStatus: "pending",
+            },
+          ],
+        }),
+      ),
+    );
+    expect(await provider().listSenders()).toEqual([
+      { address: "team@example.com", isDefault: true, signature: "" },
+      {
+        address: "me@example.com",
+        name: "Me",
+        isDefault: false,
+        signature: "<b>Me</b>",
+      },
+    ]);
+  });
+
+  it("saves a signature, or says the permission is missing", async () => {
+    let body: unknown;
+    server.use(
+      http.patch(
+        url("settings/sendAs/team%40example.com"),
+        async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ sendAsEmail: "team@example.com" });
+        },
+      ),
+      http.patch(url("settings/sendAs/me%40example.com"), () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 403,
+              message: "Request had insufficient authentication scopes.",
+              status: "PERMISSION_DENIED",
+            },
+          },
+          { status: 403 },
+        ),
+      ),
+    );
+    const gmail = provider();
+    await gmail.updateSignature("team@example.com", "<div>Team</div>");
+    expect(body).toEqual({ signature: "<div>Team</div>" });
+    await expect(
+      gmail.updateSignature("me@example.com", "x"),
+    ).rejects.toMatchObject({ code: "unavailable" });
+  });
+
+  it("reads the From address of a draft", async () => {
+    const message = gmailMessage("m1", { labelIds: ["DRAFT"] });
+    const payload = message.payload!;
+    payload.headers = [
+      { name: "From", value: "Team <team@example.com>" },
+      ...(payload.headers ?? []).filter((header) => header.name !== "From"),
+    ];
+    server.use(
+      http.get(url("drafts/d1"), () =>
+        HttpResponse.json({ id: "d1", message }),
+      ),
+    );
+    const draft = await provider().getDraft(asDraftId("d1"));
+    expect(draft.from).toEqual({ name: "Team", address: "team@example.com" });
   });
 });

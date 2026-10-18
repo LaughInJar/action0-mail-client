@@ -146,3 +146,10 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - A System / Light / Dark switch: three small icon buttons next to "action0" at the top left, the current one highlighted. System is the default and follows the OS.
   - The choice is a per-browser setting (localStorage), applied before the first paint so there's no white flash. Native controls (scrollbars, dropdowns) and the phone's address bar follow it.
   - HTML mail keeps its own design (light) in dark mode; plain-text mail follows the theme. No keyboard shortcut.
+- **Settings decisions:**
+  - A ⚙ button next to the theme switch opens Settings: a large dialog on desktop, full screen on phones, part of the URL so Back closes it. Changes apply immediately (no Save button). App settings are per browser (localStorage); signatures live in Gmail.
+  - General: theme (also stays in the header), list density (comfortable / compact; rows stay ≥44px on touch), after archive or delete (next below / above / back to the list).
+  - Reading: mark as read (immediately / after 1.5 s / only by hand), remote images (ask / always / ask but remember trusted senders, with an "Always from this sender" button; the list stays in this browser).
+  - Writing: undo send (off, 5, 10, 20, 30 s; default 30); signatures per send-as address, edited in action0 and saved to Gmail (optional `gmail.settings.basic` scope, so accounts reconnect once; declined means read-only with "Allow editing"). The composer gets a From field when there are several addresses; replies use the address the original was sent to. The signature is its own block after your text and above the quote (no "--" line), sent exactly as stored in Gmail so its formatting survives; × removes it, changing From swaps it, its text is edited in Settings (which warns when the editor would drop formatting).
+  - Notifications: on/off; on asks the browser, blocked explains how to unblock, off hides the bar.
+  - Conversation view is its own feature next; its switch (off by default) goes into Settings then.

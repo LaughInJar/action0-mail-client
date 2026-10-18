@@ -438,3 +438,20 @@ describe("FakeMailProvider label management", () => {
     expect(fake.oneClickRequests).toEqual([url]);
   });
 });
+
+describe("FakeMailProvider senders", () => {
+  it("lists the demo's addresses and saves signatures", async () => {
+    const fake = provider();
+    const senders = await fake.listSenders();
+    expect(senders.map((sender) => sender.address)).toEqual([
+      "demo@example.com",
+      "team@example.com",
+    ]);
+    await fake.updateSignature("team@example.com", "<div>New</div>");
+    expect((await fake.listSenders())[1]?.signature).toBe("<div>New</div>");
+    fake.signaturesReadOnly = true;
+    await expect(
+      fake.updateSignature("team@example.com", "x"),
+    ).rejects.toMatchObject({ code: "unavailable" });
+  });
+});

@@ -24,6 +24,16 @@ export const GMAIL_SCOPE = "https://mail.google.com/";
 export const CONTACTS_SCOPES =
   "https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
 
+/**
+ * Changing Gmail settings, for editing signatures. Optional: declined, the
+ * signatures are read-only.
+ */
+export const SETTINGS_SCOPE =
+  "https://www.googleapis.com/auth/gmail.settings.basic";
+
+/** Permissions that are asked for but may be declined. */
+const OPTIONAL_SCOPES = `${CONTACTS_SCOPES} ${SETTINGS_SCOPE}`;
+
 /** Configuration of the Gmail provider module. */
 export interface GmailModuleOptions {
   /** OAuth client ID of type "Web application". */
@@ -46,7 +56,7 @@ export function createGmailModule({
     new GoogleAuthSession({
       clientId,
       scope: GMAIL_SCOPE,
-      optionalScope: CONTACTS_SCOPES,
+      optionalScope: OPTIONAL_SCOPES,
       loginHint: account.email,
       tokenStore: sessionTokenStore(account.id, tokenStorage),
     });
@@ -63,7 +73,7 @@ export function createGmailModule({
       const ready = peekGis();
       const token = await requestGoogleToken(ready ?? (await loadGis()), {
         clientId,
-        scope: `${GMAIL_SCOPE} ${CONTACTS_SCOPES}`,
+        scope: `${GMAIL_SCOPE} ${OPTIONAL_SCOPES}`,
         required: GMAIL_SCOPE,
         prompt: "select_account",
       });

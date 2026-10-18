@@ -4,6 +4,7 @@ import { isMailError } from "../../core/errors";
 import { useMailboxes, useMessage } from "../../data/hooks";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { listRoute } from "../../state/router";
+import { markReadDelayMs } from "../../state/settings";
 import { errorMessage } from "../common/errorMessage";
 import { IconButton } from "../common/IconButton";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
@@ -88,9 +89,14 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   const { data: message, error, refetch } = useMessage(accountId, messageId);
   const { data: mailboxes } = useMailboxes(accountId);
   const actions = useMailActions();
-  useMarkReadOnView(message, (id) => {
-    actions.setSeen(true, { ids: [id], silent: true });
-  });
+  const markRead = useUi((state) => state.settings.markRead);
+  useMarkReadOnView(
+    message,
+    (id) => {
+      actions.setSeen(true, { ids: [id], silent: true });
+    },
+    markReadDelayMs(markRead),
+  );
   const inbox = mailboxes?.find((mailbox) => mailbox.role === "inbox");
   const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
   const compose = useComposeActions();

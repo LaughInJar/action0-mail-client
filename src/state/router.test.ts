@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { asAccountId, asMailboxId, asMessageId } from "../core/ids";
 import {
   createHashRouter,
+  formatLocation,
   formatRoute,
+  hasSettingsFlag,
   listRoute,
   parseHash,
   sameList,
@@ -135,6 +137,42 @@ describe("createHashRouter", () => {
     router.navigate(route);
     expect(listener).toHaveBeenCalledTimes(2);
     router.dispose();
+  });
+
+  it("opens Settings over the route; Back and closing remove it", () => {
+    const router = createHashRouter(window);
+    const list = { accountId: route.accountId, mailboxId: route.mailboxId };
+    router.navigate(list);
+    const length = window.history.length;
+
+    router.openSettings();
+    expect(router.isSettingsOpen()).toBe(true);
+    expect(window.location.hash).toBe(`${formatRoute(list)}?settings`);
+    expect(window.history.length).toBe(length + 1);
+    expect(router.getRoute()).toEqual(list);
+
+    // Replacing (e.g. the cursor moving) keeps it open; a new entry closes it.
+    router.navigate(route, { replace: true });
+    expect(router.isSettingsOpen()).toBe(true);
+    expect(hasSettingsFlag(window.location.hash)).toBe(true);
+    router.navigate(list);
+    expect(router.isSettingsOpen()).toBe(false);
+
+    // Opened from a reloaded URL (no entry of ours): closing removes the flag.
+    window.history.replaceState(null, "", formatLocation(list, true));
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(router.isSettingsOpen()).toBe(true);
+    router.closeSettings();
+    expect(router.isSettingsOpen()).toBe(false);
+    expect(window.location.hash).toBe(formatRoute(list));
+    router.dispose();
+  });
+
+  it("keeps the settings flag on the root route too", () => {
+    expect(formatLocation(null, true)).toBe("#/?settings");
+    expect(hasSettingsFlag("#/?settings")).toBe(true);
+    expect(parseHash("#/?settings")).toBeNull();
+    expect(formatLocation(route, false)).toBe(formatRoute(route));
   });
 
   it("follows external hash changes", () => {

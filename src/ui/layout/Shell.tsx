@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useRoute, useRouter, useUi } from "../../state/context";
+import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { useActionCommands } from "../actions/useActionCommands";
 import { useMailActions } from "../actions/useMailActions";
 import { useUndo } from "../actions/useUndo";
@@ -25,6 +25,7 @@ import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
 import { AddAccountDialog } from "../accounts/AddAccountDialog";
 import { ConfirmHost } from "../common/ConfirmDialog";
+import { SettingsHost } from "../settings/SettingsHost";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelMenuHost } from "../labels/LabelMenu";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
@@ -60,8 +61,10 @@ function MailApp() {
   useComposeCommands(compose);
   const fileDrop = useFileDrop(compose);
   const router = useRouter();
+  const store = useUiStore();
   useMailSync((arrivals) => {
-    notifyArrivals(arrivals, router);
+    if (store.getState().settings.notifications)
+      notifyArrivals(arrivals, router);
   });
   useDocumentTitle();
   const undo = useUndo(actions, compose);
@@ -143,6 +146,7 @@ function MailApp() {
       <LabelMenuHost />
       <ManageLabelsHost />
       <LabelDialogHost />
+      <SettingsHost />
       <ConfirmHost />
       <AddAccountDialog />
       <ComposerHost breakpoint={breakpoint} actions={compose} />

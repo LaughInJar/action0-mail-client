@@ -13,10 +13,19 @@ export interface SheetProps {
   readonly backdropLabel?: string;
   /** Focus the dialog itself instead of its first field (keeps the phone keyboard closed). */
   readonly focusContainer?: boolean;
-  /** Width on larger screens. */
-  readonly size?: "md" | "lg";
+  /**
+   * Width on larger screens; `page` is a large dialog there and fills the
+   * screen on phones.
+   */
+  readonly size?: "md" | "lg" | "page";
   readonly children: ReactNode;
 }
+
+const SIZES: Readonly<Record<NonNullable<SheetProps["size"]>, string>> = {
+  md: "max-h-[85dvh] rounded-t-2xl sm:top-[10vh] sm:max-w-md",
+  lg: "max-h-[85dvh] rounded-t-2xl sm:top-[10vh] sm:max-w-lg",
+  page: "top-0 pt-[env(safe-area-inset-top)] sm:top-[6vh] sm:h-[88vh] sm:max-w-3xl sm:pt-0",
+};
 
 /**
  * A modal dialog: centered on larger screens, a bottom sheet on phones.
@@ -50,7 +59,7 @@ export function Sheet({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className={`absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl focus:outline-none sm:inset-x-auto sm:top-[10vh] sm:bottom-auto sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:rounded-xl sm:pb-0 dark:bg-zinc-900 ${size === "lg" ? "sm:max-w-lg" : "sm:max-w-md"}`}
+        className={`absolute inset-x-0 bottom-0 flex flex-col bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl focus:outline-none sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:rounded-xl sm:pb-0 dark:bg-zinc-900 ${SIZES[size]}`}
       >
         {children}
       </div>

@@ -12,11 +12,12 @@ import { draftInputOf, type ComposerContent } from "../compose/session";
 import type { Draft, OutgoingAttachment } from "../core/compose";
 import { isMailError, MailError } from "../core/errors";
 import type { AccountId, DraftId, MessageId } from "../core/ids";
-import type { EmailAddress, Mailbox, Message } from "../core/model";
+import type { EmailAddress, Mailbox, Message, Sender } from "../core/model";
 import type { MailProvider } from "../core/provider";
 import { foldText } from "../lib/text";
 import { useReadyHandle } from "./hooks";
 import { queryKeys } from "./keys";
+import { fetchSenders } from "./senders";
 import type { MessageListData } from "./optimistic";
 
 /** A saved draft: its id and its message's current id. */
@@ -62,6 +63,8 @@ export interface DraftSync {
     accountId: AccountId,
     id: MessageId,
   ) => Promise<Message>;
+  /** The addresses the account sends from, with signatures ([] if none). */
+  readonly senders: (accountId: AccountId) => Promise<readonly Sender[]>;
   /** The parts with their bytes loaded (kept in memory while composing). */
   readonly loadParts: (
     accountId: AccountId,
@@ -236,6 +239,7 @@ export function createDraftSync(
 
     getDraft: (accountId, id) => providerOf(accountId).getDraft(id),
     getMessage,
+    senders: (accountId) => fetchSenders(queryClient, registry, accountId),
     loadParts,
   };
 }

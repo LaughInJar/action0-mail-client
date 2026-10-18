@@ -234,5 +234,19 @@ describe("GoogleAuthSession", () => {
       await session.signIn();
       expect(scopes[1]).toBe(SCOPE);
     });
+
+    it("asks again for declined scopes when the user wants to", async () => {
+      const { session, scopes } = setup(
+        [
+          { kind: "token", scope: SCOPE },
+          { kind: "token", scope: `${SCOPE} ${CONTACTS}` },
+        ],
+        new MemoryStorage(),
+        CONTACTS,
+      );
+      await session.signIn();
+      await session.signIn({ askAgain: true });
+      expect(scopes[1]).toBe(`${SCOPE} ${CONTACTS}`);
+    });
   });
 });

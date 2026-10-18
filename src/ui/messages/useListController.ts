@@ -46,12 +46,14 @@ export function useListController(breakpoint: Breakpoint): void {
     const sync = () => {
       const state = store.getState();
       const current = router.getRoute();
-      if (
-        !current ||
-        state.focusedId === null ||
-        state.listKey !== listKeyOf(current, state.listOrder)
-      )
+      if (!current || state.listKey !== listKeyOf(current, state.listOrder))
         return;
+      // Nothing open any more ("back to the list" after archiving).
+      if (state.focusedId === null) {
+        if (current.messageId !== undefined && state.anchorId !== null)
+          router.navigate(listRoute(current), { replace: true });
+        return;
+      }
       if (current.messageId === state.focusedId) return;
       router.navigate(
         { ...current, messageId: state.focusedId },
@@ -64,12 +66,14 @@ export function useListController(breakpoint: Breakpoint): void {
     });
   }, [breakpoint, router, store]);
 
-  // Focus the newest message once the list has loaded.
+  // Focus the newest message once the list has loaded (not after "back to
+  // the list", which leaves an anchor to continue from).
   useEffect(() => {
     const state = store.getState();
     if (
       state.listKey === listKey &&
       state.focusedId === null &&
+      state.anchorId === null &&
       ids.length > 0
     ) {
       state.focusAt(ids, 0);
