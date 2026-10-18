@@ -1,0 +1,146 @@
+# action0 mail
+
+A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
+
+**Status:** feature 1 — Gmail, read-only.
+
+- Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
+- Several Gmail accounts side by side.
+- Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
+- Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
+- A demo account with sample mail, so you can try the UI without signing in.
+
+## Quick start
+
+Requires Node.js 22.12 or newer (CI uses the version in `.nvmrc`).
+
+```sh
+npm install
+npm run dev
+```
+
+Open <http://localhost:5173/?demo> to start with the demo account. To read your Gmail, set up an OAuth client first (next section).
+
+## Setting up Google sign-in
+
+The app uses the Google Identity Services token model with the `gmail.readonly` scope. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
+2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it.
+3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
+   - **Branding:** an app name and your support email.
+   - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
+   - **Data access:** add the scope `https://www.googleapis.com/auth/gmail.readonly`.
+4. Go to **Clients → Create client**:
+   - Application type: **Web application**.
+   - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
+   - **Authorized redirect URIs:** none needed.
+5. Copy the client ID and put it into `.env.local` in the project root:
+
+   ```sh
+   cp .env.example .env.local
+   # then edit .env.local:
+   VITE_GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+   ```
+
+6. Restart `npm run dev` and click **Sign in with Google**.
+
+Things to know:
+
+- `gmail.readonly` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
+- Google issues access tokens that last **one hour** and no refresh token to browser apps without a backend. The app refreshes the token on your next click or key press shortly before it expires (the Google popup opens and closes by itself while you're signed in to Google). If that's not possible, a bar offers a one-click **Reconnect**. On touch devices the popup would open as a new tab, so there the bar appears a few minutes before expiry instead.
+- Reading mail here does **not** mark it as read in Gmail (the app only has read-only access).
+
+## Testing on a phone
+
+`npm run dev:lan` makes the dev server reachable on your local network. The demo works there right away (`http://<your-ip>:5173/?demo`).
+
+Google sign-in does not: Google only allows plain `http://` origins for `localhost`. To sign in from a phone, serve the app over HTTPS, for example through a tunnel, and add that HTTPS origin to the OAuth client's _Authorized JavaScript origins_. Vite only accepts known host names, so also add the tunnel host to `server.allowedHosts` in `vite.config.ts` while testing.
+
+## Scripts
+
+| Command           | What it does                                                    |
+| ----------------- | --------------------------------------------------------------- |
+| `npm run dev`     | Dev server on <http://localhost:5173>                           |
+| `npm run dev:lan` | Same, reachable from other devices on the network               |
+| `npm run build`   | Typecheck and production build into `dist/` (with a strict CSP) |
+| `npm run preview` | Serve the production build on port 5173                         |
+| `npm test`        | Run all tests once (`npm run test:watch` to keep watching)      |
+| `npm run lint`    | ESLint (strict, type-aware, accessibility rules)                |
+| `npm run format`  | Format everything with Prettier (`format:check` only checks)    |
+| `npm run check`   | Everything CI runs: typecheck, lint, format check, tests, build |
+
+## Keyboard shortcuts
+
+| Keys                                                                        | Action                                 |
+| --------------------------------------------------------------------------- | -------------------------------------- |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                |
+| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                   |
+| <kbd>x</kbd>                                                                | Select or unselect the current message |
+| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)     |
+| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message            |
+| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                     |
+| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail |
+| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)              |
+| <kbd>?</kbd>                                                                | Show all shortcuts                     |
+
+With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
+
+## Architecture
+
+```
+src/
+  core/        Domain model, MailProvider interface, errors. No dependencies.
+  auth/        AuthSession interface; google/ = Google Identity Services token client
+  providers/
+    gmail/     Gmail REST adapter: HTTP client (retries, concurrency limit),
+               label mapping, MIME parsing, mappers
+    fake/      In-memory provider: tests and the demo account
+  accounts/    Account registry: one auth session + provider per account
+  data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy
+  state/       UI state (Zustand): focus, selection, layout; hash router
+  keyboard/    Central shortcut registry
+  security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
+  ui/          React components: layout, mailboxes, messages, reader, help
+  app/         Composition root: wires providers, registry, cache and UI together
+```
+
+Rules, enforced by ESLint where possible:
+
+- The UI, data and state layers depend only on the provider-agnostic contracts in `src/core`. Concrete providers are wired up in `src/app`.
+- Providers do no caching; the data layer does.
+- IDs and pagination cursors are opaque strings that only their provider interprets.
+
+### Labels and folders
+
+The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc8621): a message belongs to a _set_ of mailboxes. Each mailbox has a kind:
+
+- `label` — non-exclusive (Gmail labels),
+- `folder` — exclusive, one per message (Exchange, IMAP),
+- `view` — computed, like Gmail's "All Mail" or "Starred".
+
+An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations (coming with later features) are intents such as _archive_ or _move_ that each provider translates into its own API calls.
+
+### What is stored where
+
+| Where          | What                                                                   | How long                            |
+| -------------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images   | Until reload                        |
+| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache)      | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion | Until sign-out                      |
+
+Tokens never go to localStorage, and mail content is never stored long-term.
+
+### Security model for HTML mail
+
+1. **DOMPurify** removes scripts, event handlers, `javascript:` URLs, forms, frames and `<meta>`/`<base>` tags.
+2. The mail is shown in an **iframe sandbox without `allow-scripts`** (`allow-same-origin` is only there so the app can measure the content's height, which is safe without scripts).
+3. A **Content Security Policy inside the iframe** (`default-src 'none'`) blocks every remote request — images, CSS backgrounds and imports, fonts — until you click _Load images_, which allows remote images for that message only. Inline (`cid:`) images are embedded as `data:` URLs.
+
+The production build also sets a strict CSP for the app itself.
+
+## Tests and CI
+
+Tests use Vitest and React Testing Library and live next to the code (`*.test.ts(x)`). Provider APIs are always mocked: the Gmail adapter is tested against [MSW](https://mswjs.io/) HTTP mocks (unhandled requests fail the test), the UI against the in-memory provider.
+
+GitHub Actions runs typecheck, lint, format check, tests and build on every pull request and push to `main` (`.github/workflows/ci.yml`). To make these checks mandatory for merging, add the **check** job as a required status check in the repository's branch protection rules.

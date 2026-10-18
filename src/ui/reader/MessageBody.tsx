@@ -1,0 +1,86 @@
+import { useMemo } from "react";
+import type { AccountId } from "../../core/ids";
+import type { Message } from "../../core/model";
+import { useInlineImages } from "../../data/hooks";
+import { buildMailDocument } from "../../security/mailDocument";
+import { sanitizeMailHtml } from "../../security/sanitize";
+import { useUi } from "../../state/context";
+import { Icon } from "../common/Icon";
+import { SafeHtmlFrame } from "./SafeHtmlFrame";
+
+/** Props of {@link MessageBody}. */
+export interface MessageBodyProps {
+  readonly accountId: AccountId;
+  readonly message: Message;
+}
+
+/**
+ * The message content: sanitized HTML in a sandboxed iframe, or plain text.
+ * Remote content stays blocked until the user allows it for this message.
+ */
+export function MessageBody({ accountId, message }: MessageBodyProps) {
+  const html = message.body.html;
+  const sanitized = useMemo(
+    () => (html === undefined ? undefined : sanitizeMailHtml(html)),
+    [html],
+  );
+  const { data: inlineImages } = useInlineImages(accountId, message);
+  const allowed = useUi((state) => state.remoteContentAllowed.has(message.id));
+  const allowRemoteContent = useUi((state) => state.allowRemoteContent);
+
+  const srcDoc = useMemo(
+    () =>
+      sanitized
+        ? buildMailDocument(sanitized.html, {
+            allowRemoteContent: allowed,
+            ...(inlineImages ? { inlineImages } : {}),
+          })
+        : undefined,
+    [sanitized, allowed, inlineImages],
+  );
+
+  if (sanitized && srcDoc !== undefined) {
+    return (
+      <>
+        {sanitized.hasRemoteContent && !allowed && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-700 sm:px-6 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+          >
+            <Icon name="image" className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1">
+              Remote images are blocked to protect your privacy.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                allowRemoteContent(message.id);
+              }}
+              className="rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
+            >
+              Load images
+            </button>
+          </div>
+        )}
+        <SafeHtmlFrame
+          srcDoc={srcDoc}
+          title={`Message: ${message.subject || "(no subject)"}`}
+        />
+      </>
+    );
+  }
+
+  if (message.body.text !== undefined) {
+    return (
+      <div className="px-4 py-4 text-sm leading-relaxed break-words whitespace-pre-wrap sm:px-6">
+        {message.body.text}
+      </div>
+    );
+  }
+
+  return (
+    <p className="px-6 py-4 text-sm text-zinc-500 italic">
+      This message has no content.
+    </p>
+  );
+}
