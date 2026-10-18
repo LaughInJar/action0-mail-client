@@ -3,23 +3,57 @@
  * replies and forwards (recipients, subjects, threading headers).
  */
 import type { AttachmentId, DraftId, MessageId, ThreadId } from "./ids";
-import type { EmailAddress, Message } from "./model";
+import type { AttachmentInfo, EmailAddress, Message } from "./model";
 
-/** A part of an original message that a forward carries along. */
-export interface ForwardedPart {
+/** Where the bytes of an attachment are: a part of another message. */
+export interface PartSource {
   readonly messageId: MessageId;
   readonly attachmentId: AttachmentId;
+}
+
+/**
+ * A file of an outgoing mail: one of your own, or a part of another message
+ * (forwards, reopened drafts). One of `source` and `content` is always set.
+ */
+export interface OutgoingAttachment {
+  /** Identifies the attachment while composing. */
+  readonly id: string;
   readonly filename: string;
   readonly mimeType: string;
   /** Size in bytes. */
   readonly size: number;
-  /** Set for inline images that the quoted HTML references as `cid:`. */
+  /** Set for inline images, which the HTML references as `cid:<contentId>`. */
   readonly contentId?: string;
+  /** Where to fetch the bytes from while they aren't loaded. */
+  readonly source?: PartSource;
   /**
-   * The bytes, once loaded (kept in memory while composing, so every save
-   * doesn't download them again). Providers fetch them if absent.
+   * The bytes: a File for your own files; for parts of other messages, once
+   * loaded (kept in memory while composing, so saves don't download them
+   * again).
    */
   readonly content?: Blob;
+}
+
+/** A part of another message as an outgoing attachment (forwards, reopened drafts). */
+export function attachmentOf(
+  messageId: MessageId,
+  part: AttachmentInfo,
+): OutgoingAttachment {
+  return {
+    id: `${messageId}/${part.id}`,
+    filename: part.filename,
+    mimeType: part.mimeType,
+    size: part.size,
+    ...(part.contentId === undefined ? {} : { contentId: part.contentId }),
+    source: { messageId, attachmentId: part.id },
+  };
+}
+
+/** Bytes that the attachments add to a mail (inline images included). */
+export function attachmentBytes(
+  attachments: readonly OutgoingAttachment[],
+): number {
+  return attachments.reduce((sum, attachment) => sum + attachment.size, 0);
 }
 
 /** What keeps a reply or forward in its conversation. */
@@ -44,8 +78,8 @@ export interface DraftInput {
   readonly html: string;
   /** Plain-text version of {@link html}. */
   readonly text: string;
-  /** Parts of the original message that a forward includes. */
-  readonly forwarded: readonly ForwardedPart[];
+  /** Files and inline images. */
+  readonly attachments: readonly OutgoingAttachment[];
   readonly threading?: Threading;
 }
 

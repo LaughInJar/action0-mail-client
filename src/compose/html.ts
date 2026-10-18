@@ -31,6 +31,9 @@ export function editorHtmlToMail(html: string): string {
     `<body>${html}</body>`,
     "text/html",
   );
+  // Big pictures shrink to the recipient's window.
+  for (const image of Array.from(doc.body.querySelectorAll("img")))
+    image.setAttribute("style", "max-width:100%");
   for (const paragraph of Array.from(doc.body.querySelectorAll("p"))) {
     const div = doc.createElement("div");
     div.append(...Array.from(paragraph.childNodes));

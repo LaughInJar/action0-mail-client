@@ -4,10 +4,134 @@ import {
   useEditorState,
   type Editor,
 } from "@tiptap/react";
+import { Image, type ImageOptions } from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extensions";
+import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Icon, type IconName } from "../common/Icon";
+
+/** An inline image to show at the drop or paste position. */
+export interface InlineImageRef {
+  readonly contentId: string;
+  readonly alt: string;
+}
+
+/**
+ * URLs that show the open composer's inline images, by Content-ID (there is
+ * one composer at a time). Kept current by {@link RichTextEditor}.
+ */
+const shownImages = new Map<string, string>();
+
+/**
+ * Inline images that live in the mail as `cid:` references. Only such
+ * images are accepted, so pasting from a web page never brings remote
+ * images along; the editor shows them from in-memory files.
+ */
+const CidImage = Image.extend<ImageOptions>({
+  addOptions() {
+    return {
+      inline: true,
+      allowBase64: false,
+      HTMLAttributes: {},
+      resize: false,
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'img[src^="cid:"]' }];
+  },
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      // Rendered as data-cid: an <img src="cid:…"> in the page would try to
+      // load it (ProseMirror draws plain images before node views are set).
+      src: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("src"),
+        renderHTML: (attributes) => ({
+          "data-cid": String(attributes.src ?? "").replace(/^cid:/, ""),
+        }),
+      },
+    };
+  },
+  addNodeView() {
+    return ({ node }) => {
+      const image = document.createElement("img");
+      image.className = "inline-block max-w-full align-bottom";
+      const render = (current: ProseMirrorNode) => {
+        const src = String(current.attrs.src ?? "");
+        const contentId = src.startsWith("cid:") ? src.slice(4) : "";
+        image.dataset.cid = contentId;
+        image.alt = String(current.attrs.alt ?? "");
+        const url = shownImages.get(contentId);
+        if (url) image.src = url;
+        else image.removeAttribute("src");
+      };
+      render(node);
+      return {
+        dom: image,
+        update: (next) => {
+          if (next.type !== node.type) return false;
+          render(next);
+          return true;
+        },
+      };
+    };
+  },
+});
+
+/**
+ * The editor's HTML. Serialized in a detached document: elements created in
+ * the page itself would start loading their `cid:` images.
+ */
+function editorHtml(editor: Editor): string {
+  const inert = document.implementation.createHTMLDocument("");
+  const container = inert.createElement("div");
+  container.append(
+    DOMSerializer.fromSchema(editor.schema).serializeFragment(
+      editor.state.doc.content,
+      { document: inert },
+    ),
+  );
+  for (const image of container.querySelectorAll("img[data-cid]")) {
+    image.setAttribute("src", `cid:${image.getAttribute("data-cid") ?? ""}`);
+    image.removeAttribute("data-cid");
+  }
+  return container.innerHTML;
+}
+
+/** Puts inline images at `at` (or the closest text position). */
+function insertImages(
+  view: EditorView,
+  at: number,
+  images: readonly InlineImageRef[],
+): void {
+  const type = view.state.schema.nodes.image;
+  if (!type || images.length === 0) return;
+  const tr = view.state.tr;
+  tr.setSelection(TextSelection.near(tr.doc.resolve(at)));
+  for (const { contentId, alt } of images)
+    tr.replaceSelectionWith(
+      type.create({ src: `cid:${contentId}`, alt }),
+      false,
+    );
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+}
+
+/** The document position under a drop (jsdom and some browsers can't tell). */
+function dropPosition(view: EditorView, event: DragEvent): number {
+  try {
+    return (
+      view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ??
+      view.state.selection.from
+    );
+  } catch {
+    return view.state.selection.from;
+  }
+}
 
 /** DOM id of the editable message body. */
 export const COMPOSER_BODY_ID = "composer-body";
@@ -19,6 +143,13 @@ export interface RichTextEditorProps {
   readonly onChange: (html: string) => void;
   /** Put the cursor into the text right away (at its start). */
   readonly focusOnOpen: boolean;
+  /** URLs that show inline images, by Content-ID. */
+  readonly imageUrls: Readonly<Record<string, string>>;
+  /**
+   * Files dropped or pasted into the text. Returns the images to show inline
+   * there; the others became attachments (or nothing, if they don't fit).
+   */
+  readonly onFiles: (files: readonly File[]) => readonly InlineImageRef[];
 }
 
 /**
@@ -30,10 +161,14 @@ export function RichTextEditor({
   initialHtml,
   onChange,
   focusOnOpen,
+  imageUrls,
+  onFiles,
 }: RichTextEditorProps) {
   const changed = useRef(onChange);
+  const filesAdded = useRef(onFiles);
   useEffect(() => {
     changed.current = onChange;
+    filesAdded.current = onFiles;
   });
   const [linking, setLinking] = useState(false);
 
@@ -52,10 +187,32 @@ export function RichTextEditor({
         },
       }),
       Placeholder.configure({ placeholder: "Write your message…" }),
+      CidImage,
     ],
     content: initialHtml,
     autofocus: focusOnOpen ? "start" : false,
     editorProps: {
+      handleDrop: (view, event, _slice, moved) => {
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (moved || files.length === 0) return false;
+        event.preventDefault();
+        insertImages(
+          view,
+          dropPosition(view, event),
+          filesAdded.current(files),
+        );
+        return true;
+      },
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        if (files.length === 0) return false;
+        insertImages(
+          view,
+          view.state.selection.from,
+          filesAdded.current(files),
+        );
+        return true;
+      },
       attributes: {
         id: COMPOSER_BODY_ID,
         role: "textbox",
@@ -66,9 +223,41 @@ export function RichTextEditor({
       },
     },
     onUpdate: ({ editor: current }) => {
-      changed.current(current.getHTML());
+      changed.current(editorHtml(current));
     },
   });
+
+  // Images whose file loads later (reopened drafts, forwards) appear then.
+  useEffect(() => {
+    shownImages.clear();
+    for (const [contentId, url] of Object.entries(imageUrls))
+      shownImages.set(contentId, url);
+    const show = () => {
+      for (const image of editor.view.dom.querySelectorAll<HTMLImageElement>(
+        "img[data-cid]",
+      )) {
+        const url = imageUrls[image.dataset.cid ?? ""];
+        if (url && image.getAttribute("src") !== url) image.src = url;
+      }
+    };
+    if (editor.isInitialized) {
+      show();
+      return;
+    }
+    // The editor finishes setting up a moment after mounting.
+    editor.on("create", show);
+    return () => {
+      editor.off("create", show);
+    };
+  }, [editor, imageUrls]);
+
+  // The URLs belong to this editor's files; a later editor gets its own.
+  useEffect(
+    () => () => {
+      shownImages.clear();
+    },
+    [],
+  );
 
   const onKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {

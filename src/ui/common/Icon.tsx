@@ -160,6 +160,14 @@ const PATHS = {
     </>
   ),
   "chevron-up": <polyline points="18 15 12 9 6 15" />,
+  "chevron-left": <polyline points="15 18 9 12 15 6" />,
+  download: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </>
+  ),
   bold: (
     <>
       <path d="M6 4h8a4 4 0 0 1 0 8H6z" />

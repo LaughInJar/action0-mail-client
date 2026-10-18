@@ -352,7 +352,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
               bcc: [],
               subject: "",
               body: "",
-              forwarded: [],
+              attachments: [],
               showCcBcc: false,
               window: "docked",
               focus: "to",

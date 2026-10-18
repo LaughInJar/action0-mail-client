@@ -1,17 +1,94 @@
-import type { Message } from "../../core/model";
-import { referencedInlineImages } from "../../data/hooks";
+import { useState } from "react";
+import type { AccountId } from "../../core/ids";
+import type { AttachmentInfo, Message } from "../../core/model";
+import { referencedInlineImages, useFetchAttachment } from "../../data/hooks";
+import { useUiStore } from "../../state/context";
+import { errorMessage } from "../common/errorMessage";
+import { attachmentKind, downloadBlob } from "../common/files";
 import { formatBytes } from "../common/format";
-import { Icon } from "../common/Icon";
+import { Icon, type IconName } from "../common/Icon";
+import { ImageViewer } from "./ImageViewer";
 
-/** Attachments of a message, except inline images that the body shows. */
-export function AttachmentList({ message }: { message: Message }) {
+const KIND_ICONS: Readonly<
+  Record<ReturnType<typeof attachmentKind>, IconName>
+> = {
+  image: "image",
+  pdf: "file",
+  download: "paperclip",
+};
+
+/**
+ * Attachments of a message, except inline images that the body shows.
+ * Images open in the viewer, PDFs in the browser's PDF viewer (new tab),
+ * everything else downloads; each one also has a Download button.
+ */
+export function AttachmentList({
+  accountId,
+  message,
+}: {
+  accountId: AccountId;
+  message: Message;
+}) {
+  const fetchFile = useFetchAttachment();
+  const store = useUiStore();
+  const [viewing, setViewing] = useState<number | null>(null);
   const inline = new Set(
     referencedInlineImages(message).map((attachment) => attachment.id),
   );
   const attachments = message.attachments.filter(
     (attachment) => !inline.has(attachment.id),
   );
+  const images = attachments.filter((a) => attachmentKind(a) === "image");
   if (attachments.length === 0) return null;
+
+  const load = (attachment: AttachmentInfo) =>
+    fetchFile(accountId, message.id, attachment.id);
+  const failed = (attachment: AttachmentInfo) => (error: unknown) => {
+    store.getState().showToast({
+      message: `Couldn’t open ${attachment.filename}: ${errorMessage(error)}`,
+      tone: "error",
+    });
+  };
+  const download = (attachment: AttachmentInfo) => {
+    load(attachment).then((blob) => {
+      downloadBlob(blob, attachment.filename);
+    }, failed(attachment));
+  };
+  const openPdf = (attachment: AttachmentInfo) => {
+    // Open the tab inside the click (popup blockers), fill it once loaded.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    load(attachment).then(
+      (blob) => {
+        // The type is forced: whatever the file really is, it shows as PDF.
+        const url = URL.createObjectURL(
+          new Blob([blob], { type: "application/pdf" }),
+        );
+        if (tab) tab.location.href = url;
+        else downloadBlob(blob, attachment.filename);
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 60_000);
+      },
+      (error: unknown) => {
+        tab?.close();
+        failed(attachment)(error);
+      },
+    );
+  };
+  const open = (attachment: AttachmentInfo) => {
+    switch (attachmentKind(attachment)) {
+      case "image":
+        setViewing(images.indexOf(attachment));
+        break;
+      case "pdf":
+        openPdf(attachment);
+        break;
+      case "download":
+        download(attachment);
+        break;
+    }
+  };
 
   return (
     <section
@@ -21,23 +98,63 @@ export function AttachmentList({ message }: { message: Message }) {
       <h2 className="mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
         {attachments.length === 1
           ? "1 attachment"
-          : `${attachments.length} attachments`}
+          : `${String(attachments.length)} attachments`}
       </h2>
       <ul className="flex flex-wrap gap-2">
-        {attachments.map((attachment) => (
-          <li
-            key={attachment.id}
-            title={`${attachment.filename} (${attachment.mimeType})`}
-            className="flex max-w-full items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700"
-          >
-            <Icon name="paperclip" className="size-4 shrink-0 text-zinc-500" />
-            <span className="min-w-0 truncate">{attachment.filename}</span>
-            <span className="shrink-0 text-xs text-zinc-500">
-              {formatBytes(attachment.size)}
-            </span>
-          </li>
-        ))}
+        {attachments.map((attachment) => {
+          const kind = attachmentKind(attachment);
+          return (
+            <li
+              key={attachment.id}
+              className="flex max-w-full items-center rounded-lg border border-zinc-200 text-sm dark:border-zinc-700"
+            >
+              <button
+                type="button"
+                title={`${attachment.filename} (${attachment.mimeType})`}
+                aria-label={`${kind === "download" ? "Download" : "Open"} ${attachment.filename}`}
+                onClick={() => {
+                  open(attachment);
+                }}
+                className="flex min-w-0 items-center gap-2 rounded-l-lg py-2 pr-2 pl-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
+              >
+                <Icon
+                  name={KIND_ICONS[kind]}
+                  className="size-4 shrink-0 text-zinc-500"
+                />
+                <span className="min-w-0 truncate">{attachment.filename}</span>
+                <span className="shrink-0 text-xs text-zinc-500">
+                  {formatBytes(attachment.size)}
+                </span>
+              </button>
+              {kind !== "download" && (
+                <button
+                  type="button"
+                  aria-label={`Download ${attachment.filename}`}
+                  title="Download"
+                  onClick={() => {
+                    download(attachment);
+                  }}
+                  className="grid size-9 shrink-0 place-items-center rounded-r-lg border-l border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:size-11"
+                >
+                  <Icon name="download" className="size-4" />
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {viewing !== null && images[viewing] && (
+        <ImageViewer
+          images={images}
+          index={viewing}
+          load={load}
+          onIndex={setViewing}
+          onDownload={download}
+          onClose={() => {
+            setViewing(null);
+          }}
+        />
+      )}
     </section>
   );
 }

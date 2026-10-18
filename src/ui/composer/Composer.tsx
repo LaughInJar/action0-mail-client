@@ -12,7 +12,10 @@ import { IconButton } from "../common/IconButton";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { SafeHtmlFrame } from "../reader/SafeHtmlFrame";
 import { AddressField } from "./AddressField";
+import { sentBytes } from "../../compose/session";
+import { megabytes } from "../common/files";
 import { COMPOSER_IDS } from "./ids";
+import { useComposerFiles } from "./useComposerFiles";
 import { RichTextEditor } from "./RichTextEditor";
 import type { ComposeActions } from "./useComposeActions";
 
@@ -52,6 +55,8 @@ function ComposerWindow({
   const rootRef = useRef<HTMLDivElement>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmNoSubject, setConfirmNoSubject] = useState(false);
+  const files = useComposerFiles(session, rootRef, setProblem);
+  const pickerRef = useRef<HTMLInputElement>(null);
 
   useFocusTrap(rootRef, fullScreen);
   // The first field to fill in: To for new mail, the text for replies.
@@ -88,6 +93,13 @@ function ComposerWindow({
     }
     if (invalid) {
       setProblem(`“${invalid.address}” isn’t a valid address.`);
+      return;
+    }
+    const bytes = sentBytes(session);
+    if (bytes > files.maxBytes) {
+      setProblem(
+        `The attachments add up to ${megabytes(bytes)}; the limit is ${megabytes(files.maxBytes)}. Remove some to send.`,
+      );
       return;
     }
     if (!skipSubjectCheck && !session.subject.trim()) {
@@ -357,6 +369,8 @@ function ComposerWindow({
           <RichTextEditor
             initialHtml={session.body}
             focusOnOpen={initialFocus === "body"}
+            imageUrls={files.imageUrls}
+            onFiles={(added) => files.addFiles(added, true)}
             onChange={(body) => {
               update({ body });
             }}
@@ -366,22 +380,17 @@ function ComposerWindow({
               html={session.quote.html}
               kind={session.kind}
               onRemove={() => {
+                // Inline images only the quote showed are left out when saving.
                 const { quote, ...rest } = session;
-                store.getState().openComposer({
-                  ...rest,
-                  forwarded: rest.forwarded.filter(
-                    (p) => p.contentId === undefined,
-                  ),
-                  dirty: true,
-                });
+                store.getState().openComposer({ ...rest, dirty: true });
               }}
             />
           )}
-          <ForwardedFiles
+          <AttachedFiles
             session={session}
-            onRemove={(index) => {
+            onRemove={(id) => {
               update({
-                forwarded: session.forwarded.filter((_, i) => i !== index),
+                attachments: session.attachments.filter((p) => p.id !== id),
               });
             }}
           />
@@ -439,6 +448,23 @@ function ComposerWindow({
                 </kbd>
               </button>
             )}
+            <IconButton
+              label="Attach files"
+              icon="paperclip"
+              onClick={() => pickerRef.current?.click()}
+            />
+            <input
+              ref={pickerRef}
+              type="file"
+              multiple
+              hidden
+              aria-hidden="true"
+              tabIndex={-1}
+              onChange={(event) => {
+                files.addFiles(Array.from(event.target.files ?? []), false);
+                event.target.value = "";
+              }}
+            />
             <div className="flex-1" />
             <IconButton
               label="Discard draft"
@@ -446,6 +472,12 @@ function ComposerWindow({
               onClick={actions.discard}
             />
           </footer>
+          {files.dragOver && (
+            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-t-lg border-2 border-dashed border-blue-500 bg-blue-50/85 p-6 text-center text-sm font-medium text-blue-900 dark:bg-blue-950/85 dark:text-blue-100">
+              Drop files to attach them. Pictures dropped into the text appear
+              inline.
+            </div>
+          )}
         </>
       )}
     </div>
@@ -507,26 +539,26 @@ function QuotedOriginal({
   );
 }
 
-/** Files of the original that a forward includes, removable. */
-function ForwardedFiles({
+/** The mail's files (not the inline images), removable. */
+function AttachedFiles({
   session,
   onRemove,
 }: {
   session: ComposerSession;
-  onRemove: (index: number) => void;
+  onRemove: (id: string) => void;
 }) {
-  const files = session.forwarded
-    .map((part, index) => ({ part, index }))
-    .filter(({ part }) => part.contentId === undefined);
+  const files = session.attachments.filter(
+    (part) => part.contentId === undefined,
+  );
   if (files.length === 0) return null;
   return (
     <ul
       aria-label="Attachments"
-      className="flex shrink-0 flex-wrap gap-1.5 border-t border-zinc-200 px-3 py-2 dark:border-zinc-800"
+      className="flex max-h-28 shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-zinc-200 px-3 py-2 dark:border-zinc-800"
     >
-      {files.map(({ part, index }) => (
+      {files.map((part) => (
         <li
-          key={`${part.attachmentId}-${String(index)}`}
+          key={part.id}
           className="flex max-w-full items-center gap-1.5 rounded-md border border-zinc-200 py-0.5 pr-0.5 pl-2 text-xs dark:border-zinc-700"
         >
           <Icon name="paperclip" className="size-3.5 shrink-0 text-zinc-500" />
@@ -538,7 +570,7 @@ function ForwardedFiles({
             type="button"
             aria-label={`Remove ${part.filename}`}
             onClick={() => {
-              onRemove(index);
+              onRemove(part.id);
             }}
             className="grid size-6 shrink-0 place-items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 pointer-coarse:size-9"
           >

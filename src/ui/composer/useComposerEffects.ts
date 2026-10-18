@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { forwardedBytes } from "../../compose/session";
+import { sentBytes } from "../../compose/session";
 import { asDraftId } from "../../core/ids";
 import { useDraftSync } from "../../data/drafts";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
@@ -14,7 +14,7 @@ import {
 /** A draft saves this long after the last edit. */
 export const AUTOSAVE_DELAY_MS = 2000;
 /**
- * Drafts that carry big forwarded files save less often: providers replace
+ * Drafts that carry big files save less often: providers replace
  * drafts as a whole, so every save uploads the files again.
  */
 export const LARGE_AUTOSAVE_DELAY_MS = 30_000;
@@ -52,8 +52,7 @@ export function useComposerEffects(
     const session = store.getState().composer;
     if (!session) return;
     const delay =
-      session.saveError !== undefined ||
-      forwardedBytes(session) > LARGE_DRAFT_BYTES
+      session.saveError !== undefined || sentBytes(session) > LARGE_DRAFT_BYTES
         ? LARGE_AUTOSAVE_DELAY_MS
         : AUTOSAVE_DELAY_MS;
     const timer = setTimeout(() => {

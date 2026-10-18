@@ -1,7 +1,9 @@
 import {
+  attachmentOf,
   uniqueAddresses,
   type Draft,
   type DraftInput,
+  type OutgoingAttachment,
 } from "../../core/compose";
 import { isMailError, MailError } from "../../core/errors";
 import {
@@ -142,6 +144,7 @@ export class GmailProvider implements MailProvider {
     deleteForever: true,
     compose: true,
     contacts: false,
+    maxAttachmentBytes: 25 * 1024 * 1024,
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;
@@ -283,16 +286,9 @@ export class GmailProvider implements MailProvider {
       subject: message.subject,
       html: message.body.html ?? "",
       text: message.body.text ?? "",
-      forwarded: message.attachments.map((attachment) => ({
-        messageId: message.id,
-        attachmentId: attachment.id,
-        filename: attachment.filename,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-        ...(attachment.contentId === undefined
-          ? {}
-          : { contentId: attachment.contentId }),
-      })),
+      attachments: message.attachments.map((part) =>
+        attachmentOf(message.id, part),
+      ),
       threading: {
         ...(message.threadId === undefined
           ? {}
@@ -358,17 +354,29 @@ export class GmailProvider implements MailProvider {
     }
   }
 
-  /** The raw message for a draft, with the bytes of forwarded parts. */
+  /** An attachment's bytes: loaded already, or fetched from its message. */
+  #bytesOf(part: OutgoingAttachment, signal?: AbortSignal): Promise<Blob> {
+    if (part.content) return Promise.resolve(part.content);
+    if (!part.source)
+      return Promise.reject(
+        new MailError("provider", `No content for "${part.filename}".`),
+      );
+    return this.getAttachment(
+      part.source.messageId,
+      part.source.attachmentId,
+      signal,
+    );
+  }
+
+  /** The raw message for a draft, with the bytes of its attachments. */
   async #raw(
     draft: DraftInput,
     signal?: AbortSignal,
     date?: Date,
   ): Promise<string> {
     const attachments = await Promise.all(
-      draft.forwarded.map(async (part) => {
-        const blob =
-          part.content ??
-          (await this.getAttachment(part.messageId, part.attachmentId, signal));
+      draft.attachments.map(async (part) => {
+        const blob = await this.#bytesOf(part, signal);
         return {
           filename: part.filename,
           mimeType: part.mimeType,

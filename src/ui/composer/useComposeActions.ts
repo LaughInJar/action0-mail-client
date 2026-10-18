@@ -2,8 +2,14 @@ import { useMemo } from "react";
 import { useAccountRegistry, useAccounts } from "../../accounts/context";
 import { splitQuote, forwardQuote, replyQuote } from "../../compose/quote";
 import { textToHtml } from "../../compose/html";
-import { mailHtmlToEditor } from "../../compose/session";
 import {
+  attachmentFromFile,
+  mailHtmlToEditor,
+  sentBytes,
+} from "../../compose/session";
+import { megabytes } from "../common/files";
+import {
+  attachmentOf,
   forwardSubject,
   replyRecipients,
   replySubject,
@@ -50,6 +56,11 @@ export interface ComposeActions {
   readonly sendNow: (id: number) => void;
   /** Brings a discarded draft back into the composer. */
   readonly restoreDraft: (session: ComposerSession) => void;
+  /**
+   * Attaches files to the open composer, or starts a new mail with them
+   * (dropped on the app). Refuses, with a message, if they don't fit.
+   */
+  readonly attachFiles: (files: readonly File[]) => void;
 }
 
 /**
@@ -130,11 +141,13 @@ export function useComposeActions(): ComposeActions {
       const current = store.getState().composer;
       if (current) void saveSession(store, sync, current);
       const session = store.getState().openComposer(init);
-      // Load forwarded bytes once; saves upload them again from memory.
-      if (session.forwarded.some((part) => !part.content)) {
-        sync.loadParts(session.accountId, session.forwarded).then(
-          (forwarded) => {
-            store.getState().updateComposer(session.key, { forwarded }, false);
+      // Load attachment bytes once; saves upload them again from memory.
+      if (session.attachments.some((part) => !part.content)) {
+        sync.loadParts(session.accountId, session.attachments).then(
+          (attachments) => {
+            store
+              .getState()
+              .updateComposer(session.key, { attachments }, false);
           },
           () => {
             // Each save fetches what's missing again (and reports failures).
@@ -181,7 +194,7 @@ export function useComposeActions(): ComposeActions {
         subject: draft.subject,
         body: mailHtmlToEditor(body),
         ...(quote ? { quote } : {}),
-        forwarded: draft.forwarded,
+        attachments: draft.attachments,
         ...(draft.threading ? { threading: draft.threading } : {}),
         focus: "body",
       });
@@ -233,20 +246,17 @@ export function useComposeActions(): ComposeActions {
             kind: "forward",
             subject: forwardSubject(message.subject),
             quote: forwardQuote(message),
-            forwarded: message.attachments
+            attachments: message.attachments
               .filter(
                 (part) => part.contentId === undefined || inline.has(part.id),
               )
-              .map((part) => ({
-                messageId: message.id,
-                attachmentId: part.id,
-                filename: part.filename,
-                mimeType: part.mimeType,
-                size: part.size,
-                ...(part.contentId === undefined || !inline.has(part.id)
-                  ? {}
-                  : { contentId: part.contentId }),
-              })),
+              .map((part) => {
+                const attachment = attachmentOf(message.id, part);
+                if (inline.has(part.id)) return attachment;
+                // A Content-ID that the body doesn't show makes it a file.
+                const { contentId, ...file } = attachment;
+                return file;
+              }),
             threading: threadingFor(message),
             focus: "to",
           });
@@ -331,6 +341,42 @@ export function useComposeActions(): ComposeActions {
 
       sendNow: (id) => {
         sendQueued(store, sync, id);
+      },
+
+      attachFiles: (files) => {
+        const current = store.getState().composer;
+        const accountId = current?.accountId ?? currentAccount();
+        if (
+          files.length === 0 ||
+          accountId === undefined ||
+          !canComposeIn(accountId)
+        )
+          return;
+        const max =
+          registry.get(accountId)?.provider.capabilities.maxAttachmentBytes ??
+          Number.POSITIVE_INFINITY;
+        const total =
+          (current ? sentBytes(current) : 0) +
+          files.reduce((sum, file) => sum + file.size, 0);
+        if (total > max) {
+          store.getState().showToast({
+            message: `Too big to attach: the mail would carry ${megabytes(total)}; the limit is ${megabytes(max)}.`,
+            tone: "error",
+          });
+          return;
+        }
+        const added = files.map((file) => attachmentFromFile(file, false));
+        if (current)
+          store.getState().updateComposer(
+            current.key,
+            {
+              attachments: [...current.attachments, ...added],
+              window:
+                current.window === "minimized" ? "docked" : current.window,
+            },
+            true,
+          );
+        else open({ accountId, kind: "new", attachments: added, focus: "to" });
       },
 
       restoreDraft: (session) => {

@@ -2,7 +2,7 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing (features 1–6).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments (features 1–7).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
@@ -10,6 +10,7 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
 - Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
 - Write, reply, reply all and forward in a composer docked at the bottom right (full screen on phones). Basic formatting, address suggestions from your Google contacts, drafts that save themselves, and 30 seconds to take a sent mail back.
+- Attachments: pictures open in a viewer (<kbd>←</kbd>/<kbd>→</kbd>, <kbd>Esc</kbd>), PDFs in the browser's PDF viewer, everything else downloads. HTML and other files that could run code are never opened inside the app. Attach files with the paperclip, by dragging them onto the composer (or anywhere, to start a new mail) or by pasting; pictures dropped or pasted into the text appear inline. Up to 25 MB per mail.
 - Search as you type, in the current folder or everywhere. Gmail's search operators work (`from:`, `has:attachment`, `before:2026/01/01`, …). The search is part of the URL, so Back and reloading keep it.
 - Sort the list by date, newest or oldest first.
 - Filter the folder tree by name, to find a label quickly.
@@ -163,11 +164,11 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 
 ### What is stored where
 
-| Where          | What                                                                                                                                                                        | How long                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing (it saves to the account's Drafts, never to browser storage); contact suggestions | Until reload                        |
-| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                            | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order                                                                                          | Until sign-out                      |
+| Where          | What                                                                                                                                                                                                                           | How long                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
+| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                                                                               | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order                                                                                                                                             | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

@@ -29,7 +29,7 @@ const content = (subject: string): ComposerContent => ({
   bcc: [],
   subject,
   body: "<p>Hi</p>",
-  forwarded: [],
+  attachments: [],
 });
 
 describe("DraftSync", () => {
