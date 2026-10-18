@@ -1,4 +1,8 @@
-import { useAccountRegistry, useAccounts } from "../../accounts/context";
+import {
+  useAccountHandle,
+  useAccountRegistry,
+  useAccounts,
+} from "../../accounts/context";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
 import { useComposeActions } from "../composer/useComposeActions";
@@ -38,9 +42,48 @@ export function Sidebar({ onNavigate }: MailboxTreeProps) {
       <FolderFilter />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <MailboxTree {...(onNavigate ? { onNavigate } : {})} />
+        <LabelButtons {...(onNavigate ? { onNavigate } : {})} />
       </div>
       <AccountsPanel />
     </nav>
+  );
+}
+
+/** "New label" and "Manage labels" for the account being shown. */
+function LabelButtons({ onNavigate }: MailboxTreeProps) {
+  const route = useRoute();
+  const handle = useAccountHandle(route?.accountId);
+  const setLabelDialog = useUi((state) => state.setLabelDialog);
+  const setManageLabels = useUi((state) => state.setManageLabels);
+  if (!handle?.provider.capabilities.manageMailboxes) return null;
+  const { id } = handle.account;
+  const button =
+    "flex items-center gap-1 rounded-md px-2 py-1 text-zinc-600 hover:bg-zinc-200/60 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 pointer-coarse:min-h-11";
+  return (
+    <div className="flex flex-wrap gap-1 px-2 pb-3 text-xs">
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          onNavigate?.();
+          setLabelDialog({ mode: "create", accountId: id });
+        }}
+      >
+        <Icon name="plus" className="size-3.5" />
+        New label
+      </button>
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          onNavigate?.();
+          setManageLabels(id);
+        }}
+      >
+        <Icon name="tag" className="size-3.5" />
+        Manage labels
+      </button>
+    </div>
   );
 }
 

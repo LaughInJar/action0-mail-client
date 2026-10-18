@@ -1,5 +1,6 @@
 import { asMailboxId, asMessageId, asThreadId } from "../../core/ids";
 import type { Message, MessageSummary } from "../../core/model";
+import { parseListUnsubscribe } from "../../core/unsubscribe";
 import { parseAddressList } from "./addresses";
 import { isMembershipLabel } from "./labels";
 import { decodeMimeWords, getHeader, parsePayload } from "./mime";
@@ -48,6 +49,10 @@ export function toMessageSummary(message: GmailMessage): MessageSummary {
 export function toMessage(message: GmailMessage): Message {
   const headers = message.payload?.headers;
   const { body, attachments } = parsePayload(message.payload);
+  const unsubscribe = parseListUnsubscribe(
+    getHeader(headers, "List-Unsubscribe"),
+    getHeader(headers, "List-Unsubscribe-Post"),
+  );
   return {
     ...toMessageSummary(message),
     hasAttachments: attachments.some(
@@ -57,6 +62,7 @@ export function toMessage(message: GmailMessage): Message {
     bcc: parseAddressList(getHeader(headers, "Bcc")),
     replyTo: parseAddressList(getHeader(headers, "Reply-To")),
     ...messageIdHeaders(headers),
+    ...(unsubscribe ? { unsubscribe } : {}),
     body,
     attachments,
   };

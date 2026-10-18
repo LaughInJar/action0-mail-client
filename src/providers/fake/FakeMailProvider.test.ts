@@ -354,3 +354,87 @@ describe("FakeMailProvider.changesSince", () => {
     ]);
   });
 });
+
+describe("FakeMailProvider label management", () => {
+  const names = async (fake: FakeMailProvider) =>
+    (await fake.listMailboxes())
+      .filter((m) => m.assignable && m.role === undefined)
+      .map((m) => m.name);
+
+  it("creates labels in order, nested and coloured", async () => {
+    const fake = provider();
+    const [color] = fake.capabilities.mailboxColors;
+    const created = await fake.createMailbox({
+      name: " Hobbies ",
+      ...(color ? { color } : {}),
+    });
+    expect(created).toMatchObject({ name: "Hobbies", hidden: false, color });
+    const nested = await fake.createMailbox({
+      name: "2026",
+      parentId: DEMO_MAILBOX.work,
+    });
+    expect(nested.parentId).toBe(DEMO_MAILBOX.work);
+    expect(await names(fake)).toEqual([
+      "Archive 2019",
+      "Hobbies",
+      "Personal",
+      "Receipts",
+      "Work",
+      "2026",
+      "Clients",
+      "Internal",
+    ]);
+    await expect(fake.createMailbox({ name: "work" })).rejects.toThrow(
+      "There’s already a label called “work”.",
+    );
+    await expect(
+      fake.createMailbox({ name: "x", parentId: DEMO_MAILBOX.inbox }),
+    ).rejects.toThrow("System mailboxes can’t be changed.");
+  });
+
+  it("renames, moves, recolours and hides", async () => {
+    const fake = provider();
+    await fake.updateMailbox(DEMO_MAILBOX.clients, {
+      name: "Customers",
+      parentId: null,
+      color: null,
+      hidden: true,
+    });
+    const customers = (await fake.listMailboxes()).find(
+      (m) => m.id === DEMO_MAILBOX.clients,
+    );
+    expect(customers).toMatchObject({ name: "Customers", hidden: true });
+    expect(customers?.parentId).toBeUndefined();
+    await expect(
+      fake.updateMailbox(DEMO_MAILBOX.work, {
+        parentId: DEMO_MAILBOX.internal,
+      }),
+    ).rejects.toThrow("A label can’t go inside itself.");
+  });
+
+  it("deletes a label: messages lose it, nested labels move up", async () => {
+    const fake = provider();
+    const { token } = await fake.changesSince(undefined);
+    await fake.deleteMailbox(DEMO_MAILBOX.work);
+    const mailboxes = await fake.listMailboxes();
+    expect(mailboxes.some((m) => m.id === DEMO_MAILBOX.work)).toBe(false);
+    expect(
+      mailboxes.find((m) => m.id === DEMO_MAILBOX.clients)?.parentId,
+    ).toBeUndefined();
+    const logo = await fake.getMessage(asMessageId("inline-image"));
+    expect(logo.mailboxIds).toEqual([DEMO_MAILBOX.inbox]);
+    const { changes } = await fake.changesSince(token);
+    expect(changes.map((change) => change.kind)).toContain("updated");
+    await expect(fake.deleteMailbox(DEMO_MAILBOX.sent)).rejects.toThrow(
+      "System mailboxes can’t be changed.",
+    );
+  });
+
+  it("records one-click unsubscribes instead of going online", async () => {
+    const fake = provider();
+    const newsletter = await fake.getMessage(asMessageId("newsletter"));
+    const url = newsletter.unsubscribe?.oneClick ?? "";
+    await fake.oneClickUnsubscribe(url);
+    expect(fake.oneClickRequests).toEqual([url]);
+  });
+});

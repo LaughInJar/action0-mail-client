@@ -217,7 +217,7 @@ export function useApplyIntent() {
 }
 
 /** The cached mailbox list of an account (empty if not loaded). */
-function cachedMailboxes(
+export function cachedMailboxes(
   queryClient: QueryClient,
   accountId: AccountId,
 ): readonly Mailbox[] {

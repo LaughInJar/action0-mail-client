@@ -2,6 +2,8 @@ import { useId, useRef } from "react";
 import { useUi } from "../../state/context";
 import type { ConfirmState } from "../../state/uiStore";
 import { useMailActions } from "../actions/useMailActions";
+import { useLabelActions } from "../labels/useLabelActions";
+import { useUnsubscribe } from "../reader/useUnsubscribe";
 import { useFocusTrap } from "./useFocusTrap";
 
 /** Shows the confirmation dialog while a destructive action waits for it. */
@@ -18,11 +20,28 @@ export function ConfirmHost() {
 function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
   const setConfirm = useUi((state) => state.setConfirm);
   const actions = useMailActions();
+  const labels = useLabelActions();
+  const unsubscribe = useUnsubscribe();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const messageId = useId();
   const cancel = () => {
     setConfirm(null);
+  };
+  const run = () => {
+    const { action } = confirm;
+    switch (action.kind) {
+      case "unsubscribe":
+        unsubscribe.run(action);
+        break;
+      case "delete-label":
+        labels.runDelete(action);
+        break;
+      case "delete-forever":
+      case "empty":
+        actions.runConfirmed(action);
+        break;
+    }
   };
   useFocusTrap(dialogRef, true, cancel);
 
@@ -62,9 +81,7 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              actions.runConfirmed(confirm.action);
-            }}
+            onClick={run}
             className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:outline-none pointer-coarse:min-h-11"
           >
             {confirm.confirmLabel}

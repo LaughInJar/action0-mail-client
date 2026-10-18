@@ -217,9 +217,36 @@ export class GmailHttp {
     return this.#limit(() => this.#request<T>(url, "POST", payload, signal));
   }
 
+  /** PATCHes `path` with a JSON body (changes only) and returns the parsed JSON response. */
+  patch<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    return this.#sendJson<T>("PATCH", path, body, signal);
+  }
+
+  /** PUTs a whole resource to `path` and returns the parsed JSON response. */
+  put<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    return this.#sendJson<T>("PUT", path, body, signal);
+  }
+
+  #sendJson<T>(
+    method: "PATCH" | "PUT",
+    path: string,
+    body: unknown,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
+    const url = new URL(path, this.#base);
+    return this.#limit(() =>
+      this.#request<T>(
+        url,
+        method,
+        { payload: JSON.stringify(body), contentType: "application/json" },
+        signal,
+      ),
+    );
+  }
+
   async #request<T>(
     url: URL,
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     content: { payload: string; contentType: string } | undefined,
     signal: AbortSignal | undefined,
     retry = true,
@@ -233,7 +260,7 @@ export class GmailHttp {
   /** Sends a request (with retries) and returns the successful response. */
   async #exchange(
     url: URL,
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     content: { payload: string; contentType: string } | undefined,
     signal: AbortSignal | undefined,
     retry: boolean,

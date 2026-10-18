@@ -4,6 +4,7 @@ import {
   asAttachmentId,
   asCursor,
   asDraftId,
+  asMailboxId,
   asMessageId,
   asSyncToken,
   asThreadId,
@@ -16,6 +17,7 @@ import {
 import type {
   EmailAddress,
   Mailbox,
+  MailboxColor,
   MailboxRole,
   Message,
   MessageFlags,
@@ -25,9 +27,11 @@ import type {
 import type {
   ChangeSet,
   ListMessagesQuery,
+  MailboxChange,
   MailChange,
   MailProvider,
   MutationResult,
+  NewMailbox,
   ProviderCapabilities,
 } from "../../core/provider";
 import { sleep } from "../../lib/sleep";
@@ -43,6 +47,8 @@ export interface FakeMailData {
   readonly me?: EmailAddress;
   /** People for address suggestions; enables {@link MailProvider.searchContacts}. */
   readonly contacts?: readonly EmailAddress[];
+  /** Colours labels may get. */
+  readonly mailboxColors?: readonly MailboxColor[];
 }
 
 /** Options of {@link FakeMailProvider}. */
@@ -88,12 +94,16 @@ export class FakeMailProvider implements MailProvider {
     compose: true,
     contacts: false,
     maxAttachmentBytes: 25 * 1024 * 1024,
+    manageMailboxes: true,
+    mailboxColors: [],
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
   /** Set to make contact searches fail as `unavailable`. */
   contactsUnavailable: boolean;
-  readonly #mailboxes: readonly Mailbox[];
+  /** One-click unsubscribe URLs "sent" (the demo never goes online). */
+  readonly oneClickRequests: string[] = [];
+  #mailboxes: readonly Mailbox[];
   readonly #attachments: Map<string, Blob>;
   readonly #latencyMs: number;
   readonly #me: EmailAddress;
@@ -128,8 +138,11 @@ export class FakeMailProvider implements MailProvider {
     this.#arrivals = options.arrivals;
     this.#now = options.now ?? Date.now;
     this.#lastArrival = this.#now();
-    if (data.contacts)
-      this.capabilities = { ...this.capabilities, contacts: true };
+    this.capabilities = {
+      ...this.capabilities,
+      contacts: data.contacts !== undefined,
+      mailboxColors: data.mailboxColors ?? [],
+    };
   }
 
   async listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]> {
@@ -485,6 +498,164 @@ export class FakeMailProvider implements MailProvider {
         status: 500,
       });
     }
+  }
+
+  async createMailbox(
+    { name, parentId, color, hidden = false }: NewMailbox,
+    signal?: AbortSignal,
+  ): Promise<Mailbox> {
+    await this.#refuseIfFailing(signal);
+    const leaf = this.#checkedName(name, parentId, undefined);
+    if (parentId !== undefined) this.#userMailbox(parentId);
+    const mailbox: Mailbox = {
+      id: asMailboxId(`label-${String(this.#nextId++)}`),
+      name: leaf,
+      kind: "label",
+      selectable: true,
+      hidden,
+      assignable: true,
+      ...(parentId === undefined ? {} : { parentId }),
+      ...(color ? { color } : {}),
+    };
+    this.#setMailboxes([...this.#mailboxes, mailbox]);
+    return mailbox;
+  }
+
+  async updateMailbox(
+    id: MailboxId,
+    { name, parentId, color, hidden }: MailboxChange,
+    signal?: AbortSignal,
+  ): Promise<Mailbox> {
+    await this.#refuseIfFailing(signal);
+    const current = this.#userMailbox(id);
+    const parent = parentId === undefined ? current.parentId : parentId;
+    if (parent !== null && parent !== undefined) {
+      this.#userMailbox(parent);
+      for (let at: MailboxId | undefined = parent; at !== undefined;) {
+        if (at === id)
+          throw new MailError("provider", "A label can’t go inside itself.");
+        at = this.#mailboxes.find((m) => m.id === at)?.parentId;
+      }
+    }
+    const leaf = this.#checkedName(
+      name ?? current.name,
+      parent ?? undefined,
+      id,
+    );
+    const {
+      parentId: _oldParent,
+      color: oldColor,
+      counts: _counts,
+      ...rest
+    } = current;
+    const nextColor = color === undefined ? oldColor : (color ?? undefined);
+    const updated: Mailbox = {
+      ...rest,
+      name: leaf,
+      hidden: hidden ?? current.hidden,
+      ...(parent === null || parent === undefined ? {} : { parentId: parent }),
+      ...(nextColor ? { color: nextColor } : {}),
+    };
+    this.#setMailboxes(
+      this.#mailboxes.map((mailbox) => (mailbox.id === id ? updated : mailbox)),
+    );
+    return updated;
+  }
+
+  /** Nested mailboxes move up a level; messages just lose the label. */
+  async deleteMailbox(id: MailboxId, signal?: AbortSignal): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    const gone = this.#userMailbox(id);
+    this.#setMailboxes(
+      this.#mailboxes.flatMap((mailbox) => {
+        if (mailbox.id === id) return [];
+        if (mailbox.parentId !== id) return [mailbox];
+        const { parentId: _parent, ...rest } = mailbox;
+        return [
+          gone.parentId === undefined
+            ? rest
+            : { ...rest, parentId: gone.parentId },
+        ];
+      }),
+    );
+    this.#setMessages(
+      this.#messages.map((message) =>
+        message.mailboxIds.includes(id)
+          ? withMembership(message, [], [id])
+          : message,
+      ),
+    );
+  }
+
+  async oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    this.oneClickRequests.push(url);
+  }
+
+  /** A mailbox of the user's own (not a system mailbox). */
+  #userMailbox(id: MailboxId): Mailbox {
+    const mailbox = this.#mailboxes.find((m) => m.id === id);
+    if (!mailbox)
+      throw new MailError("not-found", `No mailbox ${id}`, { status: 404 });
+    if (!mailbox.assignable || mailbox.role !== undefined)
+      throw new MailError("provider", "System mailboxes can’t be changed.");
+    return mailbox;
+  }
+
+  /** A trimmed name that no sibling has yet (ignoring `self`). */
+  #checkedName(
+    name: string,
+    parentId: MailboxId | undefined,
+    self: MailboxId | undefined,
+  ): string {
+    const trimmed = name.trim();
+    if (trimmed === "")
+      throw new MailError("provider", "A label needs a name.");
+    if (trimmed.includes("/"))
+      throw new MailError("provider", "Label names can’t contain “/”.");
+    const taken = this.#mailboxes.some(
+      (mailbox) =>
+        mailbox.id !== self &&
+        mailbox.parentId === parentId &&
+        mailbox.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (taken)
+      throw new MailError(
+        "provider",
+        `There’s already a label called “${trimmed}”.`,
+        { status: 409 },
+      );
+    return trimmed;
+  }
+
+  /** System mailboxes keep their place; the user's own follow, sorted by path. */
+  #setMailboxes(next: readonly Mailbox[]) {
+    const byId = new Map(next.map((mailbox) => [mailbox.id, mailbox]));
+    const pathOf = (mailbox: Mailbox): string => {
+      const names = [mailbox.name];
+      const seen = new Set([mailbox.id]);
+      let parent = mailbox.parentId && byId.get(mailbox.parentId);
+      while (parent && !seen.has(parent.id)) {
+        seen.add(parent.id);
+        names.unshift(parent.name);
+        parent = parent.parentId && byId.get(parent.parentId);
+      }
+      return names.join("/");
+    };
+    const own = (mailbox: Mailbox) =>
+      mailbox.assignable && mailbox.role === undefined;
+    const collator = new Intl.Collator(undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+    this.#mailboxes = [
+      ...next.filter((mailbox) => !own(mailbox)),
+      ...next
+        .filter(own)
+        .map((mailbox) => ({ mailbox, path: pathOf(mailbox) }))
+        .sort((a, b) => collator.compare(a.path, b.path))
+        .map(({ mailbox }) => mailbox),
+    ];
   }
 
   async changesSince(

@@ -1,18 +1,25 @@
 import type { EmailAddress, Mailbox, Message } from "../../core/model";
 import { displayName, formatFullDate } from "../common/format";
+import { Icon } from "../common/Icon";
 
 /** Props of {@link MessageHeader}. */
 export interface MessageHeaderProps {
   readonly message: Message;
   readonly mailboxes: readonly Mailbox[] | undefined;
   readonly subjectId: string;
+  /** For mailing lists: unsubscribe (asks first), or whether that's done. */
+  readonly unsubscribe?: {
+    readonly done: boolean;
+    readonly onClick: () => void;
+  };
 }
 
-/** Subject, label chips, sender, recipients and date. */
+/** Subject, label chips, sender (with Unsubscribe for lists), recipients and date. */
 export function MessageHeader({
   message,
   mailboxes,
   subjectId,
+  unsubscribe,
 }: MessageHeaderProps) {
   const labels = (mailboxes ?? []).filter(
     (mailbox) =>
@@ -59,6 +66,22 @@ export function MessageHeader({
                 {message.from.address}
               </span>
             )}
+            {unsubscribe &&
+              (unsubscribe.done ? (
+                <span className="flex items-center gap-1 self-center border border-transparent py-0.5 text-xs text-zinc-500">
+                  <Icon name="check" className="size-3.5" />
+                  Unsubscribed
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={unsubscribe.onClick}
+                  // Small to look at; the touch area reaches 44px.
+                  className="relative self-center rounded-full border border-zinc-300 px-2.5 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:before:absolute pointer-coarse:before:-inset-x-1 pointer-coarse:before:-inset-y-3 pointer-coarse:before:content-['']"
+                >
+                  Unsubscribe
+                </button>
+              ))}
             <time
               dateTime={message.receivedAt}
               className="ml-auto shrink-0 text-xs text-zinc-500"

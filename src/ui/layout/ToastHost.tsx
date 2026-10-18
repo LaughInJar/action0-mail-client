@@ -36,7 +36,17 @@ export function ToastHost({ onUndo }: { onUndo: () => void }) {
           }`}
         >
           <span className="min-w-0">{toast.message}</span>
-          {(toast.undo ?? toast.restoreDraft) && (
+          {toast.link && (
+            <a
+              href={toast.link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded px-2 py-1 font-semibold underline-offset-2 hover:bg-white/15 hover:underline dark:hover:bg-black/10 pointer-coarse:min-h-11"
+            >
+              {toast.link.label}
+            </a>
+          )}
+          {(toast.undo ?? toast.restoreDraft ?? toast.revert) && (
             <button
               type="button"
               onClick={onUndo}

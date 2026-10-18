@@ -1,14 +1,18 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useAccountHandle } from "../../accounts/context";
 import type { MailboxId } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import { useMailboxes } from "../../data/hooks";
+import { mailboxPath } from "../../data/mailboxActions";
 import { cachedSummaries } from "../../data/mutations";
 import { useRoute, useUi } from "../../state/context";
 import type { PickerState } from "../../state/uiStore";
 import { useMailActions } from "../actions/useMailActions";
+import { errorMessage } from "../common/errorMessage";
 import { Icon } from "../common/Icon";
 import { Sheet } from "../common/Sheet";
+import { splitPath, useLabelActions } from "../labels/useLabelActions";
 import { useCoarsePointer } from "../layout/useBreakpoint";
 
 /** Shows the move or label picker while one is open. */
@@ -25,29 +29,13 @@ function isTarget(mailbox: Mailbox): boolean {
   return mailbox.assignable && mailbox.selectable;
 }
 
-/** "Work / Clients" for nested mailboxes. */
-function pathOf(
-  mailbox: Mailbox,
-  byId: ReadonlyMap<MailboxId, Mailbox>,
-): string {
-  const names = [mailbox.name];
-  const seen = new Set([mailbox.id]);
-  let parent =
-    mailbox.parentId === undefined ? undefined : byId.get(mailbox.parentId);
-  while (parent && !seen.has(parent.id)) {
-    seen.add(parent.id);
-    names.unshift(parent.name);
-    parent =
-      parent.parentId === undefined ? undefined : byId.get(parent.parentId);
-  }
-  return names.join(" / ");
-}
-
 /**
  * Picks a mailbox to move to, or toggles labels. A filter field drives the
  * list: type to filter, ↑/↓ to move, Enter to choose (move) or to apply
  * (labels). Label changes are applied together when the picker closes with
  * Enter or a click outside; Esc cancels. On phones it opens as a bottom sheet.
+ * When nothing has the typed name, the last option creates that label
+ * ("Work/2026" nests it): moving moves there, the label picker ticks it.
  */
 function MailboxPicker({ picker }: { picker: PickerState }) {
   const setPicker = useUi((state) => state.setPicker);
@@ -63,6 +51,12 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const titleId = useId();
   const listId = useId();
   const labelsMode = picker.mode === "labels";
+  const labels = useLabelActions();
+  const canCreate =
+    useAccountHandle(picker.accountId)?.provider.capabilities.manageMailboxes ??
+    false;
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string>();
 
   const close = () => {
     setPicker(null);
@@ -70,10 +64,6 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   // On touch devices, focusing the filter would cover the sheet with the keyboard.
   const coarse = useCoarsePointer();
 
-  const byId = useMemo(
-    () => new Map(mailboxes.map((m) => [m.id, m])),
-    [mailboxes],
-  );
   const candidates = useMemo(
     () =>
       mailboxes.filter(
@@ -86,11 +76,28 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
     [mailboxes, labelsMode, route?.mailboxId],
   );
   const visible = candidates
-    .map((mailbox) => ({ mailbox, path: pathOf(mailbox, byId) }))
+    .map((mailbox) => ({
+      mailbox,
+      path: mailboxPath(mailbox, mailboxes).join(" / "),
+    }))
     .filter(({ path }) =>
       path.toLowerCase().includes(filter.trim().toLowerCase()),
     );
-  const highlighted = visible[Math.min(active, visible.length - 1)]?.mailbox;
+
+  // "Create label" when no mailbox has the typed path.
+  const typed = splitPath(filter);
+  const typedKey = typed.join("/").toLowerCase();
+  const offerCreate =
+    canCreate &&
+    typed.length > 0 &&
+    !mailboxes.some(
+      (mailbox) =>
+        mailboxPath(mailbox, mailboxes).join("/").toLowerCase() === typedKey,
+    );
+  const optionCount = visible.length + (offerCreate ? 1 : 0);
+  const activeIndex = Math.max(0, Math.min(active, optionCount - 1));
+  const createActive = offerCreate && activeIndex === visible.length;
+  const highlighted = createActive ? undefined : visible[activeIndex]?.mailbox;
 
   // Current label state of the targets, for the tri-state checkboxes.
   const initial = useMemo(() => {
@@ -138,6 +145,29 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
     close();
   };
 
+  const createLabel = () => {
+    if (creating || !offerCreate) return;
+    setCreating(true);
+    setCreateError(undefined);
+    labels.createPath(picker.accountId, typed).then(
+      (mailbox) => {
+        setCreating(false);
+        if (labelsMode) {
+          setChoices((current) => new Map(current).set(mailbox.id, true));
+          setFilter(typed.join(" / "));
+          setActive(0);
+        } else {
+          actions.moveTo(mailbox.id, picker.ids);
+          close();
+        }
+      },
+      (error: unknown) => {
+        setCreating(false);
+        setCreateError(errorMessage(error));
+      },
+    );
+  };
+
   const choose = (mailbox: Mailbox) => {
     if (labelsMode) {
       toggle(mailbox.id);
@@ -151,12 +181,12 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const delta = event.key === "ArrowDown" ? 1 : -1;
-      setActive((index) =>
-        Math.max(0, Math.min(visible.length - 1, index + delta)),
-      );
+      setActive(Math.max(0, Math.min(optionCount - 1, activeIndex + delta)));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (!labelsMode) {
+      if (createActive) {
+        createLabel();
+      } else if (!labelsMode) {
         if (highlighted) choose(highlighted);
       } else {
         // Quick path: type a label name and press Enter to toggle it.
@@ -180,9 +210,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const count = picker.ids.length;
   const title = labelsMode ? "Labels" : "Move to";
   const optionId = (index: number) => `${listId}-${index}`;
-  const highlightedIndex = highlighted
-    ? visible.findIndex((v) => v.mailbox === highlighted)
-    : -1;
+  const highlightedIndex = optionCount === 0 ? -1 : activeIndex;
 
   return (
     <Sheet
@@ -214,16 +242,26 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           onChange={(event) => {
             setFilter(event.target.value);
             setActive(0);
+            setCreateError(undefined);
           }}
           onKeyDown={onInputKeyDown}
           placeholder={labelsMode ? "Find a label" : "Find a mailbox"}
           className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
         />
-        <p className="mt-1.5 text-xs text-zinc-500 pointer-coarse:hidden">
-          {labelsMode
-            ? "↑↓ to choose · Space or click to toggle · Enter applies · Esc cancels"
-            : "↑↓ to choose · Enter moves · Esc cancels"}
-        </p>
+        {createError ? (
+          <p
+            role="alert"
+            className="mt-1.5 text-xs text-red-700 dark:text-red-400"
+          >
+            {createError}
+          </p>
+        ) : (
+          <p className="mt-1.5 text-xs text-zinc-500 pointer-coarse:hidden">
+            {labelsMode
+              ? "↑↓ to choose · Space or click to toggle · Enter applies · Esc cancels"
+              : "↑↓ to choose · Enter moves · Esc cancels"}
+          </p>
+        )}
       </div>
       <div
         id={listId}
@@ -232,7 +270,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
         aria-multiselectable={labelsMode || undefined}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1"
       >
-        {visible.length === 0 && (
+        {optionCount === 0 && (
           <div
             role="presentation"
             className="px-3 py-4 text-center text-sm text-zinc-500"
@@ -309,6 +347,28 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             </div>
           );
         })}
+        {offerCreate && (
+          // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+          <div
+            id={optionId(visible.length)}
+            role="option"
+            tabIndex={-1}
+            aria-selected={createActive}
+            aria-disabled={creating || undefined}
+            onClick={createLabel}
+            onMouseMove={() => {
+              setActive(visible.length);
+            }}
+            className={`flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-blue-700 dark:text-blue-300 pointer-coarse:min-h-11 ${
+              createActive ? "bg-blue-50 dark:bg-blue-500/15" : ""
+            }`}
+          >
+            <Icon name="plus" className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {creating ? "Creating…" : `Create label “${typed.join(" / ")}”`}
+            </span>
+          </div>
+        )}
       </div>
       {labelsMode && (
         <div className="flex justify-end gap-2 border-t border-zinc-200 p-2 dark:border-zinc-800">

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useAccountHandle } from "../../accounts/context";
 import type { MailboxId, MessageId } from "../../core/ids";
@@ -8,6 +9,7 @@ import {
 } from "../../core/intents";
 import { findMailbox } from "../../data/hooks";
 import {
+  cachedMailboxes,
   useApplyIntent,
   useEmptyMailbox,
   usePreviewIntent,
@@ -16,7 +18,7 @@ import { belongsTo, isolatingMailboxes } from "../../data/optimistic";
 import { useRouter, useUiStore } from "../../state/context";
 import { listRoute } from "../../state/router";
 import { nextAfterRemoval } from "../../state/selection";
-import type { ConfirmState, PickerState } from "../../state/uiStore";
+import type { MailConfirmAction, PickerState } from "../../state/uiStore";
 import type { Mailbox } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
@@ -70,7 +72,7 @@ export interface MailActions {
   /** Asks for confirmation, then empties the Trash or Spam being shown. */
   readonly requestEmpty: () => void;
   /** Runs a confirmed destructive action (called by the confirmation dialog). */
-  readonly runConfirmed: (action: ConfirmState["action"]) => void;
+  readonly runConfirmed: (action: MailConfirmAction) => void;
   /** Reverts the action of the current toast. */
   readonly undo: () => void;
 }
@@ -103,6 +105,7 @@ export function useMailActions(): MailActions {
   const store = useUiStore();
   const breakpoint = useBreakpoint();
   const handle = useAccountHandle(route?.accountId);
+  const queryClient = useQueryClient();
   const preview = usePreviewIntent();
   // mutateAsync, not mutate: the promise settles even when the calling
   // component (picker, confirmation, reader) unmounts first, so error toasts
@@ -115,9 +118,12 @@ export function useMailActions(): MailActions {
     const orderedIds = (items ?? []).map((item) => item.id);
     const isolating = isolatingMailboxes(mailboxes ?? []);
     const view = mailbox?.role;
-    const roleOf = (id: MailboxId) => findMailbox(mailboxes, id)?.role;
-    const nameOf = (id: MailboxId) =>
-      findMailbox(mailboxes, id)?.name ?? "the mailbox";
+    // A label created a moment ago may not have reached `mailboxes` yet.
+    const mailboxOf = (id: MailboxId) =>
+      findMailbox(mailboxes, id) ??
+      (route && findMailbox(cachedMailboxes(queryClient, route.accountId), id));
+    const roleOf = (id: MailboxId) => mailboxOf(id)?.role;
+    const nameOf = (id: MailboxId) => mailboxOf(id)?.name ?? "the mailbox";
 
     const targets = (): MessageId[] => {
       const { selectedIds, focusedId } = store.getState();
@@ -475,6 +481,7 @@ export function useMailActions(): MailActions {
     mailbox,
     mailboxes,
     preview,
+    queryClient,
     route,
     router,
     store,

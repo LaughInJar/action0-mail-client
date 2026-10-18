@@ -25,6 +25,9 @@ import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
 import { AddAccountDialog } from "../accounts/AddAccountDialog";
 import { ConfirmHost } from "../common/ConfirmDialog";
+import { LabelDialogHost } from "../labels/LabelDialog";
+import { LabelMenuHost } from "../labels/LabelMenu";
+import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
 import { useBreakpoint } from "./useBreakpoint";
@@ -135,6 +138,9 @@ function MailApp() {
       <div className="flex min-h-0 flex-1">{content}</div>
       <ShortcutHelp />
       <MailboxPickerHost />
+      <LabelMenuHost />
+      <ManageLabelsHost />
+      <LabelDialogHost />
       <ConfirmHost />
       <AddAccountDialog />
       <ComposerHost breakpoint={breakpoint} actions={compose} />

@@ -73,6 +73,12 @@ export interface MailboxCounts {
   readonly total: number;
 }
 
+/** Colours of a label chip. CSS colours, e.g. `#16a766`. */
+export interface MailboxColor {
+  readonly background: string;
+  readonly text: string;
+}
+
 /** A label, folder or view, as shown in the mailbox tree. */
 export interface Mailbox {
   readonly id: MailboxId;
@@ -94,7 +100,7 @@ export interface Mailbox {
    */
   readonly assignable: boolean;
   readonly counts?: MailboxCounts;
-  readonly color?: { readonly background: string; readonly text: string };
+  readonly color?: MailboxColor;
 }
 
 /** A parsed address from an address header. */
@@ -145,6 +151,24 @@ export interface AttachmentInfo {
   readonly contentId?: string;
 }
 
+/**
+ * How to leave a mailing list, from the `List-Unsubscribe` and
+ * `List-Unsubscribe-Post` headers (RFC 2369, RFC 8058). Senders may offer
+ * several ways; at least one is set.
+ */
+export interface Unsubscribe {
+  /** An https URL that takes the RFC 8058 one-click POST. */
+  readonly oneClick?: string;
+  /** A mail to send, from a `mailto:` URL. */
+  readonly mail?: {
+    readonly to: string;
+    readonly subject?: string;
+    readonly body?: string;
+  };
+  /** A web page where the user unsubscribes (http or https). */
+  readonly page?: string;
+}
+
 /** Body of a message. Both parts are raw and **unsanitized**. */
 export interface MessageBody {
   readonly html?: string;
@@ -160,6 +184,8 @@ export interface Message extends MessageSummary {
   readonly internetMessageId?: string;
   /** Message-IDs from the `References` header, oldest first. */
   readonly references: readonly string[];
+  /** Set for mailing lists that say how to unsubscribe. */
+  readonly unsubscribe?: Unsubscribe;
   readonly body: MessageBody;
   readonly attachments: readonly AttachmentInfo[];
 }

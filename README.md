@@ -2,7 +2,7 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates (features 1–8).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management (features 1–9).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
@@ -15,6 +15,8 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Search as you type, in the current folder or everywhere. Gmail's search operators work (`from:`, `has:attachment`, `before:2026/01/01`, …). The search is part of the URL, so Back and reloading keep it.
 - Sort the list by date, newest or oldest first.
 - Filter the folder tree by name, to find a label quickly.
+- Manage labels: create one right from the Labels or Move to… picker (type a name that doesn't exist yet; "Work/2026" nests it under Work), or with **New label** below the folder tree. Rename, recolour, move, hide and delete labels from a label's menu: the ⋯ button on the selected label, a right-click, a long press on touch screens, or <kbd>Shift</kbd>+<kbd>F10</kbd>. **Manage labels** lists all of them, hidden ones included. Changes can be undone (<kbd>z</kbd>); deleting asks first.
+- Unsubscribe from newsletters with one button next to the sender. It uses the sender's one-click unsubscribe (RFC 8058) when there is one, otherwise sends the unsubscribe mail, otherwise opens the sender's unsubscribe page. It can't be undone, so it asks first.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
 - A demo account with sample mail, so you can try the UI without signing in.
@@ -126,6 +128,8 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
 
+In the folder tree, <kbd>Shift</kbd>+<kbd>F10</kbd> (or the Menu key), a right-click or a long press opens a label's menu (rename, colour, move, hide, delete).
+
 ## Architecture
 
 ```
@@ -162,7 +166,7 @@ The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc862
 - `folder` — exclusive, one per message (Exchange, IMAP),
 - `view` — computed, like Gmail's "All Mail" or "Starred".
 
-An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not.
+An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not. The user's own mailboxes (assignable, without a role) can be created, renamed, moved, recoloured, hidden and deleted where the provider supports it (`manageMailboxes`). Gmail stores only label paths ("Work/Clients"), so renaming or moving a label renames every label inside it too.
 
 ### What is stored where
 
@@ -180,7 +184,7 @@ Tokens never go to localStorage, and mail content is never stored long-term.
 2. The mail is shown in an **iframe sandbox without `allow-scripts`** (`allow-same-origin` is only there so the app can measure the content's height, which is safe without scripts).
 3. A **Content Security Policy inside the iframe** (`default-src 'none'`) blocks every remote request — images, CSS backgrounds and imports, fonts — until you click _Load images_, which allows remote images for that message only. Inline (`cid:`) images are embedded as `data:` URLs.
 
-The production build also sets a strict CSP for the app itself.
+The production build also sets a strict CSP for the app itself. It lets the app connect to any https address (`connect-src https:`) for one reason: one-click unsubscribe sends a POST to the sender's server. That request carries no cookies and no referrer, and the app never reads the answer.
 
 ## Tests and CI
 

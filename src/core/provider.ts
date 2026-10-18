@@ -10,6 +10,7 @@ import type {
 import type {
   EmailAddress,
   Mailbox,
+  MailboxColor,
   MailboxKind,
   Message,
   MessageFlags,
@@ -45,6 +46,14 @@ export interface ProviderCapabilities {
   readonly contacts: boolean;
   /** Most bytes of attachments one mail may carry (inline images included). */
   readonly maxAttachmentBytes: number;
+  /**
+   * Supports {@link MailProvider.createMailbox}, {@link MailProvider.updateMailbox}
+   * and {@link MailProvider.deleteMailbox} for the user's own mailboxes
+   * (assignable ones without a role).
+   */
+  readonly manageMailboxes: boolean;
+  /** Colours a mailbox may get; empty if colours can't be set. */
+  readonly mailboxColors: readonly MailboxColor[];
 }
 
 /** Date order of a message list. */
@@ -87,6 +96,29 @@ export interface ChangeSet {
   /** Too many changes, or the token was too old: reload everything instead. */
   readonly reset: boolean;
   readonly changes: readonly MailChange[];
+}
+
+/** A new mailbox, for {@link MailProvider.createMailbox}. */
+export interface NewMailbox {
+  /** Leaf name, e.g. "Clients" (never a path). */
+  readonly name: string;
+  /** Mailbox to nest it in; omit for the top level. */
+  readonly parentId?: MailboxId;
+  /** One of {@link ProviderCapabilities.mailboxColors}. */
+  readonly color?: MailboxColor;
+  /** Hide it from the folder list. */
+  readonly hidden?: boolean;
+}
+
+/**
+ * Changes for {@link MailProvider.updateMailbox}; fields left out stay as
+ * they are, `null` removes the parent (top level) or the colour.
+ */
+export interface MailboxChange {
+  readonly name?: string;
+  readonly parentId?: MailboxId | null;
+  readonly color?: MailboxColor | null;
+  readonly hidden?: boolean;
 }
 
 /** Result of a write operation. */
@@ -258,4 +290,34 @@ export interface MailProvider {
     token: SyncToken | undefined,
     signal?: AbortSignal,
   ): Promise<ChangeSet>;
+
+  /**
+   * Creates a mailbox (only if {@link ProviderCapabilities.manageMailboxes}).
+   * Rejects with a readable message if the name is taken or not allowed.
+   */
+  createMailbox(spec: NewMailbox, signal?: AbortSignal): Promise<Mailbox>;
+
+  /**
+   * Renames, moves, recolours, hides or shows a mailbox. Mailboxes nested in
+   * it move along. Returns the updated mailbox.
+   */
+  updateMailbox(
+    id: MailboxId,
+    change: MailboxChange,
+    signal?: AbortSignal,
+  ): Promise<Mailbox>;
+
+  /**
+   * Deletes a mailbox. Its messages stay (in their other mailboxes); what
+   * happens to nested mailboxes is up to the provider. Cannot be undone.
+   */
+  deleteMailbox(id: MailboxId, signal?: AbortSignal): Promise<void>;
+
+  /**
+   * Sends the RFC 8058 one-click unsubscribe request to `url` (the
+   * `oneClick` URL of a message's `unsubscribe`). Resolves once the request went out;
+   * the sender's answer usually can't be read (browsers hide cross-site
+   * responses). Rejects if the sender couldn't be reached.
+   */
+  oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void>;
 }
