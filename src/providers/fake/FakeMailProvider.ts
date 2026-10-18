@@ -51,6 +51,9 @@ export class FakeMailProvider implements MailProvider {
     settableFlags: ["seen", "flagged"],
     move: true,
     labels: true,
+    trash: true,
+    spam: true,
+    deleteForever: true,
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
@@ -191,6 +194,74 @@ export class FakeMailProvider implements MailProvider {
     }));
   }
 
+  /** Gmail semantics: Trash is added, other labels stay (but the message shows only in Trash). */
+  trash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const trash = this.#roleId("trash");
+    return this.#write(ids, signal, (message) =>
+      trash === undefined ? message : withMembership(message, [trash], []),
+    );
+  }
+
+  untrash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const trash = this.#roleId("trash");
+    return this.#write(ids, signal, (message) =>
+      trash === undefined ? message : withMembership(message, [], [trash]),
+    );
+  }
+
+  reportSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const [junk, inbox] = [this.#roleId("junk"), this.#roleId("inbox")];
+    return this.#write(ids, signal, (message) =>
+      junk === undefined
+        ? message
+        : withMembership(message, [junk], inbox === undefined ? [] : [inbox]),
+    );
+  }
+
+  notSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const [junk, inbox] = [this.#roleId("junk"), this.#roleId("inbox")];
+    return this.#write(ids, signal, (message) =>
+      junk === undefined
+        ? message
+        : withMembership(message, inbox === undefined ? [] : [inbox], [junk]),
+    );
+  }
+
+  async deleteForever(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#write([], signal, (message) => message);
+    const gone = new Set(ids);
+    this.#messages = this.#messages.filter((message) => !gone.has(message.id));
+    return {};
+  }
+
+  async emptyMailbox(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly deleted: number }> {
+    const role = this.#mailboxes.find((m) => m.id === mailboxId)?.role;
+    if (role !== "trash" && role !== "junk") {
+      throw new MailError("provider", "Only Trash and Spam can be emptied.");
+    }
+    const ids = this.#messagesIn(mailboxId).map((message) => message.id);
+    await this.deleteForever(ids, signal);
+    return { deleted: ids.length };
+  }
+
   async #write(
     ids: readonly MessageId[],
     signal: AbortSignal | undefined,
@@ -223,12 +294,17 @@ export class FakeMailProvider implements MailProvider {
     const outsideSpamAndTrash = (message: Message) =>
       !message.mailboxIds.some((id) => excluded.has(id));
 
+    // Like Gmail: messages in Spam or Trash show up only there.
     let matches: (message: Message) => boolean;
     if (mailbox?.role === "all") matches = outsideSpamAndTrash;
     else if (mailbox?.role === "flagged")
       matches = (message) =>
         message.flags.flagged && outsideSpamAndTrash(message);
-    else matches = (message) => message.mailboxIds.includes(mailboxId);
+    else if (excluded.has(mailboxId))
+      matches = (message) => message.mailboxIds.includes(mailboxId);
+    else
+      matches = (message) =>
+        message.mailboxIds.includes(mailboxId) && outsideSpamAndTrash(message);
 
     return this.#messages
       .filter(matches)
@@ -244,4 +320,20 @@ export class FakeMailProvider implements MailProvider {
 function toSummary(message: Message): MessageSummary {
   const { cc, bcc, replyTo, body, attachments, ...summary } = message;
   return summary;
+}
+
+function withMembership(
+  message: Message,
+  add: readonly MailboxId[],
+  remove: readonly MailboxId[],
+): Message {
+  return {
+    ...message,
+    mailboxIds: [
+      ...new Set([
+        ...message.mailboxIds.filter((id) => !remove.includes(id)),
+        ...add,
+      ]),
+    ],
+  };
 }

@@ -81,18 +81,25 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     const { key = "", accountId, mailboxId, assignable, role } = item.dataset;
     if (accountId !== dragging.accountId || mailboxId === undefined)
       return undefined;
-    // Spam and Trash come with a later delete/spam feature.
-    if (assignable !== "true" || role === "junk" || role === "trash")
-      return undefined;
+    if (assignable !== "true") return undefined;
     const current = router.getRoute();
     if (current?.accountId === accountId && current.mailboxId === mailboxId)
       return undefined;
-    return { key, mailboxId: asMailboxId(mailboxId), ids: dragging.ids };
+    return {
+      key,
+      role,
+      mailboxId: asMailboxId(mailboxId),
+      ids: dragging.ids,
+    };
   };
 
-  // Ctrl (Linux/Windows) or Alt/Option (macOS) while dropping: only add the label.
-  const wantsCopy = (event: DragEvent) =>
-    (event.ctrlKey || event.altKey) && actions.canLabel;
+  // Ctrl (Linux/Windows) or Alt/Option (macOS) while dropping: only add the
+  // label. Spam and Trash aren't labels, so there it always moves.
+  const wantsCopy = (event: DragEvent, role: string | undefined) =>
+    (event.ctrlKey || event.altKey) &&
+    actions.canLabel &&
+    role !== "trash" &&
+    role !== "junk";
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
     const target = dropTargetOf(event.target);
@@ -101,7 +108,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       return;
     }
     event.preventDefault();
-    const copy = wantsCopy(event);
+    const copy = wantsCopy(event, target.role);
     event.dataTransfer.dropEffect = copy ? "copy" : "move";
     setDrop((current) =>
       current?.key === target.key && current.copy === copy
@@ -116,7 +123,8 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     if (!target) return;
     event.preventDefault();
     store.getState().setDragging(null);
-    if (wantsCopy(event)) actions.setLabels([target.mailboxId], [], target.ids);
+    if (wantsCopy(event, target.role))
+      actions.setLabels([target.mailboxId], [], target.ids);
     else actions.moveTo(target.mailboxId, target.ids);
   };
   const routeAccountKnown = accounts.some(

@@ -7,13 +7,19 @@ import {
   type MessageChange,
 } from "../../core/intents";
 import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
-import { useApplyIntent, usePreviewIntent } from "../../data/mutations";
-import { belongsTo } from "../../data/optimistic";
+import {
+  useApplyIntent,
+  useEmptyMailbox,
+  usePreviewIntent,
+} from "../../data/mutations";
+import { belongsTo, isolatingMailboxes } from "../../data/optimistic";
 import { useRoute, useRouter, useUiStore } from "../../state/context";
 import { nextAfterRemoval } from "../../state/selection";
-import type { PickerState } from "../../state/uiStore";
+import type { ConfirmState, PickerState } from "../../state/uiStore";
+import type { Mailbox } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
+import { listKeyOf } from "../messages/useListController";
 
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
@@ -49,6 +55,21 @@ export interface MailActions {
     mode: PickerState["mode"],
     ids?: readonly MessageId[],
   ) => void;
+  readonly canTrash: boolean;
+  readonly canSpam: boolean;
+  readonly canDeleteForever: boolean;
+  /** Role of the mailbox being shown ("trash" and "junk" change what actions do). */
+  readonly view: Mailbox["role"];
+  /** Move to Trash; inside Trash: restore. */
+  readonly trash: (ids?: readonly MessageId[]) => void;
+  /** Report spam; inside Spam: not spam (back to the Inbox). */
+  readonly spam: (ids?: readonly MessageId[]) => void;
+  /** Asks for confirmation, then deletes permanently (only inside Trash or Spam). */
+  readonly requestDeleteForever: (ids?: readonly MessageId[]) => void;
+  /** Asks for confirmation, then empties the Trash or Spam being shown. */
+  readonly requestEmpty: () => void;
+  /** Runs a confirmed destructive action (called by the confirmation dialog). */
+  readonly runConfirmed: (action: ConfirmState["action"]) => void;
   /** Reverts the action of the current toast. */
   readonly undo: () => void;
 }
@@ -78,12 +99,19 @@ export function useMailActions(): MailActions {
   const { data: mailboxes } = useMailboxes(route?.accountId);
   const { data: items } = useMessageList(route?.accountId, route?.mailboxId);
   const preview = usePreviewIntent();
-  const { mutate } = useApplyIntent();
+  // mutateAsync, not mutate: the promise settles even when the calling
+  // component (picker, confirmation, reader) unmounts first, so error toasts
+  // are never lost. Rollback lives in the mutation itself either way.
+  const { mutateAsync: apply } = useApplyIntent();
+  const { mutateAsync: empty } = useEmptyMailbox();
   const capabilities = handle?.provider.capabilities;
 
   return useMemo((): MailActions => {
     const orderedIds = (items ?? []).map((item) => item.id);
     const mailbox = findMailbox(mailboxes, route?.mailboxId);
+    const isolating = isolatingMailboxes(mailboxes ?? []);
+    const view = mailbox?.role;
+    const roleOf = (id: MailboxId) => findMailbox(mailboxes, id)?.role;
     const nameOf = (id: MailboxId) =>
       findMailbox(mailboxes, id)?.name ?? "the mailbox";
 
@@ -95,19 +123,16 @@ export function useMailActions(): MailActions {
       return [...selectedIds].sort((a, b) => rank(a) - rank(b));
     };
 
+    const showError = (prefix: string) => (error: unknown) => {
+      store.getState().showToast({
+        message: `${prefix}: ${errorMessage(error)}`,
+        tone: "error",
+      });
+    };
+
     const run = (intent: MailIntent, failure: string) => {
       if (!route) return;
-      mutate(
-        { accountId: route.accountId, intent },
-        {
-          onError: (error) => {
-            store.getState().showToast({
-              message: `${failure}: ${errorMessage(error)}`,
-              tone: "error",
-            });
-          },
-        },
-      );
+      apply({ accountId: route.accountId, intent }).catch(showError(failure));
     };
 
     /**
@@ -118,7 +143,11 @@ export function useMailActions(): MailActions {
       if (!route || !mailbox) return;
       const removed = new Set(
         changes
-          .filter((change) => !belongsTo(mailbox, change.after))
+          .filter(
+            (change) =>
+              change.deleted === true ||
+              !belongsTo(mailbox, change.after, isolating),
+          )
           .map((change) => change.id),
       );
       if (removed.size === 0) return;
@@ -153,16 +182,22 @@ export function useMailActions(): MailActions {
       stepAway(changes);
       run(intent, options.failure);
       if (!options.done) return;
+      const inverse = inverseOf(intent, changes, {
+        labels: capabilities?.labels ?? false,
+      });
       showToast({
         message: options.done(changes.length),
         tone: "info",
-        undo: {
-          accountId: route.accountId,
-          intents: inverseOf(intent, changes, {
-            labels: capabilities?.labels ?? false,
-          }),
-          known: changes.map((change) => change.after),
-        },
+        // Permanent deletion has nothing to undo.
+        ...(inverse.length > 0
+          ? {
+              undo: {
+                accountId: route.accountId,
+                intents: inverse,
+                known: changes.map((change) => change.after),
+              },
+            }
+          : {}),
       });
     };
 
@@ -227,7 +262,29 @@ export function useMailActions(): MailActions {
       },
 
       moveTo: (to, explicit) => {
-        if (!route || !capabilities?.move) return;
+        if (!route) return;
+        // Trash and Spam have their own semantics (and Gmail its own calls).
+        if (roleOf(to) === "trash" && capabilities?.trash) {
+          perform(
+            { kind: "trash", ids: ids(explicit) },
+            {
+              done: (n) => `Moved ${count(n)} to Trash`,
+              failure: "Couldn’t move to Trash",
+            },
+          );
+          return;
+        }
+        if (roleOf(to) === "junk" && capabilities?.spam) {
+          perform(
+            { kind: "report-spam", ids: ids(explicit) },
+            {
+              done: (n) => `Reported ${count(n)} as spam`,
+              failure: "Couldn’t report spam",
+            },
+          );
+          return;
+        }
+        if (!capabilities?.move) return;
         const name = nameOf(to);
         perform(
           { kind: "move", ids: ids(explicit), from: route.mailboxId, to },
@@ -267,6 +324,114 @@ export function useMailActions(): MailActions {
           .setPicker({ mode, accountId: route.accountId, ids: targetIds });
       },
 
+      canTrash: capabilities?.trash ?? false,
+      canSpam: capabilities?.spam ?? false,
+      canDeleteForever: capabilities?.deleteForever ?? false,
+      view,
+
+      trash: (explicit) => {
+        if (!capabilities?.trash) return;
+        if (view === "trash") {
+          perform(
+            { kind: "untrash", ids: ids(explicit) },
+            {
+              done: (n) => `Restored ${count(n)}`,
+              failure: "Couldn’t restore",
+            },
+          );
+        } else {
+          perform(
+            { kind: "trash", ids: ids(explicit) },
+            {
+              done: (n) => `Moved ${count(n)} to Trash`,
+              failure: "Couldn’t move to Trash",
+            },
+          );
+        }
+      },
+
+      spam: (explicit) => {
+        if (!capabilities?.spam) return;
+        if (view === "junk") {
+          perform(
+            { kind: "not-spam", ids: ids(explicit) },
+            {
+              done: (n) => `Not spam: moved ${count(n)} to the Inbox`,
+              failure: "Couldn’t mark as not spam",
+            },
+          );
+        } else {
+          perform(
+            { kind: "report-spam", ids: ids(explicit) },
+            {
+              done: (n) => `Reported ${count(n)} as spam`,
+              failure: "Couldn’t report spam",
+            },
+          );
+        }
+      },
+
+      requestDeleteForever: (explicit) => {
+        if (!route || !capabilities?.deleteForever) return;
+        if (view !== "trash" && view !== "junk") return;
+        const targetIds = ids(explicit);
+        if (targetIds.length === 0) return;
+        store.getState().setConfirm({
+          title: `Delete ${count(targetIds.length)} forever?`,
+          message: "This can’t be undone.",
+          confirmLabel: "Delete forever",
+          action: {
+            kind: "delete-forever",
+            accountId: route.accountId,
+            ids: targetIds,
+          },
+        });
+      },
+
+      requestEmpty: () => {
+        if (!route || !mailbox || !capabilities?.deleteForever) return;
+        if (view !== "trash" && view !== "junk") return;
+        store.getState().setConfirm({
+          title: `Empty ${mailbox.name}?`,
+          message: `Every message in ${mailbox.name} will be deleted forever. This can’t be undone.`,
+          confirmLabel: `Empty ${mailbox.name}`,
+          action: {
+            kind: "empty",
+            accountId: route.accountId,
+            mailboxId: mailbox.id,
+            name: mailbox.name,
+          },
+        });
+      },
+
+      runConfirmed: (action) => {
+        store.getState().setConfirm(null);
+        if (action.kind === "delete-forever") {
+          if (route?.accountId !== action.accountId) return;
+          perform(
+            { kind: "delete-forever", ids: action.ids },
+            {
+              done: (n) => `Deleted ${count(n)} forever`,
+              failure: "Couldn’t delete",
+            },
+          );
+          return;
+        }
+        store.getState().enterList(listKeyOf(route) ?? "", null);
+        empty({
+          accountId: action.accountId,
+          mailboxId: action.mailboxId,
+        }).then(
+          ({ deleted }) => {
+            store.getState().showToast({
+              message: `Emptied ${action.name} (${count(deleted)})`,
+              tone: "info",
+            });
+          },
+          showError(`Couldn’t empty ${action.name}`),
+        );
+      },
+
       undo: () => {
         const { toast, dismissToast } = store.getState();
         if (!toast?.undo) return;
@@ -278,21 +443,11 @@ export function useMailActions(): MailActions {
             const { changes } = preview({ accountId, intent, known });
             restoredHere ??= changes.find(
               (change) =>
-                belongsTo(mailbox, change.after) &&
-                !belongsTo(mailbox, change.before),
+                belongsTo(mailbox, change.after, isolating) &&
+                !belongsTo(mailbox, change.before, isolating),
             )?.id;
           }
-          mutate(
-            { accountId, intent, known },
-            {
-              onError: (error) => {
-                store.getState().showToast({
-                  message: `Couldn’t undo: ${errorMessage(error)}`,
-                  tone: "error",
-                });
-              },
-            },
-          );
+          apply({ accountId, intent, known }).catch(showError("Couldn’t undo"));
         }
         // Undo brings the cursor back to a message that returns to this list.
         if (restoredHere !== undefined)
@@ -301,10 +456,11 @@ export function useMailActions(): MailActions {
     };
   }, [
     breakpoint,
+    apply,
     capabilities,
+    empty,
     items,
     mailboxes,
-    mutate,
     preview,
     route,
     router,

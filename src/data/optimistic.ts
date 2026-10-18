@@ -35,14 +35,23 @@ export function planChanges(
   const kindOf = new Map(
     mailboxes.map((mailbox) => [mailbox.id, mailbox.kind]),
   );
-  const context: ApplyContext = { inbox, archiveFolder, kindOf };
+  const context: ApplyContext = {
+    inbox,
+    archiveFolder,
+    trash: roleId(mailboxes, "trash"),
+    junk: roleId(mailboxes, "junk"),
+    folders: capabilities.mailboxKinds.includes("folder"),
+    kindOf,
+  };
 
   const changes: MessageChange[] = [];
   for (const id of new Set(intent.ids)) {
     const before = byId.get(id);
     if (!before) continue;
     const after = apply(intent, before, context);
-    if (after) changes.push({ id, before, after });
+    if (after === "deleted")
+      changes.push({ id, before, after: before, deleted: true });
+    else if (after) changes.push({ id, before, after });
   }
   return changes;
 }
@@ -50,7 +59,22 @@ export function planChanges(
 interface ApplyContext {
   readonly inbox: MailboxId | undefined;
   readonly archiveFolder: MailboxId | undefined;
+  readonly trash: MailboxId | undefined;
+  readonly junk: MailboxId | undefined;
+  /** Folder-based provider: special mailboxes are reached by moving. */
+  readonly folders: boolean;
   readonly kindOf: ReadonlyMap<MailboxId, Mailbox["kind"]>;
+}
+
+/** Mailboxes whose messages appear in no other list (Gmail: Spam and Trash). */
+export function isolatingMailboxes(
+  mailboxes: readonly Mailbox[],
+): ReadonlySet<MailboxId> {
+  return new Set(
+    mailboxes
+      .filter((mailbox) => mailbox.role === "junk" || mailbox.role === "trash")
+      .map((mailbox) => mailbox.id),
+  );
 }
 
 /** The summary with new memberships, or undefined if they don't change. */
@@ -65,11 +89,49 @@ function withMailboxes(
   return same ? undefined : { ...message, mailboxIds: next };
 }
 
+/** Into a special mailbox: folder providers move there, label providers add it. */
+function enter(
+  message: MessageSummary,
+  target: MailboxId | undefined,
+  { folders, kindOf }: ApplyContext,
+  alsoLeave: MailboxId | undefined,
+): MessageSummary | undefined {
+  if (target === undefined || message.mailboxIds.includes(target))
+    return undefined;
+  const kept = folders
+    ? message.mailboxIds.filter((id) => kindOf.get(id) !== "folder")
+    : message.mailboxIds.filter((id) => id !== alsoLeave);
+  return withMailboxes(message, [...kept, target]);
+}
+
+/** Out of a special mailbox: label providers drop it, folder providers move to `fallback`. */
+function leave(
+  message: MessageSummary,
+  source: MailboxId | undefined,
+  { folders }: ApplyContext,
+  fallback: MailboxId | undefined,
+  addBack: MailboxId | undefined,
+): MessageSummary | undefined {
+  if (source === undefined || !message.mailboxIds.includes(source))
+    return undefined;
+  const remaining = message.mailboxIds.filter((id) => id !== source);
+  if (folders)
+    return withMailboxes(
+      message,
+      fallback === undefined ? remaining : [...remaining, fallback],
+    );
+  return withMailboxes(
+    message,
+    addBack === undefined ? remaining : [...remaining, addBack],
+  );
+}
+
 function apply(
   intent: MailIntent,
   message: MessageSummary,
-  { inbox, archiveFolder, kindOf }: ApplyContext,
-): MessageSummary | undefined {
+  context: ApplyContext,
+): MessageSummary | "deleted" | undefined {
+  const { inbox, archiveFolder, kindOf } = context;
   switch (intent.kind) {
     case "archive": {
       if (inbox === undefined || !message.mailboxIds.includes(inbox)) {
@@ -121,14 +183,48 @@ function apply(
         ...message.mailboxIds.filter((id) => !intent.remove.includes(id)),
         ...intent.add,
       ]);
+    case "trash":
+      // Gmail keeps the other labels; the message just disappears from them.
+      return enter(message, context.trash, context, undefined);
+    case "untrash":
+      return leave(message, context.trash, context, inbox, undefined);
+    case "report-spam":
+      return enter(message, context.junk, context, inbox);
+    case "not-spam":
+      return leave(message, context.junk, context, inbox, inbox);
+    case "delete-forever":
+      return "deleted";
   }
 }
 
-/** Whether a message shows up in the list of `mailbox`. */
-export function belongsTo(mailbox: Mailbox, message: MessageSummary): boolean {
+/**
+ * Whether a message shows up in the list of `mailbox`. Messages in an
+ * isolating mailbox (Spam, Trash; see {@link isolatingMailboxes}) show up
+ * only there.
+ */
+export function belongsTo(
+  mailbox: Mailbox,
+  message: MessageSummary,
+  isolating: ReadonlySet<MailboxId> = new Set(),
+): boolean {
+  if (
+    !isolating.has(mailbox.id) &&
+    message.mailboxIds.some((id) => isolating.has(id))
+  ) {
+    return false;
+  }
   if (mailbox.role === "flagged") return message.flags.flagged;
   if (mailbox.kind === "view") return true;
   return message.mailboxIds.includes(mailbox.id);
+}
+
+/** Whether the message is in the list after the change (never, once deleted). */
+function staysIn(
+  mailbox: Mailbox,
+  change: MessageChange,
+  isolating: ReadonlySet<MailboxId>,
+): boolean {
+  return change.deleted !== true && belongsTo(mailbox, change.after, isolating);
 }
 
 /**
@@ -140,6 +236,7 @@ export function patchList(
   data: MessageListData,
   mailbox: Mailbox,
   changes: readonly MessageChange[],
+  isolating: ReadonlySet<MailboxId> = new Set(),
 ): MessageListData {
   const byId = new Map(changes.map((change) => [change.id, change]));
   let pages: Page<MessageSummary>[] = data.pages.map((page) => ({
@@ -147,7 +244,7 @@ export function patchList(
     items: page.items.flatMap((item) => {
       const change = byId.get(item.id);
       if (!change) return [item];
-      return belongsTo(mailbox, change.after)
+      return staysIn(mailbox, change, isolating)
         ? [
             {
               ...item,
@@ -166,8 +263,8 @@ export function patchList(
     .filter(
       (change) =>
         !present.has(change.id) &&
-        belongsTo(mailbox, change.after) &&
-        !belongsTo(mailbox, change.before),
+        staysIn(mailbox, change, isolating) &&
+        !belongsTo(mailbox, change.before, isolating),
     )
     .map((change) => change.after);
   for (const row of returning) pages = insertByDate(pages, row);
@@ -211,12 +308,14 @@ export function patchCounts(
   mailboxes: readonly Mailbox[],
   changes: readonly MessageChange[],
 ): Mailbox[] {
+  const isolating = isolatingMailboxes(mailboxes);
   return mailboxes.map((mailbox) => {
     if (!mailbox.counts || changes.length === 0) return mailbox;
     let { total, unread } = mailbox.counts;
-    for (const { before, after } of changes) {
-      const wasIn = belongsTo(mailbox, before);
-      const isIn = belongsTo(mailbox, after);
+    for (const change of changes) {
+      const { before, after } = change;
+      const wasIn = belongsTo(mailbox, before, isolating);
+      const isIn = staysIn(mailbox, change, isolating);
       total += Number(isIn) - Number(wasIn);
       unread +=
         Number(isIn && !after.flags.seen) - Number(wasIn && !before.flags.seen);

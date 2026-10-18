@@ -1,6 +1,7 @@
 import { isMailError, MailError } from "../../core/errors";
 import {
   asCursor,
+  asMessageId,
   type AttachmentId,
   type MailboxId,
   type MessageId,
@@ -71,6 +72,9 @@ export class GmailProvider implements MailProvider {
     settableFlags: ["seen", "flagged"],
     move: true,
     labels: true,
+    trash: true,
+    spam: true,
+    deleteForever: true,
   };
   readonly #http: GmailHttp;
 
@@ -238,6 +242,103 @@ export class GmailProvider implements MailProvider {
       { addLabelIds: add, removeLabelIds: remove },
       signal,
     );
+  }
+
+  /** Gmail's dedicated call (there's no batch variant); runs within the request limit. */
+  trash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#eachMessage(ids, "trash", signal);
+  }
+
+  untrash(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#eachMessage(ids, "untrash", signal);
+  }
+
+  reportSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#modify(
+      ids,
+      { addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] },
+      signal,
+    );
+  }
+
+  notSpam(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#modify(
+      ids,
+      { addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] },
+      signal,
+    );
+  }
+
+  /** `messages.batchDelete` (needs the full-access scope). */
+  async deleteForever(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    for (let start = 0; start < ids.length; start += BATCH_MODIFY_LIMIT) {
+      await this.#http.post(
+        "messages/batchDelete",
+        { ids: ids.slice(start, start + BATCH_MODIFY_LIMIT) },
+        signal,
+      );
+    }
+    return {};
+  }
+
+  /** Lists every message of Trash or Spam, then deletes them permanently. */
+  async emptyMailbox(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly deleted: number }> {
+    if (!SPAM_TRASH.has(mailboxId)) {
+      throw new MailError("provider", "Only Trash and Spam can be emptied.");
+    }
+    const ids: MessageId[] = [];
+    let pageToken: string | undefined;
+    do {
+      const page = await this.#http.get<GmailListMessagesResponse>(
+        "messages",
+        {
+          labelIds: [mailboxId],
+          includeSpamTrash: true,
+          maxResults: 500,
+          pageToken,
+        },
+        signal,
+      );
+      ids.push(...(page.messages ?? []).map(({ id }) => asMessageId(id)));
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined);
+    await this.deleteForever(ids, signal);
+    return { deleted: ids.length };
+  }
+
+  async #eachMessage(
+    ids: readonly MessageId[],
+    action: "trash" | "untrash",
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await Promise.all(
+      ids.map((id) =>
+        this.#http.post(
+          `messages/${encodeURIComponent(id)}/${action}`,
+          undefined,
+          signal,
+        ),
+      ),
+    );
+    return {};
   }
 
   /** Applies a label change in `batchModify` chunks. Ids never change in Gmail. */

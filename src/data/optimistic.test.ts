@@ -48,6 +48,9 @@ const labels: ProviderCapabilities = {
   settableFlags: ["seen", "flagged"],
   move: true,
   labels: true,
+  trash: true,
+  spam: true,
+  deleteForever: true,
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 
@@ -321,5 +324,78 @@ describe("move and set-labels", () => {
       labels,
     );
     expect(removed?.after.mailboxIds).toEqual(["inbox"]);
+  });
+});
+
+describe("trash, spam and deletion", () => {
+  const trash = box("trash", {
+    role: "trash",
+    counts: { unread: 0, total: 0 },
+  });
+  const boxes = [inbox, work, spam, all, trash];
+  const isolating = new Set([spam.id, trash.id]);
+  const plan = (
+    intent: Parameters<typeof planChanges>[0],
+    messages: MessageSummary[],
+  ) => planChanges(intent, messages, boxes, labels);
+
+  it("trash hides the message from every list but Trash", () => {
+    const changes = plan({ kind: "trash", ids: ids("m1") }, [m1]);
+    expect(changes[0]?.after.mailboxIds).toEqual(["inbox", "work", "trash"]);
+    expect(
+      rowIds(patchList(list([m1, m2]), inbox, changes, isolating)),
+    ).toEqual(["m2"]);
+    expect(rowIds(patchList(list([m1]), work, changes, isolating))).toEqual([]);
+    expect(rowIds(patchList(list([m1, m2]), all, changes, isolating))).toEqual([
+      "m2",
+    ]);
+    expect(rowIds(patchList(list([]), trash, changes, isolating))).toEqual([
+      "m1",
+    ]);
+    const counts = patchCounts(boxes, changes);
+    expect(counts.find((m) => m.id === work.id)?.counts).toEqual({
+      unread: 0,
+      total: 1,
+    });
+    expect(counts.find((m) => m.id === trash.id)?.counts).toEqual({
+      unread: 1,
+      total: 1,
+    });
+  });
+
+  it("untrash brings it back", () => {
+    const [trashed] = plan({ kind: "trash", ids: ids("m1") }, [m1]);
+    const back = plan({ kind: "untrash", ids: ids("m1") }, [trashed!.after]);
+    expect(back[0]?.after.mailboxIds).toEqual(["inbox", "work"]);
+    expect(rowIds(patchList(list([m2]), inbox, back, isolating))).toEqual([
+      "m1",
+      "m2",
+    ]);
+  });
+
+  it("reports spam out of the inbox and back with not-spam", () => {
+    const [reported] = plan({ kind: "report-spam", ids: ids("m2") }, [m2]);
+    expect(reported?.after.mailboxIds).toEqual(["spam"]);
+    const [restored] = plan({ kind: "not-spam", ids: ids("m2") }, [
+      reported!.after,
+    ]);
+    expect(restored?.after.mailboxIds).toEqual(["inbox"]);
+  });
+
+  it("delete-forever removes the row everywhere and from every count", () => {
+    const [trashed] = plan({ kind: "trash", ids: ids("m3") }, [m3]);
+    const deleted = plan({ kind: "delete-forever", ids: ids("m3") }, [
+      trashed!.after,
+    ]);
+    expect(deleted[0]?.deleted).toBe(true);
+    expect(
+      rowIds(patchList(list([trashed!.after]), trash, deleted, isolating)),
+    ).toEqual([]);
+    expect(rowIds(patchList(list([m3]), all, deleted, isolating))).toEqual([]);
+    const counted = patchCounts(
+      [{ ...trash, counts: { unread: 1, total: 1 } }],
+      deleted,
+    );
+    expect(counted[0]?.counts).toEqual({ unread: 0, total: 0 });
   });
 });

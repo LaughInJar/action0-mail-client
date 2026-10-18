@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { FakeMailProvider } from "../providers/fake/FakeMailProvider";
 import { renderApp } from "../test/renderApp";
 
 const subject = (name: string) =>
@@ -41,13 +42,15 @@ describe("move picker", () => {
     await subject("Welcome to the demo");
     await user.keyboard("v");
     const dialog = await screen.findByRole("dialog", { name: /Move to/ });
-    // Neither the current mailbox nor Spam/Trash/views are offered.
+    // The current mailbox and views aren't offered; Spam and Trash are.
     const names = within(dialog)
       .getAllByRole("option")
       .map((o) => o.textContent);
     expect(names).not.toContain("Inbox");
-    expect(names).not.toContain("Spam");
-    expect(names).toContain("Work / Clients");
+    expect(names).not.toContain("All Mail");
+    expect(names).toEqual(
+      expect.arrayContaining(["Spam", "Trash", "Work / Clients"]),
+    );
 
     await user.keyboard("rec{Enter}");
     expect(await toastText("Moved 1 message to Receipts")).toBeInTheDocument();
@@ -58,6 +61,22 @@ describe("move picker", () => {
     expect(await subject("This week in web development")).toBeInTheDocument();
 
     await user.keyboard("z");
+    expect(await option(/Welcome to the demo/)).toBeInTheDocument();
+  });
+});
+
+describe("errors from closed dialogs", () => {
+  it("still reports a failed move after the picker has closed", async () => {
+    const { user, services } = renderApp();
+    await subject("Welcome to the demo");
+    const provider = services.registry.list()[0]?.provider as FakeMailProvider;
+    provider.failWrites = true;
+    await user.keyboard("v");
+    await screen.findByRole("dialog", { name: /Move to/ });
+    await user.keyboard("rec{Enter}");
+    expect(
+      await toastText(/Couldn’t move: The demo server refused/),
+    ).toBeInTheDocument();
     expect(await option(/Welcome to the demo/)).toBeInTheDocument();
   });
 });
@@ -187,7 +206,7 @@ describe("drag and drop", () => {
     const row = await option(/Packing list/);
     const data = dataTransfer();
     fireEvent.dragStart(row, { dataTransfer: data });
-    for (const name of [/^Sent/, /^Inbox/, /^Trash/, /^All Mail/]) {
+    for (const name of [/^Sent/, /^Inbox/, /^Starred/, /^All Mail/]) {
       const target = treeItem(name);
       drag("dragover", target, data);
       expect(within(target).queryByText("Move here")).not.toBeInTheDocument();

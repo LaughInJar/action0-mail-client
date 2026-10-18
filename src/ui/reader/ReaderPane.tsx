@@ -7,6 +7,7 @@ import { errorMessage } from "../common/errorMessage";
 import { IconButton } from "../common/IconButton";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import type { Breakpoint } from "../layout/useBreakpoint";
+import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
 import { listKeyOf } from "../messages/useListController";
 import { AttachmentList } from "./AttachmentList";
@@ -134,57 +135,11 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           />
         )}
         <div className="flex-1" />
-        {actions.canArchive && (
-          <IconButton
-            label={inInbox ? "Archive (a)" : "Not in the Inbox"}
-            icon="archive"
-            disabled={!inInbox}
-            onClick={() => {
-              actions.archive([messageId]);
-            }}
-          />
-        )}
-        {actions.canMove && (
-          <IconButton
-            label="Move to… (v)"
-            icon="folder"
-            disabled={!message}
-            onClick={() => {
-              actions.openPicker("move", [messageId]);
-            }}
-          />
-        )}
-        {actions.canLabel && (
-          <IconButton
-            label="Labels… (l)"
-            icon="tag"
-            disabled={!message}
-            onClick={() => {
-              actions.openPicker("labels", [messageId]);
-            }}
-          />
-        )}
-        {actions.canStar && message && (
-          <IconButton
-            label={message.flags.flagged ? "Unstar (s)" : "Star (s)"}
-            icon="star"
-            pressed={message.flags.flagged}
-            onClick={() => {
-              actions.toggleStar([messageId]);
-            }}
-          />
-        )}
-        {actions.canSetSeen && message && (
-          <IconButton
-            label={
-              message.flags.seen
-                ? "Mark as unread (Shift+U)"
-                : "Mark as read (Shift+I)"
-            }
-            icon={message.flags.seen ? "mail" : "mail-open"}
-            onClick={() => {
-              actions.setSeen(!message.flags.seen, { ids: [messageId] });
-            }}
+        {message && (
+          <MailActionButtons
+            actions={actions}
+            message={message}
+            archivable={inInbox}
           />
         )}
       </div>

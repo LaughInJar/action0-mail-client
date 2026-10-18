@@ -2,11 +2,12 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels and stars (features 1–3).
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam (features 1–4).
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several Gmail accounts side by side.
-- Archive, mark as read/unread, star, move and label, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
+- Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
+- Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
 - Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
@@ -25,14 +26,14 @@ Open <http://localhost:5173/?demo> to start with the demo account. To read your 
 
 ## Setting up Google sign-in
 
-The app uses the Google Identity Services token model with the `gmail.modify` scope (read and change mail, e.g. labels and read state; it can't delete mail permanently). You need your own OAuth client ID; it is not a secret and is embedded in the built app.
+The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
 
 1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
 2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it.
 3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
    - **Branding:** an app name and your support email.
    - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
-   - **Data access:** add the scope `https://www.googleapis.com/auth/gmail.modify`. If you set the app up earlier with `gmail.readonly`, add `gmail.modify` now; each account then reconnects once.
+   - **Data access:** add the scope `https://mail.google.com/`. If you set the app up earlier with `gmail.readonly` or `gmail.modify`, add this one; each account then reconnects once.
 4. Go to **Clients → Create client**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
@@ -49,7 +50,7 @@ The app uses the Google Identity Services token model with the `gmail.modify` sc
 
 Things to know:
 
-- `gmail.modify` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
+- `https://mail.google.com/` is a _restricted_ scope. In **Testing** mode (or with an **Internal** app) that's fine for you and your test users; Google shows a "Google hasn't verified this app" warning that you can continue past. Publishing the app for everyone would require Google's verification and a security assessment.
 - Google issues access tokens that last **one hour** and no refresh token to browser apps without a backend. The app refreshes the token on your next click or key press shortly before it expires (the Google popup opens and closes by itself while you're signed in to Google). If that's not possible, a bar offers a one-click **Reconnect**. On touch devices the popup would open as a new tab, so there the bar appears a few minutes before expiry instead.
 - A message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read.
 
@@ -74,23 +75,26 @@ Google sign-in does not: Google only allows plain `http://` origins for `localho
 
 ## Keyboard shortcuts
 
-| Keys                                                                        | Action                                              |
-| --------------------------------------------------------------------------- | --------------------------------------------------- |
-| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                             |
-| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                                |
-| <kbd>x</kbd>                                                                | Select or unselect the current message              |
-| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)                  |
-| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                         |
-| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                  |
-| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail              |
-| <kbd>a</kbd>                                                                | Archive the message or selection                    |
-| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                               |
-| <kbd>z</kbd>                                                                | Undo the last action                                |
-| <kbd>v</kbd>                                                                | Move to… (pick a mailbox, Enter moves)              |
-| <kbd>l</kbd>                                                                | Labels… (toggle labels, Enter applies, Esc cancels) |
-| <kbd>s</kbd>                                                                | Star / unstar                                       |
-| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                           |
-| <kbd>?</kbd>                                                                | Show all shortcuts                                  |
+| Keys                                                                        | Action                                                    |
+| --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                                   |
+| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                                      |
+| <kbd>x</kbd>                                                                | Select or unselect the current message                    |
+| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)                        |
+| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                               |
+| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                        |
+| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail                    |
+| <kbd>a</kbd>                                                                | Archive the message or selection                          |
+| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                                     |
+| <kbd>z</kbd>                                                                | Undo the last action                                      |
+| <kbd>v</kbd>                                                                | Move to… (pick a mailbox, Enter moves)                    |
+| <kbd>l</kbd>                                                                | Labels… (toggle labels, Enter applies, Esc cancels)       |
+| <kbd>s</kbd>                                                                | Star / unstar                                             |
+| <kbd>Delete</kbd> (Mac: <kbd>⌫</kbd>)                                       | Move to Trash; inside Trash: restore                      |
+| <kbd>Shift</kbd> + <kbd>s</kbd>                                             | Report spam; inside Spam: not spam                        |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd>                                        | Delete forever (inside Trash and Spam, with confirmation) |
+| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                                 |
+| <kbd>?</kbd>                                                                | Show all shortcuts                                        |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
 

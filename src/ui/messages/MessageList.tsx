@@ -18,6 +18,8 @@ const rowDomId = (index: number) => `message-row-${index}`;
 /** Props of {@link MessageList}. */
 export interface MessageListProps {
   readonly accountId: AccountId;
+  /** Rows can be dragged onto the tree (not inside Trash/Spam). */
+  readonly allowDrag: boolean;
   readonly items: readonly MessageSummary[];
   readonly mailbox: Mailbox | undefined;
   readonly hasNextPage: boolean;
@@ -55,6 +57,7 @@ function dragBadge(text: string): HTMLElement {
  */
 export function MessageList({
   accountId,
+  allowDrag,
   items,
   mailbox,
   hasNextPage,
@@ -197,7 +200,7 @@ export function MessageList({
             selected={selectionMode ? selectedIds.has(summary.id) : focused}
             selectionMode={selectionMode}
             showRecipients={showRecipients}
-            draggable={!coarse}
+            draggable={allowDrag && !coarse}
             starrable={onToggleStar !== undefined}
           />
         );

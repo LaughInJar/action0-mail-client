@@ -46,6 +46,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 - Never force unnecessary clicks.
 - Drag and drop moves messages into folders or labels.
 - Keyboard shortcuts everywhere. For example, `a` archives the current message or the selection. The list supports multi-select.
+- Undo wherever possible: every action that changes mail gets an optimistic update, an undo toast and `z`. If an action can't be undone (e.g. permanent deletion), it asks for confirmation instead.
 
 ## Quality rules
 
@@ -103,3 +104,7 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - `v` opens the Move to… picker and `l` the Labels picker. Changes in the label picker apply when it closes (Enter or click outside), as one undoable action; Esc cancels.
   - Spam and Trash are not move targets yet. They come with a separate delete/spam feature.
   - Starring is included: `s` and clickable stars.
+- **Feature 4 (delete + spam) decisions:**
+  - Delete moves to Trash and Shift+S reports spam. Inside Trash and Spam the same key undoes it: Delete restores, Shift+S means "not spam".
+  - Trash and Spam become drag and picker targets. Trashed or spam messages appear in no other list.
+  - Permanent deletion is included: "Delete forever" (Shift+Delete, in Trash and Spam only) and "Empty Trash/Spam". It always asks for confirmation, with Cancel as the default button. This needs the full-access scope `https://mail.google.com/`, so accounts reconnect once.

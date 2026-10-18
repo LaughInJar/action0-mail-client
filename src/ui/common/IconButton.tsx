@@ -11,6 +11,8 @@ export interface IconButtonProps {
   readonly spinning?: boolean;
   /** Toggle state; filled icon and `aria-pressed` when true. */
   readonly pressed?: boolean;
+  /** Red, for destructive actions. */
+  readonly danger?: boolean;
 }
 
 /** Square icon-only button; 44px touch target on touch devices. */
@@ -21,6 +23,7 @@ export function IconButton({
   disabled = false,
   spinning = false,
   pressed,
+  danger = false,
 }: IconButtonProps) {
   return (
     <button
@@ -30,7 +33,7 @@ export function IconButton({
       disabled={disabled}
       aria-pressed={pressed}
       onClick={onClick}
-      className="grid size-9 shrink-0 place-items-center rounded-md text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:size-11"
+      className={`grid size-9 shrink-0 place-items-center rounded-md hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800 pointer-coarse:size-11 ${danger ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-300"}`}
     >
       <Icon
         name={icon}

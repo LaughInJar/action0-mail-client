@@ -8,6 +8,7 @@ import type { MessageId } from "../../core/ids";
 import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
+import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
 import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
@@ -68,6 +69,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     body = (
       <MessageList
         accountId={route.accountId}
+        allowDrag={mailbox?.role !== "trash" && mailbox?.role !== "junk"}
         items={list.data}
         mailbox={mailbox}
         hasNextPage={list.hasNextPage}
@@ -136,59 +138,25 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           aria-label="Actions for the selected messages"
           className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900"
         >
-          {actions.canArchive && (
-            <IconButton
-              label="Archive (a)"
-              icon="archive"
-              onClick={() => {
-                actions.archive();
-              }}
-            />
-          )}
-          {actions.canMove && (
-            <IconButton
-              label="Move to… (v)"
-              icon="folder"
-              onClick={() => {
-                actions.openPicker("move");
-              }}
-            />
-          )}
-          {actions.canLabel && (
-            <IconButton
-              label="Labels… (l)"
-              icon="tag"
-              onClick={() => {
-                actions.openPicker("labels");
-              }}
-            />
-          )}
-          {actions.canStar && (
-            <IconButton
-              label="Star or unstar (s)"
-              icon="star"
-              onClick={() => {
-                actions.toggleStar();
-              }}
-            />
-          )}
-          {actions.canSetSeen && (
-            <>
-              <IconButton
-                label="Mark as read (Shift+I)"
-                icon="mail-open"
-                onClick={() => {
-                  actions.setSeen(true);
-                }}
-              />
-              <IconButton
-                label="Mark as unread (Shift+U)"
-                icon="mail"
-                onClick={() => {
-                  actions.setSeen(false);
-                }}
-              />
-            </>
+          <MailActionButtons actions={actions} />
+        </div>
+      )}
+      {(mailbox?.role === "trash" || mailbox?.role === "junk") && (
+        <div
+          role="note"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+        >
+          <span className="min-w-0 flex-1">
+            Messages in {mailbox.name} are deleted automatically after 30 days.
+          </span>
+          {actions.canDeleteForever && (list.data?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={actions.requestEmpty}
+              className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 pointer-coarse:min-h-11"
+            >
+              Empty {mailbox.name}
+            </button>
           )}
         </div>
       )}

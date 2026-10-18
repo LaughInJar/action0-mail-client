@@ -11,10 +11,11 @@ import { GmailProvider } from "./GmailProvider";
 import type { GmailProfile } from "./types";
 
 /**
- * Read and modify mail (labels, read state), but not delete it permanently.
- * Tokens without it, e.g. read-only tokens from before, count as expired.
+ * Full access to the mailbox. Needed for permanent deletion ("Delete
+ * forever", "Empty Trash"); everything else would work with `gmail.modify`.
+ * Tokens with a narrower scope count as expired and ask for a reconnect.
  */
-export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+export const GMAIL_SCOPE = "https://mail.google.com/";
 
 /** Configuration of the Gmail provider module. */
 export interface GmailModuleOptions {

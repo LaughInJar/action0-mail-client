@@ -28,6 +28,16 @@ export type MailIntent =
       readonly ids: readonly MessageId[];
       readonly add: readonly MailboxId[];
       readonly remove: readonly MailboxId[];
+    }
+  | {
+      readonly kind:
+        | "trash"
+        | "untrash"
+        | "report-spam"
+        | "not-spam"
+        /** Permanent; has no inverse. */
+        | "delete-forever";
+      readonly ids: readonly MessageId[];
     };
 
 /** What an intent does (or did) to one message. */
@@ -35,6 +45,8 @@ export interface MessageChange {
   readonly id: MessageId;
   readonly before: MessageSummary;
   readonly after: MessageSummary;
+  /** The message is gone for good (delete-forever); `after` is meaningless. */
+  readonly deleted?: true;
 }
 
 /** Runs an intent against a provider. */
@@ -62,6 +74,16 @@ export function runIntent(
         { add: intent.add, remove: intent.remove },
         signal,
       );
+    case "trash":
+      return provider.trash(intent.ids, signal);
+    case "untrash":
+      return provider.untrash(intent.ids, signal);
+    case "report-spam":
+      return provider.reportSpam(intent.ids, signal);
+    case "not-spam":
+      return provider.notSpam(intent.ids, signal);
+    case "delete-forever":
+      return provider.deleteForever(intent.ids, signal);
   }
 }
 
@@ -107,9 +129,17 @@ export function inverseOf(
       });
     case "move":
     case "set-labels":
-      return labels
-        ? labelInverses(changes)
-        : moveBackInverses(changes, intent);
+      return labels ? labelInverses(changes) : moveBackInverses(changes);
+    case "trash":
+      return [{ kind: "untrash", ids }];
+    case "untrash":
+      return [{ kind: "trash", ids }];
+    case "report-spam":
+    case "not-spam":
+      // Exact restore of the memberships (e.g. back into a label, not the inbox).
+      return labels ? labelInverses(changes) : moveBackInverses(changes);
+    case "delete-forever":
+      return [];
   }
 }
 
@@ -141,21 +171,25 @@ function labelInverses(changes: readonly MessageChange[]): MailIntent[] {
 }
 
 /** For folder providers: move each message back to the folder it came from. */
-function moveBackInverses(
-  changes: readonly MessageChange[],
-  intent: Extract<MailIntent, { kind: "move" | "set-labels" }>,
-): MailIntent[] {
-  if (intent.kind !== "move") return [];
-  const byOrigin = new Map<MailboxId, MessageId[]>();
-  for (const { id, before } of changes) {
+function moveBackInverses(changes: readonly MessageChange[]): MailIntent[] {
+  const groups = new Map<
+    string,
+    { from: MailboxId; to: MailboxId; ids: MessageId[] }
+  >();
+  for (const { id, before, after } of changes) {
     const origin = before.mailboxIds[0];
-    if (origin === undefined) continue;
-    byOrigin.set(origin, [...(byOrigin.get(origin) ?? []), id]);
+    const current = after.mailboxIds[0];
+    if (origin === undefined || current === undefined || origin === current)
+      continue;
+    const key = JSON.stringify([current, origin]);
+    const group = groups.get(key) ?? { from: current, to: origin, ids: [] };
+    group.ids.push(id);
+    groups.set(key, group);
   }
-  return [...byOrigin].map(([origin, ids]) => ({
+  return [...groups.values()].map(({ from, to, ids }) => ({
     kind: "move",
     ids,
-    from: intent.to,
-    to: origin,
+    from,
+    to,
   }));
 }
