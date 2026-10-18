@@ -10,9 +10,11 @@ import { GmailHttp } from "./http";
 import { GmailProvider } from "./GmailProvider";
 import type { GmailProfile } from "./types";
 
-/** The only scope feature 1 needs. */
-export const GMAIL_READONLY_SCOPE =
-  "https://www.googleapis.com/auth/gmail.readonly";
+/**
+ * Read and modify mail (labels, read state), but not delete it permanently.
+ * Tokens without it, e.g. read-only tokens from before, count as expired.
+ */
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 
 /** Configuration of the Gmail provider module. */
 export interface GmailModuleOptions {
@@ -35,7 +37,7 @@ export function createGmailModule({
   const sessionFor = (account: Account) =>
     new GoogleAuthSession({
       clientId,
-      scope: GMAIL_READONLY_SCOPE,
+      scope: GMAIL_SCOPE,
       loginHint: account.email,
       tokenStore: sessionTokenStore(account.id, tokenStorage),
     });
@@ -48,7 +50,7 @@ export function createGmailModule({
       const ready = peekGis();
       const token = await requestGoogleToken(ready ?? (await loadGis()), {
         clientId,
-        scope: GMAIL_READONLY_SCOPE,
+        scope: GMAIL_SCOPE,
         prompt: "select_account",
       });
 

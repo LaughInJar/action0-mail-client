@@ -194,4 +194,27 @@ describe("GmailHttp", () => {
     controller.abort();
     await expect(request).rejects.toThrow();
   });
+
+  it("POSTs JSON and accepts an empty response body", async () => {
+    let seen:
+      { method: string; type: string | null; body: unknown } | undefined;
+    server.use(
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        seen = {
+          method: request.method,
+          type: request.headers.get("Content-Type"),
+          body: await request.json(),
+        };
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      client().http.post("messages/batchModify", { ids: ["a"] }),
+    ).resolves.toBeUndefined();
+    expect(seen).toEqual({
+      method: "POST",
+      type: "application/json",
+      body: { ids: ["a"] },
+    });
+  });
 });

@@ -4,8 +4,24 @@ import {
   type StateStorage,
 } from "zustand/middleware";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { MessageId } from "../core/ids";
+import type { AccountId, MessageId } from "../core/ids";
+import type { MailIntent } from "../core/intents";
+import type { MessageSummary } from "../core/model";
 import * as selection from "./selection";
+
+/** A short notification at the bottom of the screen, optionally undoable. */
+export interface Toast {
+  readonly id: number;
+  readonly message: string;
+  readonly tone: "info" | "error";
+  /** Intents that revert the action the toast reports. */
+  readonly undo?: {
+    readonly accountId: AccountId;
+    readonly intents: readonly MailIntent[];
+    /** The messages as the action left them, for messages that left every cached list. */
+    readonly known: readonly MessageSummary[];
+  };
+}
 
 /** UI state that isn't server data and isn't in the URL. */
 export interface UiState extends selection.SelectionState {
@@ -19,6 +35,8 @@ export interface UiState extends selection.SelectionState {
   readonly toggledNodes: ReadonlySet<string>;
   readonly drawerOpen: boolean;
   readonly helpOpen: boolean;
+  /** The current toast. Session only. */
+  readonly toast: Toast | null;
 }
 
 /** State transitions. */
@@ -43,6 +61,10 @@ export interface UiActions {
   readonly toggleNode: (key: string) => void;
   readonly setDrawerOpen: (open: boolean) => void;
   readonly setHelpOpen: (open: boolean) => void;
+  /** Shows a toast, replacing the current one. */
+  readonly showToast: (toast: Omit<Toast, "id">) => void;
+  /** Hides the toast with this id (if it is still the current one). */
+  readonly dismissToast: (id: number) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -96,6 +118,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           toggledNodes: new Set(),
           drawerOpen: false,
           helpOpen: false,
+          toast: null,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -150,6 +173,12 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setHelpOpen: (helpOpen) => {
             set({ helpOpen });
+          },
+          showToast: (toast) => {
+            set((s) => ({ toast: { ...toast, id: (s.toast?.id ?? 0) + 1 } }));
+          },
+          dismissToast: (id) => {
+            set((s) => (s.toast?.id === id ? { toast: null } : {}));
           },
         };
       },

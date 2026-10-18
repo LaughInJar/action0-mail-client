@@ -8,6 +8,7 @@ import type { MessageId } from "../../core/ids";
 import { findMailbox, useMailboxes, useMessageList } from "../../data/hooks";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
+import { useMailActions } from "../actions/useMailActions";
 import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { MessageList } from "./MessageList";
@@ -27,6 +28,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const clearSelection = useUi((state) => state.clearSelection);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   const { fetchNextPage } = list;
+  const actions = useMailActions();
 
   const onOpen = useCallback(
     (id: MessageId) => {
@@ -92,6 +94,33 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
             <p className="flex-1 px-2 text-sm font-medium" aria-live="polite">
               {selectedCount} selected
             </p>
+            {actions.canArchive && (
+              <IconButton
+                label="Archive (a)"
+                icon="archive"
+                onClick={() => {
+                  actions.archive();
+                }}
+              />
+            )}
+            {actions.canSetSeen && (
+              <>
+                <IconButton
+                  label="Mark as read (Shift+I)"
+                  icon="mail-open"
+                  onClick={() => {
+                    actions.setSeen(true);
+                  }}
+                />
+                <IconButton
+                  label="Mark as unread (Shift+U)"
+                  icon="mail"
+                  onClick={() => {
+                    actions.setSeen(false);
+                  }}
+                />
+              </>
+            )}
             <button
               type="button"
               onClick={clearSelection}

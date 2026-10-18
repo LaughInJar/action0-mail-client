@@ -70,4 +70,33 @@ describe("FakeMailProvider", () => {
     );
     expect(logo.type).toBe("image/svg+xml");
   });
+
+  it("applies writes to later reads", async () => {
+    const fake = provider();
+    const welcome = asMessageId("welcome");
+    await fake.archive([welcome]);
+    const inbox = await fake.listMessages({
+      mailboxId: DEMO_MAILBOX.inbox,
+      limit: 500,
+    });
+    expect(inbox.items.some((m) => m.id === welcome)).toBe(false);
+    await fake.unarchive([welcome]);
+    await fake.setFlags([welcome], { seen: true });
+    const message = await fake.getMessage(welcome);
+    expect(message.mailboxIds).toContain(DEMO_MAILBOX.inbox);
+    expect(message.flags.seen).toBe(true);
+  });
+
+  it("can be told to fail writes", async () => {
+    const fake = new FakeMailProvider(createDemoData(0), { failWrites: true });
+    const error: unknown = await fake
+      .archive([asMessageId("welcome")])
+      .catch((e: unknown) => e);
+    expect(isMailError(error, "provider")).toBe(true);
+    const inbox = await fake.listMessages({
+      mailboxId: DEMO_MAILBOX.inbox,
+      limit: 1,
+    });
+    expect(inbox.items[0]?.id).toBe("welcome");
+  });
 });

@@ -87,6 +87,8 @@ export default defineConfig([
     files: ["**/*.test.{ts,tsx}", "src/test/**"],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off",
+      // Tests may wire up the in-memory provider directly.
+      "no-restricted-imports": "off",
     },
   },
   {
