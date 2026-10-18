@@ -12,7 +12,9 @@ export async function sendOneClickUnsubscribe(
   signal?: AbortSignal,
 ): Promise<void> {
   if (!url.startsWith("https:"))
-    throw new MailError("provider", "One-click unsubscribe needs https.");
+    throw new MailError("provider", "One-click unsubscribe needs https.", {
+      reason: "needsHttps",
+    });
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -28,12 +30,17 @@ export async function sendOneClickUnsubscribe(
     if (signal?.aborted) throw cause;
     throw new MailError("network", "The sender’s server couldn’t be reached.", {
       cause,
+      reason: "senderUnreachable",
     });
   }
   if (response.type !== "opaque" && !response.ok)
     throw new MailError(
       "provider",
       `The sender’s server refused (${response.status}).`,
-      { status: response.status },
+      {
+        status: response.status,
+        reason: "senderRefused",
+        params: { status: String(response.status) },
+      },
     );
 }

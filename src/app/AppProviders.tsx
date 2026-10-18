@@ -6,6 +6,7 @@ import {
   ProviderSetupContext,
 } from "../accounts/context";
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
+import { I18nProvider } from "../i18n/I18nProvider";
 import { CommandRegistryContext } from "../keyboard/context";
 import { RouterContext, UiStoreContext } from "../state/context";
 import { COARSE_POINTER_QUERY } from "../ui/layout/useBreakpoint";
@@ -52,7 +53,7 @@ export function AppProviders({
         <RouterContext value={services.router}>
           <CommandRegistryContext value={commands}>
             <ProviderSetupContext value={services.setups}>
-              {children}
+              <I18nProvider>{children}</I18nProvider>
             </ProviderSetupContext>
           </CommandRegistryContext>
         </RouterContext>

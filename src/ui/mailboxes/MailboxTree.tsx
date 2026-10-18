@@ -12,7 +12,6 @@ import { useAccounts, useAuthStatus } from "../../accounts/context";
 import type { AccountHandle } from "../../accounts/types";
 import { asAccountId, asMailboxId, type AccountId } from "../../core/ids";
 import type { Mailbox, MailboxRole } from "../../core/model";
-import { useMailboxes } from "../../data/hooks";
 import { isOwnMailbox } from "../../data/mailboxActions";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
@@ -28,6 +27,8 @@ import {
   type MailboxNode,
 } from "./buildTree";
 import { FOLDER_FILTER_ID } from "./FolderFilter";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** The tree item currently under a drag, and whether the drop would only add a label. */
 interface DropHighlight {
@@ -83,6 +84,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const actions = useMailActions();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
+  const a = useT().accounts;
 
   /**
    * Opens the label menu of `item`: at a pointer position, below an anchor
@@ -297,7 +299,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     <div
       ref={treeRef}
       role="tree"
-      aria-label="Accounts and mailboxes"
+      aria-label={a.tree}
       tabIndex={-1}
       onClick={onClick}
       onKeyDown={onKeyDown}
@@ -337,7 +339,7 @@ interface AccountBranchProps {
 function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const { account, auth } = handle;
   const status = useAuthStatus(auth);
-  const { data: mailboxes, isPending, isError } = useMailboxes(account.id);
+  const { data: mailboxes, isPending, isError } = useMailboxList(account.id);
   const filter = useContext(FilterContext);
   const nodes = useMemo(() => {
     const tree = buildMailboxTree(mailboxes ?? []);
@@ -346,16 +348,17 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const toggledNodes = useUi((state) => state.toggledNodes);
   const key = `account:${account.id}`;
   const expanded = filter !== "" || !toggledNodes.has(key);
+  const a = useT().accounts;
 
   let body;
   if (!expanded) body = null;
   else if (!mailboxes && status !== "signed-in")
-    body = <TreeNote>Reconnect to load folders.</TreeNote>;
-  else if (isPending) body = <TreeNote>Loading folders…</TreeNote>;
+    body = <TreeNote>{a.reconnectToLoad}</TreeNote>;
+  else if (isPending) body = <TreeNote>{a.loadingFolders}</TreeNote>;
   else if (isError && !mailboxes)
-    body = <TreeNote>Couldn’t load folders.</TreeNote>;
+    body = <TreeNote>{a.couldntLoadFolders}</TreeNote>;
   else if (filter && nodes.length === 0)
-    body = <TreeNote>No matching folders.</TreeNote>;
+    body = <TreeNote>{a.noMatchingFolders}</TreeNote>;
   else
     body = nodes.map((node) => (
       <MailboxBranch
@@ -388,7 +391,7 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
         </span>
         {status === "expired" && (
           <span className="text-xs text-amber-700 dark:text-amber-400">
-            signed out
+            {a.signedOut}
           </span>
         )}
       </div>
@@ -432,6 +435,7 @@ function MailboxBranch({
   const drop = useContext(DropContext);
   const dropHere = drop?.key === key;
   const editable = manageable && isOwnMailbox(mailbox);
+  const a = useT().accounts;
 
   return (
     <>
@@ -475,7 +479,7 @@ function MailboxBranch({
         </span>
         {dropHere && (
           <span className="shrink-0 rounded bg-blue-600 px-1.5 py-px text-[0.6875rem] font-semibold text-white">
-            {drop.copy ? "Add label" : "Move here"}
+            {drop.copy ? a.addLabelHere : a.moveHere}
           </span>
         )}
         {badge !== undefined && (
@@ -483,11 +487,7 @@ function MailboxBranch({
             <span className="sr-only">, </span>
             {badge}
             <span className="sr-only">
-              {mailbox.role === "drafts"
-                ? badge === 1
-                  ? " draft"
-                  : " drafts"
-                : " unread"}
+              {mailbox.role === "drafts" ? a.drafts(badge) : a.unread}
             </span>
           </span>
         )}
@@ -499,7 +499,7 @@ function MailboxBranch({
             tabIndex={-1}
             aria-hidden="true"
             data-label-menu=""
-            title={`Actions for ${mailbox.name}`}
+            title={a.actionsFor(mailbox.name)}
             onMouseDown={(event) => {
               event.preventDefault();
             }}

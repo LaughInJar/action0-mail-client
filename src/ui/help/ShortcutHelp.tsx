@@ -1,13 +1,22 @@
 import { useId, useRef } from "react";
 import { formatBinding } from "../../keyboard/keys";
 import { useRegisteredCommands } from "../../keyboard/context";
-import type { Command } from "../../keyboard/registry";
+import type { Command, CommandGroup } from "../../keyboard/registry";
 import { useUi } from "../../state/context";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { IconButton } from "../common/IconButton";
+import { useT } from "../../i18n/context";
 
-const GROUP_ORDER = ["Message list", "Actions", "Reading", "Go to", "General"];
-const groupRank = (group: string) => {
+const GROUP_ORDER: readonly CommandGroup[] = [
+  "list",
+  "actions",
+  "reading",
+  "writing",
+  "goTo",
+  "search",
+  "general",
+];
+const groupRank = (group: CommandGroup) => {
   const index = GROUP_ORDER.indexOf(group);
   return index === -1 ? GROUP_ORDER.length : index;
 };
@@ -24,12 +33,13 @@ function ShortcutDialog() {
   const registry = useRegisteredCommands();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const t = useT();
   const close = () => {
     setHelpOpen(false);
   };
   useFocusTrap(dialogRef, true, close);
 
-  const groups = new Map<string, Command[]>();
+  const groups = new Map<CommandGroup, Command[]>();
   for (const command of registry.list()) {
     const group = groups.get(command.group) ?? [];
     group.push(command);
@@ -40,7 +50,7 @@ function ShortcutDialog() {
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Close"
+        aria-label={t.common.close}
         onClick={close}
         className="absolute inset-0 bg-black/40"
       />
@@ -54,16 +64,16 @@ function ShortcutDialog() {
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 id={titleId} className="text-lg font-semibold">
-            Keyboard shortcuts
+            {t.shortcuts.title}
           </h2>
-          <IconButton label="Close" icon="x" onClick={close} />
+          <IconButton label={t.common.close} icon="x" onClick={close} />
         </div>
         {[...groups]
           .sort(([a], [b]) => groupRank(a) - groupRank(b))
           .map(([group, commands]) => (
             <section key={group} className="mb-4">
               <h3 className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                {group}
+                {t.shortcuts.groups[group]}
               </h3>
               <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {commands.map((command) => (
@@ -78,7 +88,7 @@ function ShortcutDialog() {
                           key={binding}
                           className="rounded border border-b-2 border-zinc-300 bg-zinc-50 px-1.5 font-sans text-xs dark:border-zinc-600 dark:bg-zinc-800"
                         >
-                          {formatBinding(binding)}
+                          {formatBinding(binding, t.shortcuts.keys)}
                         </kbd>
                       ))}
                     </dd>
@@ -88,10 +98,12 @@ function ShortcutDialog() {
             </section>
           ))}
         <p className="text-xs text-zinc-500">
-          In the folder tree,{" "}
-          <kbd className="font-sans font-semibold">Shift</kbd>+
-          <kbd className="font-sans font-semibold">F10</kbd> (or the Menu key)
-          opens the menu of a label: rename, colour, move, hide, delete.
+          {t.shortcuts.treeMenuHint.before}{" "}
+          <kbd className="font-sans font-semibold">
+            {t.shortcuts.keys.shift}
+          </kbd>
+          +<kbd className="font-sans font-semibold">F10</kbd>{" "}
+          {t.shortcuts.treeMenuHint.after}
         </p>
       </div>
     </div>

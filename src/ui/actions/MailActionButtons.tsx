@@ -2,6 +2,7 @@ import type { MessageId } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
 import { IconButton } from "../common/IconButton";
 import type { MailActions } from "./useMailActions";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link MailActionButtons}. */
 export interface MailActionButtonsProps {
@@ -28,16 +29,13 @@ export function MailActionButtons({
     ? [message.id]
     : undefined;
   const quarantined = actions.view === "trash" || actions.view === "junk";
+  const a = useT().actions;
 
   const readState =
     actions.canSetSeen &&
     (message ? (
       <IconButton
-        label={
-          message.flags.seen
-            ? "Mark as unread (Shift+U)"
-            : "Mark as read (Shift+I)"
-        }
+        label={message.flags.seen ? a.markUnreadButton : a.markReadButton}
         icon={message.flags.seen ? "mail" : "mail-open"}
         onClick={() => {
           actions.setSeen(!message.flags.seen, { ids: [message.id] });
@@ -46,14 +44,14 @@ export function MailActionButtons({
     ) : (
       <>
         <IconButton
-          label="Mark as read (Shift+I)"
+          label={a.markReadButton}
           icon="mail-open"
           onClick={() => {
             actions.setSeen(true);
           }}
         />
         <IconButton
-          label="Mark as unread (Shift+U)"
+          label={a.markUnreadButton}
           icon="mail"
           onClick={() => {
             actions.setSeen(false);
@@ -67,7 +65,7 @@ export function MailActionButtons({
       <>
         {actions.view === "trash" && actions.canTrash && (
           <IconButton
-            label="Restore (Delete)"
+            label={a.restoreButton}
             icon="inbox"
             onClick={() => {
               actions.trash(ids);
@@ -76,7 +74,7 @@ export function MailActionButtons({
         )}
         {actions.view === "junk" && actions.canSpam && (
           <IconButton
-            label="Not spam (Shift+S)"
+            label={a.notSpamButton}
             icon="inbox"
             onClick={() => {
               actions.spam(ids);
@@ -85,7 +83,7 @@ export function MailActionButtons({
         )}
         {actions.canDeleteForever && (
           <IconButton
-            label="Delete forever (Shift+Delete)"
+            label={a.deleteForeverButton}
             icon="trash"
             danger
             onClick={() => {
@@ -102,7 +100,7 @@ export function MailActionButtons({
     <>
       {actions.canArchive && (
         <IconButton
-          label={archivable ? "Archive (a)" : "Not in the Inbox"}
+          label={archivable ? a.archiveButton : a.notInInboxButton}
           icon="archive"
           disabled={!archivable}
           onClick={() => {
@@ -112,7 +110,7 @@ export function MailActionButtons({
       )}
       {actions.canTrash && (
         <IconButton
-          label="Move to Trash (Delete)"
+          label={a.trashButton}
           icon="trash"
           onClick={() => {
             actions.trash(ids);
@@ -121,7 +119,7 @@ export function MailActionButtons({
       )}
       {actions.canSpam && (
         <IconButton
-          label="Report spam (Shift+S)"
+          label={a.spamButton}
           icon="alert"
           onClick={() => {
             actions.spam(ids);
@@ -130,7 +128,7 @@ export function MailActionButtons({
       )}
       {actions.canMove && (
         <IconButton
-          label="Move to… (v)"
+          label={a.moveButton}
           icon="folder"
           onClick={() => {
             actions.openPicker("move", ids);
@@ -139,7 +137,7 @@ export function MailActionButtons({
       )}
       {actions.canLabel && (
         <IconButton
-          label="Labels… (l)"
+          label={a.labelsButton}
           icon="tag"
           onClick={() => {
             actions.openPicker("labels", ids);
@@ -151,9 +149,9 @@ export function MailActionButtons({
           label={
             message
               ? message.flags.flagged
-                ? "Unstar (s)"
-                : "Star (s)"
-              : "Star or unstar (s)"
+                ? a.unstarButton
+                : a.starButton
+              : a.starOrUnstarButton
           }
           icon="star"
           {...(message ? { pressed: message.flags.flagged } : {})}

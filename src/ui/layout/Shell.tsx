@@ -35,6 +35,7 @@ import { useApplyTheme } from "./useApplyTheme";
 import { useBreakpoint } from "./useBreakpoint";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useNavigationDefaults } from "./useNavigationDefaults";
+import { useT } from "../../i18n/context";
 
 /** The app's top-level layout: the welcome screen, or the mail UI. */
 export function Shell() {
@@ -49,6 +50,7 @@ export function Shell() {
  */
 function MailApp() {
   const breakpoint = useBreakpoint();
+  const t = useT();
   const route = useRoute();
   const drawerOpen = useUi((state) => state.drawerOpen);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
@@ -64,7 +66,7 @@ function MailApp() {
   const store = useUiStore();
   useMailSync((arrivals) => {
     if (store.getState().settings.notifications)
-      notifyArrivals(arrivals, router);
+      notifyArrivals(arrivals, router, t);
   });
   useDocumentTitle();
   const undo = useUndo(actions, compose);
@@ -79,16 +81,21 @@ function MailApp() {
     content = (
       <ResizableColumns
         columns={[
-          { id: "tree", label: "Folders", widthIndex: 0, content: <Sidebar /> },
+          {
+            id: "tree",
+            label: t.layout.folders,
+            widthIndex: 0,
+            content: <Sidebar />,
+          },
           {
             id: "list",
-            label: "Message list",
+            label: t.layout.messageList,
             widthIndex: 1,
             content: <MessageListPane breakpoint={breakpoint} />,
           },
           {
             id: "reader",
-            label: "Message",
+            label: t.layout.message,
             content: <ReaderPane breakpoint={breakpoint} />,
           },
         ]}
@@ -99,7 +106,7 @@ function MailApp() {
       <>
         <Drawer
           open={drawerOpen}
-          label="Folders"
+          label={t.layout.folders}
           onClose={() => {
             setDrawerOpen(false);
           }}
@@ -114,13 +121,13 @@ function MailApp() {
           columns={[
             {
               id: "list",
-              label: "Message list",
+              label: t.layout.messageList,
               widthIndex: 1,
               content: <MessageListPane breakpoint={breakpoint} />,
             },
             {
               id: "reader",
-              label: "Message",
+              label: t.layout.message,
               content: <ReaderPane breakpoint={breakpoint} />,
             },
           ]}
@@ -153,7 +160,7 @@ function MailApp() {
       <SendQueueBar actions={compose} />
       {fileDrop && (
         <div className="pointer-events-none fixed inset-3 z-[60] grid place-items-center rounded-2xl border-4 border-dashed border-blue-500 bg-blue-50/80 text-lg font-semibold text-blue-900 dark:bg-blue-950/80 dark:text-blue-100">
-          Drop to start a new mail with these files
+          {t.layout.dropToCompose}
         </div>
       )}
       <ToastHost onUndo={undo.undo} />

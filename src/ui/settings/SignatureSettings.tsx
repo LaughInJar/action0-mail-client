@@ -8,6 +8,7 @@ import type { Sender } from "../../core/model";
 import { useSenders, useUpdateSignature } from "../../data/senders";
 import { errorMessage } from "../common/errorMessage";
 import { RichTextEditor } from "../composer/RichTextEditor";
+import { useT } from "../../i18n/context";
 
 /** Saves this long after the last keystroke. */
 const SAVE_DELAY_MS = 1000;
@@ -20,14 +21,14 @@ export function SignatureSettings() {
   const accounts = useAccounts().filter(
     (handle) => handle.provider.capabilities.senders,
   );
+  const s = useT().settings;
   if (accounts.length === 0) return null;
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="text-sm font-medium">Signatures</h4>
+        <h4 className="text-sm font-medium">{s.signatures}</h4>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Added under what you write, above quoted mail. Saved to your account,
-          so they also show up in Gmail.
+          {s.signaturesHint}
         </p>
       </div>
       {accounts.map((handle) => (
@@ -49,6 +50,7 @@ function AccountSignatures({
   showAccount: boolean;
 }) {
   const { data: senders, isPending, error } = useSenders(handle.account.id);
+  const t = useT();
   return (
     <div className="space-y-3">
       {showAccount && (
@@ -57,11 +59,11 @@ function AccountSignatures({
         </p>
       )}
       {isPending && (
-        <p className="text-xs text-zinc-500">Loading signatures…</p>
+        <p className="text-xs text-zinc-500">{t.settings.loadingSignatures}</p>
       )}
       {error && (
         <p role="alert" className="text-xs text-red-700 dark:text-red-400">
-          Couldn’t load the signatures: {errorMessage(error)}
+          {t.settings.couldntLoadSignatures(errorMessage(error, t))}
         </p>
       )}
       {senders?.map((sender) => (
@@ -99,6 +101,8 @@ function SignatureEditor({
   const pending = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const accountId = handle.account.id;
+  const t = useT();
+  const s = t.settings;
 
   const save = () => {
     clearTimeout(timer.current);
@@ -115,7 +119,7 @@ function SignatureEditor({
         pending.current ??= html;
         setState({
           kind: "failed",
-          message: errorMessage(error),
+          message: errorMessage(error, t),
           permission: isMailError(error, "unavailable"),
         });
       },
@@ -150,7 +154,7 @@ function SignatureEditor({
       (error: unknown) => {
         setState({
           kind: "failed",
-          message: errorMessage(error),
+          message: errorMessage(error, t),
           permission: true,
         });
       },
@@ -165,29 +169,27 @@ function SignatureEditor({
         </span>
         {sender.isDefault && (
           <span className="shrink-0 rounded bg-zinc-100 px-1.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-            default
+            {s.defaultSender}
           </span>
         )}
         <span
           role="status"
           className="ml-auto shrink-0 text-xs text-zinc-500 dark:text-zinc-400"
         >
-          {state.kind === "saving" && "Saving…"}
-          {state.kind === "saved" && "Saved"}
+          {state.kind === "saving" && t.common.saving}
+          {state.kind === "saved" && t.common.saved}
         </span>
       </div>
       {lossy && (
         <p className="text-xs text-amber-800 dark:text-amber-300">
-          This signature has formatting the editor can’t keep (colours, fonts,
-          sizes, tables or pictures). Editing it here removes that formatting;
-          to keep it, edit it in Gmail.
+          {s.lossySignature}
         </p>
       )}
       <div className="flex h-36 flex-col overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700">
         <RichTextEditor
           id={editorId}
-          label={`Signature for ${sender.address}`}
-          placeholder="No signature"
+          label={s.signatureFor(sender.address)}
+          placeholder={s.noSignature}
           initialHtml={initial}
           focusOnOpen={false}
           onChange={onChange}
@@ -198,14 +200,14 @@ function SignatureEditor({
           role="alert"
           className="flex flex-wrap items-center gap-x-2 text-xs text-red-700 dark:text-red-400"
         >
-          <span>Not saved: {state.message}</span>
+          <span>{s.notSaved(state.message)}</span>
           {state.permission ? (
             <button
               type="button"
               onClick={allowEditing}
               className="rounded px-1.5 py-0.5 font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/15 pointer-coarse:min-h-11"
             >
-              Allow editing
+              {s.allowEditing}
             </button>
           ) : (
             <button
@@ -215,7 +217,7 @@ function SignatureEditor({
               }}
               className="rounded px-1.5 py-0.5 font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/15 pointer-coarse:min-h-11"
             >
-              Try again
+              {t.common.tryAgain}
             </button>
           )}
         </p>

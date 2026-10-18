@@ -124,6 +124,7 @@ const MAILBOX_DEFINITIONS: readonly Omit<Mailbox, "assignable">[] = [
   },
   {
     id: M.categories,
+    standard: "categories",
     name: "Categories",
     kind: "view",
     selectable: false,
@@ -131,6 +132,7 @@ const MAILBOX_DEFINITIONS: readonly Omit<Mailbox, "assignable">[] = [
   },
   {
     id: M.social,
+    standard: "social",
     name: "Social",
     kind: "label",
     parentId: M.categories,
@@ -139,6 +141,7 @@ const MAILBOX_DEFINITIONS: readonly Omit<Mailbox, "assignable">[] = [
   },
   {
     id: M.promotions,
+    standard: "promotions",
     name: "Promotions",
     kind: "label",
     parentId: M.categories,

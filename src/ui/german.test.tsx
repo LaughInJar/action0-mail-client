@@ -1,0 +1,99 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { demoHash, renderApp } from "../test/renderApp";
+
+vi.setConfig({ testTimeout: 15_000 });
+
+const subject = (name: string) =>
+  screen.findByRole("heading", { level: 1, name });
+const toastText = (text: string | RegExp) =>
+  screen.findByText(text, { selector: "div[aria-live] span" });
+// Settings and the composer load on first use.
+const dialog = (name: string | RegExp) =>
+  screen.findByRole("dialog", { name }, { timeout: 5000 });
+
+/** A browser set to Austrian German. */
+beforeEach(() => {
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["de-AT", "de"]);
+  vi.spyOn(navigator, "language", "get").mockReturnValue("de-AT");
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("the German interface", () => {
+  it("follows the browser: tree, buttons and the page language", async () => {
+    renderApp();
+    await subject("Welcome to the demo");
+    const tree = screen.getByRole("tree", { name: "Konten und Postfächer" });
+    for (const name of ["Posteingang", "Gesendet", "Entwürfe", "Papierkorb"])
+      expect(
+        within(tree).getByRole("treeitem", { name: new RegExp(`^${name}`) }),
+      ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Schreiben/ })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Archivieren (a)" }),
+    ).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("de");
+  });
+
+  it("says what happened in German, and undoes it", async () => {
+    const { user } = renderApp();
+    await subject("Welcome to the demo");
+    await user.keyboard("a");
+    expect(await toastText("1 Nachricht archiviert")).toBeInTheDocument();
+    await user.keyboard("z");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: /Welcome to the demo/ }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("names keys the German way in the shortcut help", async () => {
+    const { user } = renderApp();
+    await subject("Welcome to the demo");
+    await user.keyboard("?");
+    const help = await dialog("Tastenkürzel");
+    expect(help).toHaveTextContent("Umschalt+Entf");
+    expect(help).toHaveTextContent("g dann i");
+    expect(help).toHaveTextContent("Eingabe");
+    expect(help).toHaveTextContent("Archivieren");
+  });
+
+  it("quotes replies with a German line", async () => {
+    const { user } = renderApp({ hash: demoHash("inbox", "welcome") });
+    await subject("Welcome to the demo");
+    await user.keyboard("r");
+    const composer = await dialog(/Re: Welcome to the demo/);
+    await user.click(
+      within(composer).getByRole("button", {
+        name: "Zitierten Text einblenden",
+      }),
+    );
+    const quote = within(composer).getByTitle("Der zitierte Text");
+    expect(quote.getAttribute("srcdoc")).toMatch(
+      /Am 18\.10\.2026 um \d\d:\d\d schrieb action0 &lt;hello@example\.com&gt;:/,
+    );
+  });
+
+  it("switches to English in Settings", async () => {
+    const { user } = renderApp();
+    await subject("Welcome to the demo");
+    await user.click(screen.getByRole("button", { name: "Einstellungen" }));
+    const settings = await dialog("Einstellungen");
+    const language = within(settings).getByRole("group", { name: "Sprache" });
+    expect(
+      within(language).getByRole("radio", { name: /Automatisch/ }),
+    ).toBeChecked();
+    expect(language).toHaveTextContent("Wie dein Browser: Deutsch");
+
+    await user.click(within(language).getByRole("radio", { name: "English" }));
+    expect(await dialog("Settings")).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("en");
+    expect(
+      screen.getByRole("tree", { name: "Accounts and mailboxes" }),
+    ).toBeInTheDocument();
+  });
+});

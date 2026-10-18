@@ -18,12 +18,12 @@ describe("validateGoogleClientId", () => {
   });
 
   it.each([
-    ["", /Paste the client ID/],
-    ["GOCSPX-abc123", /client secret/],
-    ["https://console.cloud.google.com/auth/clients", /web address/],
-    ["424727749781", /doesn't look like a Google client ID/],
-  ])("explains what's wrong with %j", (value, message) => {
-    expect(validateGoogleClientId(value)).toMatch(message);
+    ["", "missing"],
+    ["GOCSPX-abc123", "secret"],
+    ["https://console.cloud.google.com/auth/clients", "url"],
+    ["424727749781", "malformed"],
+  ])("says what's wrong with %j", (value, problem) => {
+    expect(validateGoogleClientId(value)).toBe(problem);
   });
 });
 

@@ -73,29 +73,69 @@ export function parseBinding(binding: string): string[] {
   return binding.trim().split(/\s+/).map(normalizeStroke);
 }
 
+/** Names of keys as printed on keyboards (they differ by language). */
+export interface KeyNames {
+  readonly ctrl: string;
+  readonly alt: string;
+  readonly shift: string;
+  readonly enter: string;
+  readonly delete: string;
+  readonly backspace: string;
+  readonly space: string;
+  readonly home: string;
+  readonly end: string;
+  readonly escape: string;
+  /** Between the strokes of a sequence ("g then i"). */
+  readonly then: string;
+}
+
+const ENGLISH_KEYS: KeyNames = {
+  ctrl: "Ctrl",
+  alt: "Alt",
+  shift: "Shift",
+  enter: "Enter",
+  delete: "Delete",
+  backspace: "Backspace",
+  space: "Space",
+  home: "Home",
+  end: "End",
+  escape: "Esc",
+  then: "then",
+};
+
 /** Human-readable label of a binding, for the shortcut overlay. */
-export function formatBinding(binding: string): string {
+export function formatBinding(
+  binding: string,
+  names: KeyNames = ENGLISH_KEYS,
+): string {
+  const labels: Readonly<Record<string, string>> = {
+    ctrl: names.ctrl,
+    alt: names.alt,
+    meta: "⌘",
+    shift: names.shift,
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    Escape: names.escape,
+    Enter: names.enter,
+    Delete: names.delete,
+    Backspace: names.backspace,
+    Space: names.space,
+    " ": names.space,
+    Home: names.home,
+    End: names.end,
+  };
   return parseBinding(binding)
     .map((stroke) =>
       stroke
         .split("+")
         .map((part) => {
           if (part.length === 1 && /[A-Z]/.test(part))
-            return `Shift+${part.toLowerCase()}`;
-          const labels: Record<string, string> = {
-            ctrl: "Ctrl",
-            alt: "Alt",
-            meta: "⌘",
-            shift: "Shift",
-            ArrowUp: "↑",
-            ArrowDown: "↓",
-            ArrowLeft: "←",
-            ArrowRight: "→",
-            Escape: "Esc",
-          };
+            return `${names.shift}+${part.toLowerCase()}`;
           return labels[part] ?? part;
         })
         .join("+"),
     )
-    .join(" then ");
+    .join(` ${names.then} `);
 }

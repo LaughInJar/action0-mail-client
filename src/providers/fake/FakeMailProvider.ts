@@ -431,7 +431,9 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<{ readonly deleted: number }> {
     const role = this.#mailboxes.find((m) => m.id === mailboxId)?.role;
     if (role !== "trash" && role !== "junk") {
-      throw new MailError("provider", "Only Trash and Spam can be emptied.");
+      throw new MailError("provider", "Only Trash and Spam can be emptied.", {
+        reason: "onlyTrashSpam",
+      });
     }
     const ids = this.#messagesIn(mailboxId).map((message) => message.id);
     await this.deleteForever(ids, signal);
@@ -524,7 +526,9 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<readonly EmailAddress[]> {
     await this.#delay(signal);
     if (this.contactsUnavailable)
-      throw new MailError("unavailable", "Demo contacts are switched off.");
+      throw new MailError("unavailable", "Demo contacts are switched off.", {
+        reason: "demoContactsOff",
+      });
     const needle = foldText(query.trim());
     return this.#contacts
       .filter((person) =>
@@ -589,6 +593,7 @@ export class FakeMailProvider implements MailProvider {
     if (this.failWrites) {
       throw new MailError("provider", "The demo server refused the change.", {
         status: 500,
+        reason: "demoRefused",
       });
     }
   }
@@ -626,7 +631,9 @@ export class FakeMailProvider implements MailProvider {
       this.#userMailbox(parent);
       for (let at: MailboxId | undefined = parent; at !== undefined;) {
         if (at === id)
-          throw new MailError("provider", "A label can’t go inside itself.");
+          throw new MailError("provider", "A label can’t go inside itself.", {
+            reason: "labelInsideItself",
+          });
         at = this.#mailboxes.find((m) => m.id === at)?.parentId;
       }
     }
@@ -695,7 +702,7 @@ export class FakeMailProvider implements MailProvider {
       throw new MailError(
         "unavailable",
         "Changing the demo's settings isn't allowed.",
-        { status: 403 },
+        { status: 403, reason: "settingsNotAllowed" },
       );
     if (!this.#isMine(address))
       throw new MailError("not-found", `No sender ${address}`, {
@@ -725,7 +732,9 @@ export class FakeMailProvider implements MailProvider {
     if (!mailbox)
       throw new MailError("not-found", `No mailbox ${id}`, { status: 404 });
     if (!mailbox.assignable || mailbox.role !== undefined)
-      throw new MailError("provider", "System mailboxes can’t be changed.");
+      throw new MailError("provider", "System mailboxes can’t be changed.", {
+        reason: "systemMailbox",
+      });
     return mailbox;
   }
 
@@ -737,9 +746,13 @@ export class FakeMailProvider implements MailProvider {
   ): string {
     const trimmed = name.trim();
     if (trimmed === "")
-      throw new MailError("provider", "A label needs a name.");
+      throw new MailError("provider", "A label needs a name.", {
+        reason: "labelNeedsName",
+      });
     if (trimmed.includes("/"))
-      throw new MailError("provider", "Label names can’t contain “/”.");
+      throw new MailError("provider", "Label names can’t contain “/”.", {
+        reason: "labelNoSlash",
+      });
     const taken = this.#mailboxes.some(
       (mailbox) =>
         mailbox.id !== self &&
@@ -750,7 +763,7 @@ export class FakeMailProvider implements MailProvider {
       throw new MailError(
         "provider",
         `There’s already a label called “${trimmed}”.`,
-        { status: 409 },
+        { status: 409, reason: "labelExists", params: { name: trimmed } },
       );
     return trimmed;
   }

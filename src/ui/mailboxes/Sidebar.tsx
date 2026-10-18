@@ -10,22 +10,25 @@ import { useComposeActions } from "../composer/useComposeActions";
 import { ThemeSwitch } from "../layout/ThemeSwitch";
 import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
+import { useT } from "../../i18n/context";
+import { APP_TITLE } from "../sync/useDocumentTitle";
 
 /** Column (a): app title, account/mailbox tree and account management. */
 export function Sidebar({ onNavigate }: MailboxTreeProps) {
   const compose = useComposeActions();
   const router = useRouter();
+  const t = useT();
   return (
     <nav
-      aria-label="Mailboxes"
+      aria-label={t.accounts.mailboxes}
       className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-900"
     >
       <div className="flex items-center gap-2 pt-2 pr-2 pb-1 pl-4 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
         <Icon name="mail" className="size-5 text-blue-600 dark:text-blue-400" />
-        <span className="flex-1">action0</span>
+        <span className="flex-1">{APP_TITLE}</span>
         <ThemeSwitch />
         <IconButton
-          label="Settings"
+          label={t.layout.settings}
           icon="settings"
           onClick={() => {
             onNavigate?.();
@@ -44,7 +47,7 @@ export function Sidebar({ onNavigate }: MailboxTreeProps) {
             className="flex w-full items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 pointer-coarse:min-h-11"
           >
             <Icon name="pencil" className="size-4" />
-            <span className="flex-1 text-left">Compose</span>
+            <span className="flex-1 text-left">{t.layout.compose}</span>
             <kbd className="font-sans text-xs font-normal opacity-75 pointer-coarse:hidden">
               c
             </kbd>
@@ -67,6 +70,7 @@ function LabelButtons({ onNavigate }: MailboxTreeProps) {
   const handle = useAccountHandle(route?.accountId);
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const setManageLabels = useUi((state) => state.setManageLabels);
+  const l = useT().labels;
   if (!handle?.provider.capabilities.manageMailboxes) return null;
   const { id } = handle.account;
   const button =
@@ -82,7 +86,7 @@ function LabelButtons({ onNavigate }: MailboxTreeProps) {
         }}
       >
         <Icon name="plus" className="size-3.5" />
-        New label
+        {l.newLabel}
       </button>
       <button
         type="button"
@@ -93,7 +97,7 @@ function LabelButtons({ onNavigate }: MailboxTreeProps) {
         }}
       >
         <Icon name="tag" className="size-3.5" />
-        Manage labels
+        {l.manageLabels}
       </button>
     </div>
   );
@@ -106,12 +110,13 @@ function AccountsPanel() {
   const route = useRoute();
   const router = useRouter();
   const setAddAccountOpen = useUi((state) => state.setAddAccountOpen);
+  const a = useT().accounts;
 
   return (
     <details className="group border-t border-zinc-200 text-sm dark:border-zinc-800">
       <summary className="flex cursor-default list-none items-center gap-2 px-4 py-2 text-zinc-600 select-none hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
         <Icon name="user" />
-        <span className="flex-1">Accounts</span>
+        <span className="flex-1">{a.accounts}</span>
         <Icon
           name="chevron-right"
           className="size-3.5 transition-transform group-open:rotate-90"
@@ -136,7 +141,7 @@ function AccountsPanel() {
               }}
             >
               <Icon name="log-out" className="size-3.5" />
-              Sign out
+              {a.signOut}
             </button>
           </li>
         ))}
@@ -149,7 +154,7 @@ function AccountsPanel() {
             }}
           >
             <Icon name="plus" />
-            Add account
+            {a.addAccount}
           </button>
         </li>
       </ul>

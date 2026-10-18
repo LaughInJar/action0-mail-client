@@ -33,7 +33,10 @@ export function loadGis(timeoutMs = 15_000): Promise<GoogleOAuth2> {
       loading = undefined;
       script.remove();
       reject(
-        new MailError("network", "Could not load Google sign-in.", { cause }),
+        new MailError("network", "Could not load Google sign-in.", {
+          cause,
+          reason: "signInUnavailable",
+        }),
       );
     };
     const timer = setTimeout(() => {

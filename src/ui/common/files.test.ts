@@ -21,5 +21,6 @@ describe("attachmentKind", () => {
   it("writes sizes for limit messages", () => {
     expect(megabytes(25 * 1024 * 1024)).toBe("25 MB");
     expect(megabytes(1.5 * 1024 * 1024)).toBe("1.5 MB");
+    expect(megabytes(1.5 * 1024 * 1024, "de-AT")).toBe("1,5 MB");
   });
 });

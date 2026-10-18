@@ -1,5 +1,9 @@
 import type { AccountRegistry } from "../accounts/AccountRegistry";
-import type { ProviderSetup, SettingSource } from "../accounts/types";
+import type {
+  ProviderSetup,
+  SettingSource,
+  SetupProblem,
+} from "../accounts/types";
 import { readJson, writeJson } from "../lib/storage";
 import { createGmailModule } from "../providers/gmail/module";
 
@@ -9,18 +13,15 @@ export const GOOGLE_CLIENT_ID_KEY = "a0.settings.googleClientId";
 const CLIENT_ID = /^[\w-]+\.apps\.googleusercontent\.com$/;
 
 /** Why a value isn't a Google OAuth client ID, or undefined if it looks like one. */
-export function validateGoogleClientId(value: string): string | undefined {
+export function validateGoogleClientId(
+  value: string,
+): SetupProblem | undefined {
   const id = value.trim();
-  if (id === "") return "Paste the client ID from Google Cloud.";
-  if (id.startsWith("GOCSPX-")) {
-    return "That's the client secret. The app needs the client ID, which ends with .apps.googleusercontent.com.";
-  }
-  if (/^https?:\/\//i.test(id)) {
-    return "That's a web address. The client ID ends with .apps.googleusercontent.com.";
-  }
-  if (!CLIENT_ID.test(id)) {
-    return "This doesn't look like a Google client ID. It ends with .apps.googleusercontent.com.";
-  }
+  if (id === "") return "missing";
+  // Client secrets start like this.
+  if (id.startsWith("GOCSPX-")) return "secret";
+  if (/^https?:\/\//i.test(id)) return "url";
+  if (!CLIENT_ID.test(id)) return "malformed";
   return undefined;
 }
 

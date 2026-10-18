@@ -8,6 +8,7 @@ import { useUi } from "../../state/context";
 import { loadsRemoteImages } from "../../state/settings";
 import { Icon } from "../common/Icon";
 import { SafeHtmlFrame } from "./SafeHtmlFrame";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link MessageBody}. */
 export interface MessageBodyProps {
@@ -21,6 +22,7 @@ export interface MessageBodyProps {
  * (or the settings allow it: always, or for trusted senders).
  */
 export function MessageBody({ accountId, message }: MessageBodyProps) {
+  const t = useT();
   const html = message.body.html;
   const sanitized = useMemo(
     () => (html === undefined ? undefined : sanitizeMailHtml(html)),
@@ -59,9 +61,7 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
             className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-700 sm:px-6 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
           >
             <Icon name="image" className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1">
-              Remote images are blocked to protect your privacy.
-            </span>
+            <span className="min-w-0 flex-1">{t.reader.remoteBlocked}</span>
             <button
               type="button"
               onClick={() => {
@@ -69,7 +69,7 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
               }}
               className="rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
             >
-              Load images
+              {t.reader.loadImages}
             </button>
             {offerTrust && sender && (
               <button
@@ -79,14 +79,14 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
                 }}
                 className="min-w-0 truncate rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
               >
-                Always from {sender}
+                {t.reader.alwaysFrom(sender)}
               </button>
             )}
           </div>
         )}
         <SafeHtmlFrame
           srcDoc={srcDoc}
-          title={`Message: ${message.subject || "(no subject)"}`}
+          title={t.reader.frameTitle(message.subject || t.common.noSubject)}
         />
       </>
     );
@@ -102,7 +102,7 @@ export function MessageBody({ accountId, message }: MessageBodyProps) {
 
   return (
     <p className="px-6 py-4 text-sm text-zinc-500 italic">
-      This message has no content.
+      {t.reader.noContent}
     </p>
   );
 }

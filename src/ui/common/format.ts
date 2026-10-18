@@ -65,8 +65,8 @@ export function formatFullDate(
   }).format(new Date(iso));
 }
 
-/** Human-readable file size. */
-export function formatBytes(bytes: number): string {
+/** Human-readable file size ("1.5 MB", in German "1,5 MB"). */
+export function formatBytes(bytes: number, locale?: string): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
   let value = bytes / 1024;
@@ -75,16 +75,27 @@ export function formatBytes(bytes: number): string {
     value /= 1024;
     unit++;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit] ?? "GB"}`;
+  const digits = value < 10 ? 1 : 0;
+  const number = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value);
+  return `${number} ${units[unit] ?? "GB"}`;
 }
 
-/** Display name of an address, falling back to the address itself. */
-export function displayName(address: EmailAddress | undefined): string {
-  if (!address) return "(unknown sender)";
+/**
+ * Display name of an address, falling back to the address itself, or to
+ * `unknown` (e.g. "(unknown sender)" in the interface language).
+ */
+export function displayName(
+  address: EmailAddress | undefined,
+  unknown: string,
+): string {
+  if (!address) return unknown;
   return address.name?.trim() || address.address;
 }
 
 /** Comma-separated display names. */
 export function displayNames(addresses: readonly EmailAddress[]): string {
-  return addresses.map(displayName).join(", ");
+  return addresses.map((address) => displayName(address, "")).join(", ");
 }

@@ -1,0 +1,63 @@
+import { plural } from "../plural";
+
+const en = {
+  cancel: "Cancel",
+  close: "Close",
+  dismiss: "Dismiss",
+  save: "Save",
+  saving: "Saving…",
+  saved: "Saved",
+  notSaved: "Not saved",
+  undo: "Undo",
+  remove: "Remove",
+  delete: "Delete",
+  edit: "Edit",
+  create: "Create",
+  done: "Done",
+  tryAgain: "Try again",
+  loading: "Loading…",
+  messages: (n: number) => plural(n, "1 message", `${n} messages`),
+  conversations: (n: number) =>
+    plural(n, "1 conversation", `${n} conversations`),
+  /** "(no subject)" and friends. */
+  noSubject: "(no subject)",
+  noRecipients: "(no recipients)",
+  unknownSender: "(unknown sender)",
+  me: "me",
+  to: "To",
+  cc: "Cc",
+  bcc: "Bcc",
+  from: "From",
+  replyTo: "Reply to",
+};
+
+const de: typeof en = {
+  cancel: "Abbrechen",
+  close: "Schließen",
+  dismiss: "Ausblenden",
+  save: "Speichern",
+  saving: "Wird gespeichert …",
+  saved: "Gespeichert",
+  notSaved: "Nicht gespeichert",
+  undo: "Rückgängig",
+  remove: "Entfernen",
+  delete: "Löschen",
+  edit: "Bearbeiten",
+  create: "Erstellen",
+  done: "Fertig",
+  tryAgain: "Erneut versuchen",
+  loading: "Wird geladen …",
+  messages: (n) => plural(n, "1 Nachricht", `${n} Nachrichten`),
+  conversations: (n) => plural(n, "1 Unterhaltung", `${n} Unterhaltungen`),
+  noSubject: "(kein Betreff)",
+  noRecipients: "(keine Empfänger)",
+  unknownSender: "(unbekannter Absender)",
+  me: "ich",
+  to: "An",
+  cc: "Cc",
+  bcc: "Bcc",
+  from: "Von",
+  replyTo: "Antwort an",
+};
+
+export const common = { en, de };

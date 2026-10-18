@@ -17,6 +17,29 @@ const providerImplementations = {
     "UI, data and state code must use the provider-agnostic contracts in src/core. Wire concrete providers in src/app.",
 };
 
+/** `no-restricted-syntax` entries that catch interface text outside the catalogue. */
+function untranslated() {
+  const message =
+    "Interface text goes in src/i18n/texts (English and German) and is read with useT().";
+  const words = "/[A-Za-z]{2,}/";
+  const attributes =
+    "/^(aria-label|aria-description|title|placeholder|alt|label|legend|backdropLabel|confirmLabel|hint)$/";
+  const properties = "/^(message|title|label|hint|description|confirmLabel)$/";
+  // A string, or a template's fixed parts, under `parent`.
+  const texts = (parent) => [
+    `${parent} > Literal[value=${words}]`,
+    `${parent} > TemplateLiteral > TemplateElement[value.raw=${words}]`,
+    `${parent} > :matches(ConditionalExpression, LogicalExpression) > Literal[value=${words}]`,
+  ];
+  return [
+    `JSXText[value=${words}]`,
+    `JSXAttribute[name.name=${attributes}] > Literal[value=${words}]`,
+    ...texts(`JSXAttribute[name.name=${attributes}] > JSXExpressionContainer`),
+    ...texts(":matches(JSXElement, JSXFragment) > JSXExpressionContainer"),
+    ...texts(`Property[key.name=${properties}]`),
+  ].map((selector) => ({ selector, message }));
+}
+
 export default defineConfig([
   globalIgnores(["dist", "coverage"]),
   {
@@ -70,6 +93,16 @@ export default defineConfig([
         "error",
         { patterns: [providerImplementations] },
       ],
+    },
+  },
+  {
+    // Everything the interface says comes from the catalogue (useT()), so
+    // German can't miss a text. Words (2+ letters) in JSX text, in texty
+    // attributes and in message-like properties are flagged.
+    files: ["src/ui/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": ["error", ...untranslated()],
     },
   },
   {

@@ -4,6 +4,7 @@ import { errorMessage } from "../common/errorMessage";
 import { objectUrl, releaseObjectUrls } from "../common/files";
 import { Icon } from "../common/Icon";
 import { useFocusTrap } from "../common/useFocusTrap";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link ImageViewer}. */
 export interface ImageViewerProps {
@@ -34,6 +35,7 @@ export function ImageViewer({
   onClose,
 }: ImageViewerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const t = useT();
   const image = images[index];
   const [shown, setShown] = useState<Shown | null>(null);
   const loaded = useRef(new Set<Blob>());
@@ -53,13 +55,13 @@ export function ImageViewer({
         if (current) setShown({ id: image.id, url: objectUrl(typed) });
       },
       (error: unknown) => {
-        if (current) setShown({ id: image.id, error: errorMessage(error) });
+        if (current) setShown({ id: image.id, error: errorMessage(error, t) });
       },
     );
     return () => {
       current = false;
     };
-  }, [image, load]);
+  }, [image, load, t]);
 
   useEffect(() => {
     const blobs = loaded.current;
@@ -112,13 +114,13 @@ export function ImageViewer({
         </span>
         {images.length > 1 && (
           <span className="shrink-0 text-white/70">
-            {index + 1} of {images.length}
+            {t.reader.imageOf(index + 1, images.length)}
           </span>
         )}
         <button
           type="button"
-          aria-label={`Download ${image.filename}`}
-          title="Download"
+          aria-label={t.reader.downloadFile(image.filename)}
+          title={t.reader.download}
           onClick={() => {
             onDownload(image);
           }}
@@ -128,8 +130,8 @@ export function ImageViewer({
         </button>
         <button
           type="button"
-          aria-label="Close (Esc)"
-          title="Close (Esc)"
+          aria-label={t.reader.closeViewer}
+          title={t.reader.closeViewer}
           onClick={onClose}
           className={button}
         >
@@ -137,7 +139,9 @@ export function ImageViewer({
         </button>
       </header>
       <div className="relative flex min-h-0 flex-1 items-center justify-center p-4">
-        {current === null && <p className="text-sm text-white/70">Loading…</p>}
+        {current === null && (
+          <p className="text-sm text-white/70">{t.common.loading}</p>
+        )}
         {current && "error" in current && (
           <p role="alert" className="text-sm text-white">
             {current.error}
@@ -154,7 +158,7 @@ export function ImageViewer({
           <>
             <button
               type="button"
-              aria-label="Previous image (←)"
+              aria-label={t.reader.previousImage}
               onClick={() => {
                 step(-1);
               }}
@@ -164,7 +168,7 @@ export function ImageViewer({
             </button>
             <button
               type="button"
-              aria-label="Next image (→)"
+              aria-label={t.reader.nextImage}
               onClick={() => {
                 step(1);
               }}

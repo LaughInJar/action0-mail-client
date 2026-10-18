@@ -2,7 +2,7 @@ import { useId, type ReactNode } from "react";
 import type { AccountId, MessageId, ThreadId } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import { isMailError } from "../../core/errors";
-import { useMailboxes, useMessage } from "../../data/hooks";
+import { useMessage } from "../../data/hooks";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { listRoute } from "../../state/router";
 import { markReadDelayMs } from "../../state/settings";
@@ -24,10 +24,14 @@ import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useMarkReadOnView } from "./useMarkReadOnView";
 import { useUnsubscribe } from "./useUnsubscribe";
+import { useMailboxList } from "../common/mailboxNames";
+import { useT } from "../../i18n/context";
 
 /** Column (c): the focused message, or a summary of the multi-selection. */
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const route = useRoute();
+  const t = useT();
+  const r = t.reader;
   const { conversations, rows, scope } = useCurrentList();
   const router = useRouter();
   const listKey = listKeyOf(
@@ -56,19 +60,22 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
 
   if (selectedCount > 1 && breakpoint !== "narrow") {
     return (
-      <Placeholder title={`${selectedCount} messages selected`}>
-        Press <kbd className="font-sans font-semibold">Esc</kbd> to clear the
-        selection.
+      <Placeholder title={r.selectedCount(selectedCount)}>
+        {r.clearSelectionHint.before}{" "}
+        <kbd className="font-sans font-semibold">{t.shortcuts.keys.escape}</kbd>
+        {r.clearSelectionHint.after}
       </Placeholder>
     );
   }
   if (!route || messageId === undefined) {
     return (
-      <Placeholder title="No message selected">
-        Use <kbd className="font-sans font-semibold">j</kbd> and{" "}
-        <kbd className="font-sans font-semibold">k</kbd> to move through the
-        list, <kbd className="font-sans font-semibold">?</kbd> for all
-        shortcuts.
+      <Placeholder title={r.noMessageSelected}>
+        {r.navigationHint.before}{" "}
+        <kbd className="font-sans font-semibold">j</kbd> {r.navigationHint.and}{" "}
+        <kbd className="font-sans font-semibold">k</kbd>{" "}
+        {r.navigationHint.middle}{" "}
+        <kbd className="font-sans font-semibold">?</kbd>{" "}
+        {r.navigationHint.after}
       </Placeholder>
     );
   }
@@ -110,6 +117,7 @@ function ConversationRow({
   readonly mailbox: Mailbox | undefined;
   readonly onBack?: () => void;
 }) {
+  const t = useT();
   const { data: message, error } = useMessage(
     accountId,
     threadId === undefined ? rowId : undefined,
@@ -117,8 +125,8 @@ function ConversationRow({
   const id = threadId ?? message?.threadId;
   if (id === undefined)
     return error ? (
-      <Placeholder title="This conversation no longer exists">
-        {errorMessage(error)}
+      <Placeholder title={t.reader.conversationGone}>
+        {errorMessage(error, t)}
       </Placeholder>
     ) : (
       <ReaderSkeleton />
@@ -141,9 +149,10 @@ interface MessageViewProps {
 }
 
 function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
+  const t = useT();
   const subjectId = useId();
   const { data: message, error, refetch } = useMessage(accountId, messageId);
-  const { data: mailboxes } = useMailboxes(accountId);
+  const { data: mailboxes } = useMailboxList(accountId);
   const actions = useMailActions();
   const markRead = useUi((state) => state.settings.markRead);
   useMarkReadOnView(
@@ -196,14 +205,14 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
     content = (
       <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
         {isMailError(error, "not-found")
-          ? "This message no longer exists."
-          : errorMessage(error)}{" "}
+          ? t.reader.messageGone
+          : errorMessage(error, t)}{" "}
         <button
           type="button"
           className="text-blue-700 underline dark:text-blue-300"
           onClick={() => void refetch()}
         >
-          Try again
+          {t.common.tryAgain}
         </button>
       </p>
     );
@@ -215,12 +224,12 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
     <div className="flex h-full min-h-0 flex-col">
       <div
         role="group"
-        aria-label="Message actions"
+        aria-label={t.reader.messageActions}
         className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800"
       >
         {onBack && (
           <IconButton
-            label="Back to messages"
+            label={t.reader.backToMessages}
             icon="arrow-left"
             onClick={onBack}
           />
@@ -230,7 +239,7 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           <>
             {isDraft ? (
               <IconButton
-                label="Edit draft"
+                label={t.reader.editDraft}
                 icon="pencil"
                 onClick={() => {
                   compose.editDraft(message.id);
@@ -239,21 +248,21 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
             ) : (
               <>
                 <IconButton
-                  label="Reply (r)"
+                  label={t.actions.replyButton}
                   icon="reply"
                   onClick={() => {
                     compose.reply(message.id, "reply");
                   }}
                 />
                 <IconButton
-                  label="Reply all (Shift+R)"
+                  label={t.actions.replyAllButton}
                   icon="reply-all"
                   onClick={() => {
                     compose.reply(message.id, "reply-all");
                   }}
                 />
                 <IconButton
-                  label="Forward (f)"
+                  label={t.actions.forwardButton}
                   icon="forward"
                   onClick={() => {
                     compose.forward(message.id);
@@ -292,6 +301,7 @@ function AnswerButtons({
   messageId: MessageId;
   isDraft: boolean;
 }) {
+  const t = useT();
   const button =
     "flex items-center gap-2 rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
   if (isDraft)
@@ -305,7 +315,7 @@ function AnswerButtons({
           }}
         >
           <Icon name="pencil" className="size-4" />
-          Edit draft
+          {t.reader.editDraft}
         </button>
       </div>
     );
@@ -319,7 +329,7 @@ function AnswerButtons({
         }}
       >
         <Icon name="reply" className="size-4" />
-        Reply
+        {t.reader.reply}
       </button>
       <button
         type="button"
@@ -329,7 +339,7 @@ function AnswerButtons({
         }}
       >
         <Icon name="reply-all" className="size-4" />
-        Reply all
+        {t.reader.replyAll}
       </button>
       <button
         type="button"
@@ -339,7 +349,7 @@ function AnswerButtons({
         }}
       >
         <Icon name="forward" className="size-4" />
-        Forward
+        {t.reader.forward}
       </button>
     </div>
   );
@@ -363,10 +373,11 @@ function Placeholder({
 }
 
 function ReaderSkeleton() {
+  const t = useT();
   return (
     <div
       aria-busy="true"
-      aria-label="Loading message"
+      aria-label={t.reader.loadingMessage}
       className="animate-pulse space-y-4 p-6"
     >
       <div className="h-5 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800" />

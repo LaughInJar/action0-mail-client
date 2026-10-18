@@ -13,7 +13,9 @@ import {
 import { cachedMailboxes } from "../../data/mutations";
 import { useRouter, useUiStore } from "../../state/context";
 import type { ConfirmAction } from "../../state/uiStore";
+import { MailError } from "../../core/errors";
 import { errorMessage } from "../common/errorMessage";
+import { useT, type I18n } from "../../i18n/context";
 
 /** The confirmed action of a "delete label" confirmation. */
 export type DeleteLabelAction = Extract<
@@ -90,24 +92,19 @@ function describe(
   before: Mailbox,
   change: MailboxChange,
   mailboxes: readonly Mailbox[],
+  l: I18n["labels"],
 ): string {
   const fields = Object.keys(change).length;
   const name = change.name?.trim() ?? before.name;
-  if (fields !== 1) return `Saved label “${name}”`;
-  if (change.name !== undefined) return `Renamed “${before.name}” to “${name}”`;
+  if (fields !== 1) return l.saved(name);
+  if (change.name !== undefined) return l.renamed(before.name, name);
   if (change.parentId !== undefined) {
     const parent = mailboxes.find((m) => m.id === change.parentId);
-    return parent
-      ? `Moved “${name}” under “${parent.name}”`
-      : `Moved “${name}” to the top level`;
+    return parent ? l.movedUnder(name, parent.name) : l.movedToTop(name);
   }
   if (change.color !== undefined)
-    return change.color
-      ? `Changed the colour of “${name}”`
-      : `Removed the colour of “${name}”`;
-  return change.hidden
-    ? `Hid “${name}” from the folder list`
-    : `“${name}” shows in the folder list again`;
+    return change.color ? l.colourChanged(name) : l.colourRemoved(name);
+  return change.hidden ? l.hiddenNow(name) : l.shownAgain(name);
 }
 
 /** The app's {@link LabelActions}. */
@@ -116,11 +113,13 @@ export function useLabelActions(): LabelActions {
   const queryClient = useQueryClient();
   const store = useUiStore();
   const router = useRouter();
+  const t = useT();
 
   return useMemo((): LabelActions => {
+    const l = t.labels;
     const showError = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
-        message: `${prefix}: ${errorMessage(error)}`,
+        message: `${prefix}: ${errorMessage(error, t)}`,
         tone: "error",
       });
     };
@@ -130,12 +129,12 @@ export function useLabelActions(): LabelActions {
       await actions.update(accountId, mailbox.id, change);
       const inverse = inverseChange(mailbox, change);
       store.getState().showToast({
-        message: describe(mailbox, change, mailboxes),
+        message: describe(mailbox, change, mailboxes, l),
         tone: "info",
         revert: () => {
           actions
             .update(accountId, mailbox.id, inverse)
-            .catch(showError("Couldn’t undo"));
+            .catch(showError(t.actions.couldntUndo));
         },
       });
     };
@@ -144,14 +143,14 @@ export function useLabelActions(): LabelActions {
       create: async (accountId, spec, { undoable = false } = {}) => {
         const mailbox = await actions.create(accountId, spec);
         store.getState().showToast({
-          message: `Created label “${mailbox.name}”`,
+          message: l.created(mailbox.name),
           tone: "info",
           ...(undoable
             ? {
                 revert: () => {
                   actions
                     .remove(accountId, mailbox.id)
-                    .catch(showError("Couldn’t undo"));
+                    .catch(showError(t.actions.couldntUndo));
                 },
               }
             : {}),
@@ -173,7 +172,17 @@ export function useLabelActions(): LabelActions {
           });
           parent = created.id;
         }
-        if (!created) throw new Error("That label exists already.");
+        if (!created) {
+          const name = path.join("/");
+          throw new MailError(
+            "provider",
+            `There’s already a label called “${name}”.`,
+            {
+              reason: "labelExists",
+              params: { name },
+            },
+          );
+        }
         return created;
       },
 
@@ -181,7 +190,7 @@ export function useLabelActions(): LabelActions {
 
       toggleHidden: (accountId, mailbox) => {
         edit(accountId, mailbox, { hidden: !mailbox.hidden }).catch(
-          showError("Couldn’t change the label"),
+          showError(l.couldntChange),
         );
       },
 
@@ -189,9 +198,9 @@ export function useLabelActions(): LabelActions {
         const mailboxes = cachedMailboxes(queryClient, accountId);
         const nested = subtreeIds(mailbox.id, mailboxes).size > 1;
         store.getState().setConfirm({
-          title: `Delete label “${mailbox.name}”?`,
-          message: `Messages keep their other labels${nested ? ", and the labels inside it stay" : ""}. This can’t be undone.`,
-          confirmLabel: "Delete label",
+          title: l.deleteTitle(mailbox.name),
+          message: l.deleteMessage(nested),
+          confirmLabel: l.deleteLabel,
           action: {
             kind: "delete-label",
             accountId,
@@ -221,13 +230,13 @@ export function useLabelActions(): LabelActions {
         actions.remove(accountId, mailboxId).then(
           () => {
             store.getState().showToast({
-              message: `Deleted label “${name}”`,
+              message: l.deleted(name),
               tone: "info",
             });
           },
-          showError(`Couldn’t delete “${name}”`),
+          showError(l.couldntDelete(name)),
         );
       },
     };
-  }, [actions, queryClient, router, store]);
+  }, [actions, queryClient, router, store, t]);
 }

@@ -114,13 +114,17 @@ export function createDraftSync(
       throw new MailError(
         "auth-required",
         "This account is no longer connected.",
+        { reason: "notConnected" },
       );
     return provider;
   };
 
   const bytesOf = (accountId: AccountId, part: OutgoingAttachment) => {
     if (!part.source)
-      throw new MailError("provider", `No content for "${part.filename}".`);
+      throw new MailError("provider", `No content for "${part.filename}".`, {
+        reason: "noContent",
+        params: { name: part.filename },
+      });
     return providerOf(accountId).getAttachment(
       part.source.messageId,
       part.source.attachmentId,
@@ -242,7 +246,9 @@ export function createDraftSync(
       const provider = providerOf(accountId);
       const id = await provider.draftIdOf(messageId);
       if (id === undefined)
-        throw new MailError("not-found", "This draft no longer exists.");
+        throw new MailError("not-found", "This draft no longer exists.", {
+          reason: "draftGone",
+        });
       return provider.getDraft(id);
     },
 
@@ -257,7 +263,7 @@ export function createDraftSync(
 export interface AddressSuggestions {
   readonly suggestions: readonly EmailAddress[];
   /** Why suggestions come from recent mail instead of the contacts. */
-  readonly notice?: string;
+  readonly notice?: MailError;
 }
 
 const MAX_SUGGESTIONS = 8;
@@ -309,7 +315,7 @@ export function useAddressSuggestions(
     if (!query) return { suggestions: [] };
     const notice =
       contacts.isError && isMailError(contacts.error, "unavailable")
-        ? `${contacts.error.message} Suggestions come from your recent mail.`
+        ? contacts.error
         : undefined;
     if (!fallback)
       return {

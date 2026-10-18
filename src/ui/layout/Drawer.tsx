@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from "react";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { useCoarsePointer } from "./useBreakpoint";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link Drawer}. */
 export interface DrawerProps {
@@ -13,6 +14,7 @@ export interface DrawerProps {
 /** Slide-over panel from the left (the folder tree on medium screens). */
 export function Drawer({ open, onClose, label, children }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const t = useT();
   // On touch screens, focusing the first field (the folder filter) would pop
   // up the on-screen keyboard every time.
   const coarse = useCoarsePointer();
@@ -23,7 +25,7 @@ export function Drawer({ open, onClose, label, children }: DrawerProps) {
       <button
         type="button"
         tabIndex={-1}
-        aria-label={`Close ${label}`}
+        aria-label={t.layout.closePanel(label)}
         onClick={onClose}
         className={`fixed inset-0 z-30 bg-black/30 transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
       />

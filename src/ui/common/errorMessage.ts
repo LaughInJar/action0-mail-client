@@ -1,20 +1,26 @@
 import { isMailError } from "../../core/errors";
+import type { I18n } from "../../i18n/context";
 
-/** A message suitable for showing to the user. */
-export function errorMessage(error: unknown): string {
+/**
+ * A message suitable for showing to the user, in the interface language:
+ * known causes by their reason, others as the provider said them.
+ */
+export function errorMessage(error: unknown, t: I18n): string {
   if (isMailError(error)) {
+    if (error.reason !== undefined)
+      return t.errors.reasons[error.reason](error.params);
     switch (error.code) {
       case "auth-required":
       case "unavailable":
       case "provider":
         return error.message;
       case "not-found":
-        return "This item no longer exists.";
+        return t.errors.notFound;
       case "rate-limited":
-        return "The mail provider is busy. Please try again in a moment.";
+        return t.errors.rateLimited;
       case "network":
-        return "You seem to be offline, or the mail provider can't be reached.";
+        return t.errors.offline;
     }
   }
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return error instanceof Error ? error.message : t.errors.unknown;
 }

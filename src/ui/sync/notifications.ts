@@ -2,6 +2,7 @@ import type { MessageId } from "../../core/ids";
 import type { Arrivals } from "../../data/sync";
 import type { HashRouter } from "../../state/router";
 import { COARSE_POINTER_QUERY } from "../layout/useBreakpoint";
+import type { I18n } from "../../i18n/context";
 
 /**
  * Desktop notifications can be offered. Phones only show notifications from
@@ -29,16 +30,20 @@ const appInFront = () => !document.hidden && document.hasFocus();
  * per message, or one for all when several arrive at once. A click brings
  * the app forward and opens the message (or the Inbox).
  */
-export function notifyArrivals(arrivals: Arrivals, router: HashRouter): void {
+export function notifyArrivals(
+  arrivals: Arrivals,
+  router: HashRouter,
+  t: I18n,
+): void {
   if (!notificationsAllowed() || appInFront()) return;
   try {
-    show(arrivals, router);
+    show(arrivals, router, t);
   } catch {
     // Some browsers (Chrome on Android) only notify through a service worker.
   }
 }
 
-function show(arrivals: Arrivals, router: HashRouter): void {
+function show(arrivals: Arrivals, router: HashRouter, t: I18n): void {
   const { accountId, inboxId, messages } = arrivals;
   const open = (notification: Notification, messageId?: MessageId) => {
     notification.onclick = () => {
@@ -57,7 +62,7 @@ function show(arrivals: Arrivals, router: HashRouter): void {
       ...new Set(messages.map((m) => m.from?.name ?? m.from?.address ?? "")),
     ].filter(Boolean);
     const notification = new Notification(
-      `${String(messages.length)} new messages`,
+      t.layout.notifyMany(messages.length),
       {
         body: senders.join(", "),
         tag: `a0-${accountId}`,
@@ -69,7 +74,7 @@ function show(arrivals: Arrivals, router: HashRouter): void {
   }
   for (const message of messages) {
     const notification = new Notification(
-      message.from?.name ?? message.from?.address ?? "New message",
+      message.from?.name ?? message.from?.address ?? t.layout.notifyOne,
       {
         body: [message.subject, message.snippet].filter(Boolean).join("\n"),
         // The same mail never notifies twice.

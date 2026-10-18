@@ -5,6 +5,7 @@ import { useMailActions } from "../actions/useMailActions";
 import { useLabelActions } from "../labels/useLabelActions";
 import { useUnsubscribe } from "../reader/useUnsubscribe";
 import { useFocusTrap } from "./useFocusTrap";
+import { useT } from "../../i18n/context";
 
 /** Shows the confirmation dialog while a destructive action waits for it. */
 export function ConfirmHost() {
@@ -22,6 +23,7 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
   const actions = useMailActions();
   const labels = useLabelActions();
   const unsubscribe = useUnsubscribe();
+  const t = useT();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const messageId = useId();
@@ -50,7 +52,7 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Dismiss"
+        aria-label={t.common.dismiss}
         onClick={cancel}
         className="absolute inset-0 bg-black/40"
       />
@@ -77,7 +79,7 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
             onClick={cancel}
             className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="button"

@@ -10,6 +10,7 @@ import {
   sendQueued,
   type ComposeActions,
 } from "./useComposeActions";
+import { useT } from "../../i18n/context";
 
 /** A draft saves this long after the last edit. */
 export const AUTOSAVE_DELAY_MS = 2000;
@@ -38,6 +39,7 @@ export function useComposerEffects(
   const store = useUiStore();
   const sync = useDraftSync();
   const router = useRouter();
+  const t = useT();
   const composer = useUi((state) => state.composer);
   const pendingSends = useUi((state) => state.pendingSends);
 
@@ -57,19 +59,19 @@ export function useComposerEffects(
         : AUTOSAVE_DELAY_MS;
     const timer = setTimeout(() => {
       const latest = store.getState().composer;
-      if (latest) void saveSession(store, sync, latest);
+      if (latest) void saveSession(store, sync, latest, t);
     }, delay);
     return () => {
       clearTimeout(timer);
     };
-  }, [dirtyRevision, store, sync]);
+  }, [dirtyRevision, store, sync, t]);
 
   // Send queued mail when its undo period is over.
   useEffect(() => {
     const timers = pendingSends.map((pending) =>
       setTimeout(
         () => {
-          sendQueued(store, sync, pending.id);
+          sendQueued(store, sync, pending.id, t);
         },
         Math.max(0, pending.sendAt - Date.now()),
       ),
@@ -77,7 +79,7 @@ export function useComposerEffects(
     return () => {
       for (const timer of timers) clearTimeout(timer);
     };
-  }, [pendingSends, store, sync]);
+  }, [pendingSends, store, sync, t]);
 
   // Ask before leaving with mail waiting to be sent or unsaved changes.
   const unsafe =

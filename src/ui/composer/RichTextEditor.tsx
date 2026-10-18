@@ -12,6 +12,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Icon, type IconName } from "../common/Icon";
+import { useT } from "../../i18n/context";
 
 /** An inline image to show at the drop or paste position. */
 export interface InlineImageRef {
@@ -155,8 +156,9 @@ export interface RichTextEditorProps {
   readonly onFiles?: (files: readonly File[]) => readonly InlineImageRef[];
   /** DOM id of the text; defaults to {@link COMPOSER_BODY_ID}. */
   readonly id?: string;
-  /** Accessible name of the text. */
+  /** Accessible name of the text; "Message" by default. */
   readonly label?: string;
+  /** "Write your message…" by default. */
   readonly placeholder?: string;
 }
 
@@ -172,9 +174,12 @@ export function RichTextEditor({
   imageUrls,
   onFiles,
   id = COMPOSER_BODY_ID,
-  label = "Message",
-  placeholder = "Write your message…",
+  label: labelProp,
+  placeholder: placeholderProp,
 }: RichTextEditorProps) {
+  const texts = useT().composer.editor;
+  const label = labelProp ?? texts.message;
+  const placeholder = placeholderProp ?? texts.placeholder;
   const changed = useRef(onChange);
   const filesAdded = useRef(onFiles);
   useEffect(() => {
@@ -344,57 +349,58 @@ function Toolbar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
     }),
   });
   const chain = () => editor.chain().focus();
+  const texts = useT().composer.editor;
   return (
     <div
       role="toolbar"
-      aria-label="Formatting"
+      aria-label={texts.formatting}
       className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-zinc-200 px-2 py-1 dark:border-zinc-800"
     >
       <Tool
-        label="Bold (Ctrl+B)"
+        label={texts.bold}
         icon="bold"
         active={state.bold}
         onClick={() => chain().toggleBold().run()}
       />
       <Tool
-        label="Italic (Ctrl+I)"
+        label={texts.italic}
         icon="italic"
         active={state.italic}
         onClick={() => chain().toggleItalic().run()}
       />
       <Tool
-        label="Underline (Ctrl+U)"
+        label={texts.underline}
         icon="underline"
         active={state.underline}
         onClick={() => chain().toggleUnderline().run()}
       />
       <Tool
-        label="Link (Ctrl+K)"
+        label={texts.link}
         icon="link"
         active={state.link}
         onClick={onLink}
       />
       <span className="mx-1 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
       <Tool
-        label="Bulleted list"
+        label={texts.bulleted}
         icon="list"
         active={state.bullets}
         onClick={() => chain().toggleBulletList().run()}
       />
       <Tool
-        label="Numbered list"
+        label={texts.numbered}
         icon="list-ordered"
         active={state.numbers}
         onClick={() => chain().toggleOrderedList().run()}
       />
       <Tool
-        label="Quote"
+        label={texts.quote}
         icon="quote"
         active={state.quote}
         onClick={() => chain().toggleBlockquote().run()}
       />
       <Tool
-        label="Clear formatting"
+        label={texts.clear}
         icon="clear-format"
         onClick={() => chain().unsetAllMarks().clearNodes().run()}
       />
@@ -414,6 +420,7 @@ function normalizeUrl(input: string): string {
 function LinkField({ editor, onDone }: { editor: Editor; onDone: () => void }) {
   const current = editor.getAttributes("link") as { href?: string };
   const [url, setUrl] = useState(current.href ?? "");
+  const texts = useT().composer.editor;
 
   const apply = () => {
     const chain = editor.chain().focus().extendMarkRange("link");
@@ -434,7 +441,7 @@ function LinkField({ editor, onDone }: { editor: Editor; onDone: () => void }) {
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
       <label htmlFor="composer-link" className="text-xs text-zinc-500">
-        Link
+        {texts.linkField}
       </label>
       <input
         id="composer-link"
@@ -442,7 +449,7 @@ function LinkField({ editor, onDone }: { editor: Editor; onDone: () => void }) {
         // The field opens on request; focusing it is what the user asked for.
         // eslint-disable-next-line jsx-a11y/no-autofocus
         autoFocus
-        placeholder="https://… or an email address"
+        placeholder={texts.linkPlaceholder}
         value={url}
         onChange={(event) => {
           setUrl(event.target.value);
@@ -465,7 +472,7 @@ function LinkField({ editor, onDone }: { editor: Editor; onDone: () => void }) {
         onClick={apply}
         className="rounded px-2 py-1 text-sm font-medium text-blue-700 hover:bg-zinc-200 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
       >
-        {url.trim() || !current.href ? "Apply" : "Remove link"}
+        {url.trim() || !current.href ? texts.apply : texts.removeLink}
       </button>
     </div>
   );

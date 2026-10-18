@@ -8,6 +8,7 @@ import { attachmentKind, downloadBlob } from "../common/files";
 import { formatBytes } from "../common/format";
 import { Icon, type IconName } from "../common/Icon";
 import { ImageViewer } from "./ImageViewer";
+import { useT } from "../../i18n/context";
 
 const KIND_ICONS: Readonly<
   Record<ReturnType<typeof attachmentKind>, IconName>
@@ -30,6 +31,7 @@ export function AttachmentList({
   message: Message;
 }) {
   const fetchFile = useFetchAttachment();
+  const t = useT();
   const store = useUiStore();
   const [viewing, setViewing] = useState<number | null>(null);
   const inline = new Set(
@@ -45,7 +47,10 @@ export function AttachmentList({
     fetchFile(accountId, message.id, attachment.id);
   const failed = (attachment: AttachmentInfo) => (error: unknown) => {
     store.getState().showToast({
-      message: `Couldn’t open ${attachment.filename}: ${errorMessage(error)}`,
+      message: t.reader.couldntOpen(
+        attachment.filename,
+        errorMessage(error, t),
+      ),
       tone: "error",
     });
   };
@@ -92,13 +97,11 @@ export function AttachmentList({
 
   return (
     <section
-      aria-label="Attachments"
+      aria-label={t.reader.attachments}
       className="border-t border-zinc-200 px-4 py-4 sm:px-6 dark:border-zinc-800"
     >
       <h2 className="mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-        {attachments.length === 1
-          ? "1 attachment"
-          : `${String(attachments.length)} attachments`}
+        {t.reader.attachmentCount(attachments.length)}
       </h2>
       <ul className="flex flex-wrap gap-2">
         {attachments.map((attachment) => {
@@ -111,7 +114,11 @@ export function AttachmentList({
               <button
                 type="button"
                 title={`${attachment.filename} (${attachment.mimeType})`}
-                aria-label={`${kind === "download" ? "Download" : "Open"} ${attachment.filename}`}
+                aria-label={
+                  kind === "download"
+                    ? t.reader.downloadFile(attachment.filename)
+                    : t.reader.openFile(attachment.filename)
+                }
                 onClick={() => {
                   open(attachment);
                 }}
@@ -123,14 +130,14 @@ export function AttachmentList({
                 />
                 <span className="min-w-0 truncate">{attachment.filename}</span>
                 <span className="shrink-0 text-xs text-zinc-500">
-                  {formatBytes(attachment.size)}
+                  {formatBytes(attachment.size, t.locale)}
                 </span>
               </button>
               {kind !== "download" && (
                 <button
                   type="button"
-                  aria-label={`Download ${attachment.filename}`}
-                  title="Download"
+                  aria-label={t.reader.downloadFile(attachment.filename)}
+                  title={t.reader.download}
                   onClick={() => {
                     download(attachment);
                   }}

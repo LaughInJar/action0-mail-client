@@ -8,6 +8,7 @@ import { listRoute, type HashRouter } from "../../state/router";
 import type { UiStore } from "../../state/uiStore";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { listKeyOf, useCurrentList } from "./useCurrentList";
+import { useT, type I18n } from "../../i18n/context";
 
 const EMPTY: readonly ListRow[] = [];
 
@@ -21,6 +22,7 @@ const EMPTY: readonly ListRow[] = [];
  */
 export function useListController(breakpoint: Breakpoint): void {
   const { route, list, rows, listKey } = useCurrentList();
+  const t = useT();
   const router = useRouter();
   const store = useUiStore();
   const items = rows ?? EMPTY;
@@ -107,8 +109,8 @@ export function useListController(breakpoint: Breakpoint): void {
   ]);
 
   const commands = useMemo(
-    () => createListCommands({ breakpoint, ids, router, store }),
-    [breakpoint, ids, router, store],
+    () => createListCommands({ breakpoint, ids, router, store, t }),
+    [breakpoint, ids, router, store, t],
   );
   useCommands(commands);
 }
@@ -118,6 +120,7 @@ interface ListCommandContext {
   readonly ids: readonly MessageId[];
   readonly router: HashRouter;
   readonly store: UiStore;
+  readonly t: I18n;
 }
 
 function createListCommands({
@@ -125,8 +128,9 @@ function createListCommands({
   ids,
   router,
   store,
+  t,
 }: ListCommandContext): Command[] {
-  const group = "Message list";
+  const group = "list";
   const hasItems = () => ids.length > 0;
   const readerOpenOnPhone = () =>
     breakpoint === "narrow" && router.getRoute()?.messageId !== undefined;
@@ -144,7 +148,7 @@ function createListCommands({
     {
       id: "list.next",
       group,
-      description: "Next message",
+      description: t.shortcuts.nextMessage,
       keys: ["j", "ArrowDown"],
       when: hasItems,
       run: () => {
@@ -155,7 +159,7 @@ function createListCommands({
     {
       id: "list.previous",
       group,
-      description: "Previous message",
+      description: t.shortcuts.previousMessage,
       keys: ["k", "ArrowUp"],
       when: hasItems,
       run: () => {
@@ -166,7 +170,7 @@ function createListCommands({
     {
       id: "list.extend-next",
       group,
-      description: "Extend selection down",
+      description: t.shortcuts.extendDown,
       keys: ["shift+j", "shift+ArrowDown"],
       when: hasItems,
       run: () => {
@@ -176,7 +180,7 @@ function createListCommands({
     {
       id: "list.extend-previous",
       group,
-      description: "Extend selection up",
+      description: t.shortcuts.extendUp,
       keys: ["shift+k", "shift+ArrowUp"],
       when: hasItems,
       run: () => {
@@ -186,7 +190,7 @@ function createListCommands({
     {
       id: "list.toggle",
       group,
-      description: "Select or unselect the current message",
+      description: t.shortcuts.toggleSelection,
       keys: ["x"],
       when: () => store.getState().focusedId !== null,
       run: () => {
@@ -197,7 +201,7 @@ function createListCommands({
     {
       id: "list.first",
       group,
-      description: "First message",
+      description: t.shortcuts.firstMessage,
       keys: ["Home"],
       when: hasItems,
       run: () => {
@@ -208,7 +212,7 @@ function createListCommands({
     {
       id: "list.last",
       group,
-      description: "Last loaded message",
+      description: t.shortcuts.lastMessage,
       keys: ["End"],
       when: hasItems,
       run: () => {
@@ -219,7 +223,7 @@ function createListCommands({
     {
       id: "list.clear-selection",
       group,
-      description: "Clear the selection",
+      description: t.shortcuts.clearSelection,
       keys: ["Escape"],
       when: () => store.getState().selectedIds.size > 0,
       run: () => {
@@ -229,7 +233,7 @@ function createListCommands({
     {
       id: "list.open",
       group,
-      description: "Open the current message",
+      description: t.shortcuts.openMessage,
       keys: ["Enter", "o"],
       when: () =>
         breakpoint === "narrow" &&
@@ -245,7 +249,7 @@ function createListCommands({
     {
       id: "reader.close",
       group,
-      description: "Back to the list",
+      description: t.shortcuts.backToList,
       keys: ["Escape", "u"],
       when: () =>
         readerOpenOnPhone() && store.getState().selectedIds.size === 0,

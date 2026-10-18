@@ -10,6 +10,7 @@ import {
   releaseObjectUrls,
 } from "../common/files";
 import type { InlineImageRef } from "./RichTextEditor";
+import { useT } from "../../i18n/context";
 
 /** What {@link useComposerFiles} offers the composer. */
 export interface ComposerFiles {
@@ -47,6 +48,7 @@ export function useComposerFiles(
 ): ComposerFiles {
   const store = useUiStore();
   const accounts = useAccounts();
+  const t = useT();
   const maxBytes =
     accounts.find((handle) => handle.account.id === session.accountId)?.provider
       .capabilities.maxAttachmentBytes ?? Number.POSITIVE_INFINITY;
@@ -61,7 +63,11 @@ export function useComposerFiles(
       sentBytes(current) + files.reduce((sum, file) => sum + file.size, 0);
     if (total > maxBytes) {
       onProblem(
-        `With ${files.length === 1 ? "this file" : "these files"} the mail would carry ${megabytes(total)} of attachments; the limit is ${megabytes(maxBytes)}.`,
+        t.composer.tooBigToAdd(
+          files.length,
+          megabytes(total, t.locale),
+          megabytes(maxBytes, t.locale),
+        ),
       );
       return [];
     }

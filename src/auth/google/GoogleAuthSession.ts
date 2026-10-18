@@ -72,7 +72,9 @@ export class GoogleAuthSession implements AuthSession {
     }
     if (this.#status === "signed-in") this.markExpired();
     return Promise.reject(
-      new MailError("auth-required", "Please sign in to Google again."),
+      new MailError("auth-required", "Please sign in to Google again.", {
+        reason: "signInAgain",
+      }),
     );
   }
 

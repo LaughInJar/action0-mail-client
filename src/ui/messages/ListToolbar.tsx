@@ -6,6 +6,7 @@ import { focusWhenReady } from "../common/focusWhenReady";
 import { Icon } from "../common/Icon";
 import { MESSAGE_LIST_ID } from "./MessageList";
 import { listKeyOf } from "./useCurrentList";
+import { useT } from "../../i18n/context";
 
 /** DOM id of the mail search field (focused by `/`). */
 export const SEARCH_FIELD_ID = "mail-search";
@@ -26,6 +27,7 @@ export interface ListToolbarProps {
  * "search in" switch while a search is shown.
  */
 export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
+  const t = useT();
   const route = useRoute();
   const router = useRouter();
   const search = route?.search;
@@ -53,13 +55,13 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
         <SearchField
           placeholder={
             search?.everywhere || !mailbox
-              ? "Search all mail"
-              : `Search ${mailbox.name}`
+              ? t.list.searchAll
+              : t.list.searchIn(mailbox.name)
           }
         />
         <button
           type="button"
-          title="Change the sort order"
+          title={t.list.changeOrder}
           onClick={() => {
             // Start at the top of the re-sorted list, not at the open message.
             const current = router.getRoute();
@@ -69,16 +71,16 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
           className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
         >
           <Icon name="sort" className="size-3.5" />
-          {order === "newest" ? "Newest first" : "Oldest first"}
+          {order === "newest" ? t.list.newestFirst : t.list.oldestFirst}
         </button>
       </div>
       {canSwitch && (
         <div
           role="group"
-          aria-label="Search in"
+          aria-label={t.list.searchScope}
           className="mt-1.5 flex items-center gap-1 text-xs"
         >
-          <span className="px-1 text-zinc-500">In</span>
+          <span className="px-1 text-zinc-500">{t.list.scopeIn}</span>
           <ScopeButton
             pressed={!search.everywhere}
             onClick={() => {
@@ -93,7 +95,7 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
               searchIn(true);
             }}
           >
-            Everywhere
+            {t.list.everywhere}
           </ScopeButton>
         </div>
       )}
@@ -135,6 +137,7 @@ function ScopeButton({
  * results, Esc clears the search (or, when empty, moves to the list).
  */
 function SearchField({ placeholder }: { placeholder: string }) {
+  const t = useT();
   const route = useRoute();
   const router = useRouter();
   const store = useUiStore();
@@ -234,7 +237,7 @@ function SearchField({ placeholder }: { placeholder: string }) {
       <input
         id={SEARCH_FIELD_ID}
         type="search"
-        aria-label="Search mail"
+        aria-label={t.list.searchMail}
         placeholder={placeholder}
         autoComplete="off"
         enterKeyHint="search"
@@ -248,8 +251,8 @@ function SearchField({ placeholder }: { placeholder: string }) {
       {text && (
         <button
           type="button"
-          aria-label="Clear search"
-          title="Clear search"
+          aria-label={t.list.clearSearch}
+          title={t.list.clearSearch}
           onClick={() => {
             setText("");
             commit("");

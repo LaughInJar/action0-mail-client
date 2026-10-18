@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { useFocusTrap } from "./useFocusTrap";
+import { useT } from "../../i18n/context";
 
 /** Props of {@link Sheet}. */
 export interface SheetProps {
@@ -9,7 +10,7 @@ export interface SheetProps {
   readonly onEscape: () => void;
   /** A click outside, if it should do something other than `onEscape`. */
   readonly onBackdrop?: () => void;
-  /** Accessible name of the backdrop button. */
+  /** Accessible name of the backdrop button; "Close" by default. */
   readonly backdropLabel?: string;
   /** Focus the dialog itself instead of its first field (keeps the phone keyboard closed). */
   readonly focusContainer?: boolean;
@@ -36,12 +37,13 @@ export function Sheet({
   labelledBy,
   onEscape,
   onBackdrop,
-  backdropLabel = "Close",
+  backdropLabel,
   focusContainer = false,
   size = "md",
   children,
 }: SheetProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const t = useT();
   useFocusTrap(dialogRef, true, onEscape, { focusContainer });
 
   return (
@@ -49,7 +51,7 @@ export function Sheet({
       <button
         type="button"
         tabIndex={-1}
-        aria-label={backdropLabel}
+        aria-label={backdropLabel ?? t.common.close}
         onClick={onBackdrop ?? onEscape}
         className="absolute inset-0 bg-black/30"
       />

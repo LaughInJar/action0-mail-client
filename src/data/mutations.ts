@@ -304,6 +304,7 @@ export function useApplyIntent() {
           new MailError(
             "auth-required",
             "This account is no longer connected.",
+            { reason: "notConnected" },
           ),
         );
       }
@@ -389,6 +390,7 @@ export function useEmptyMailbox() {
           new MailError(
             "auth-required",
             "This account is no longer connected.",
+            { reason: "notConnected" },
           ),
         );
       }

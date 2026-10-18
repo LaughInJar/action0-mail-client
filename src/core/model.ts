@@ -67,6 +67,13 @@ export const MAILBOX_ROLE_ORDER: readonly MailboxRole[] = [
   "trash",
 ];
 
+/**
+ * Well-known mailboxes without a role (Gmail's inbox categories), so the
+ * interface can name them in its language.
+ */
+export type StandardMailbox =
+  "categories" | "primary" | "social" | "promotions" | "updates" | "forums";
+
 /** Message counters of a mailbox. */
 export interface MailboxCounts {
   readonly unread: number;
@@ -87,6 +94,8 @@ export interface Mailbox {
   readonly parentId?: MailboxId;
   readonly kind: MailboxKind;
   readonly role?: MailboxRole;
+  /** A well-known mailbox without a role; its name is the provider's (English). */
+  readonly standard?: StandardMailbox;
   /**
    * `false` for grouping nodes that hold no messages themselves, e.g. IMAP
    * `\Noselect` folders or the Gmail "Categories" group.

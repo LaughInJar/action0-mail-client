@@ -4,6 +4,7 @@ import type {
   MailboxColor,
   MailboxKind,
   MailboxRole,
+  StandardMailbox,
 } from "../../core/model";
 import type { GmailLabel } from "./types";
 
@@ -76,15 +77,15 @@ const SYSTEM_BY_ID = new Map(
 );
 
 /** Gmail inbox categories, in Gmail's display order. */
-const CATEGORIES: readonly (readonly [string, string])[] = [
-  ["CATEGORY_PERSONAL", "Primary"],
-  ["CATEGORY_SOCIAL", "Social"],
-  ["CATEGORY_PROMOTIONS", "Promotions"],
-  ["CATEGORY_UPDATES", "Updates"],
-  ["CATEGORY_FORUMS", "Forums"],
+const CATEGORIES: readonly (readonly [string, string, StandardMailbox])[] = [
+  ["CATEGORY_PERSONAL", "Primary", "primary"],
+  ["CATEGORY_SOCIAL", "Social", "social"],
+  ["CATEGORY_PROMOTIONS", "Promotions", "promotions"],
+  ["CATEGORY_UPDATES", "Updates", "updates"],
+  ["CATEGORY_FORUMS", "Forums", "forums"],
 ];
 
-const CATEGORY_NAMES = new Map(CATEGORIES);
+const CATEGORY_NAMES = new Map(CATEGORIES.map(([id, name]) => [id, name]));
 
 /**
  * Labels that are flags in the domain model (or irrelevant) and therefore
@@ -146,18 +147,20 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
     result.push({
       id: asMailboxId(CATEGORIES_ID),
       name: "Categories",
+      standard: "categories",
       kind: "view",
       selectable: false,
       hidden: false,
       assignable: false,
     });
-    for (const [id, name] of categories) {
+    for (const [id, name, standard] of categories) {
       const label = byId.get(id);
       if (!label) continue;
       // Categories are tabs of the inbox; changing them is a separate feature.
       result.push({
         ...base(label),
         name,
+        standard,
         kind: "label",
         parentId: asMailboxId(CATEGORIES_ID),
         assignable: false,

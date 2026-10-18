@@ -15,6 +15,8 @@ import {
   GOOGLE_CLOUD_LINKS,
   type AccountTypeCard,
 } from "./accountTypes";
+import { useT } from "../../i18n/context";
+import { RichText } from "../common/RichText";
 
 type Step =
   | { readonly kind: "choose" }
@@ -40,6 +42,7 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
   const store = useUiStore();
   const router = useRouter();
   const fetchMailboxes = useFetchMailboxes();
+  const a = useT().accounts;
 
   /** Connects (must run inside the click), then opens the new Inbox. */
   const connect = (type: ProviderType): Promise<void> => {
@@ -47,7 +50,7 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
     return registry.add(type).then(async (handle: AccountHandle) => {
       const { id, email } = handle.account;
       store.getState().showToast({
-        message: `${known.has(id) ? "Reconnected" : "Connected"} ${email}`,
+        message: known.has(id) ? a.reconnected(email) : a.connected(email),
         tone: "info",
       });
       onConnected?.();
@@ -112,6 +115,8 @@ function ChooseStep({
   const modules = useAvailableModules();
   const googleSetup = useProviderSetup("gmail");
   const [error, setError] = useState<string>();
+  const t = useT();
+  const a = t.accounts;
 
   const statusOf = (card: AccountTypeCard) => {
     if (card.comingLater) return "coming-later" as const;
@@ -126,10 +131,8 @@ function ChooseStep({
   })).filter(({ status }) => status !== "unavailable");
 
   return (
-    <StepFrame titleId={titleId} title="Add account">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Which kind of account?
-      </p>
+    <StepFrame titleId={titleId} title={a.addAccount}>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.whichKind}</p>
       <ul className="space-y-2">
         {cards.map(({ card, status }) => (
           <li key={card.type}>
@@ -140,7 +143,7 @@ function ChooseStep({
                 setError(undefined);
                 if (card.type === "demo") {
                   connectDemo().catch((cause: unknown) => {
-                    setError(errorMessage(cause));
+                    setError(errorMessage(cause, t));
                   });
                 } else if (card.type !== "microsoft" && card.type !== "imap") {
                   onChoose(card.type, status === "needs-setup");
@@ -155,19 +158,21 @@ function ChooseStep({
                 {card.mark}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-medium">{card.title}</span>
+                <span className="block font-medium">
+                  {a.types[card.type].title}
+                </span>
                 <span className="block text-sm text-zinc-500">
-                  {card.description}
+                  {a.types[card.type].description}
                 </span>
               </span>
               {status === "coming-later" && (
                 <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">
-                  Coming later
+                  {a.comingLater}
                 </span>
               )}
               {status === "needs-setup" && (
                 <span className="shrink-0 text-xs text-zinc-500">
-                  One-time setup
+                  {a.oneTimeSetup}
                 </span>
               )}
               {status !== "coming-later" && (
@@ -202,66 +207,35 @@ function GoogleSetupStep({
   const [error, setError] = useState<string>();
   const inputId = useId();
   const errorId = useId();
+  const a = useT().accounts;
+  const links = Object.fromEntries(
+    Object.entries(GOOGLE_CLOUD_LINKS).map(([name, href]) => [
+      name,
+      (text: string) => <ExternalLink href={href}>{text}</ExternalLink>,
+    ]),
+  );
 
   const save = () => {
     if (!setup) return;
     const problem = setup.validate(value);
-    setError(problem);
+    setError(problem && a.setupProblems[problem]);
     if (problem !== undefined) return;
     setup.apply(value);
     onSaved();
   };
 
   return (
-    <StepFrame titleId={titleId} title="Set up Google" onBack={onBack}>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Google only lets registered apps read mail. Register this app once in
-        your own Google Cloud project. It's free and takes about ten minutes;
-        the README has the details.
-      </p>
+    <StepFrame titleId={titleId} title={a.setUpGoogle} onBack={onBack}>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.setupIntro}</p>
       <ol className="list-decimal space-y-2 pl-5 text-sm">
-        <li>
-          Create a project,{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.gmailApi}>
-            enable the Gmail API
-          </ExternalLink>{" "}
-          and, for address suggestions,{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.peopleApi}>
-            the People API
-          </ExternalLink>
-          .
-        </li>
-        <li>
-          In the{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.authPlatform}>
-            Google Auth Platform
-          </ExternalLink>
-          , enter an app name and your email. Under{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.audience}>
-            Audience
-          </ExternalLink>
-          , choose <em>External</em> and add every address you want to connect
-          as a <em>test user</em>.
-        </li>
-        <li>
-          Under{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.dataAccess}>
-            Data access
-          </ExternalLink>
-          , add the scopes{" "}
-          <code className="text-xs">https://mail.google.com/</code>,{" "}
-          <code className="text-xs">contacts.readonly</code> and{" "}
-          <code className="text-xs">contacts.other.readonly</code>.
-        </li>
-        <li>
-          Under{" "}
-          <ExternalLink href={GOOGLE_CLOUD_LINKS.clients}>Clients</ExternalLink>
-          , create a client of type <em>Web application</em>. Add this exact
-          address under <em>Authorized JavaScript origins</em> and leave
-          redirect URIs empty:
-          <CopyableOrigin />
-        </li>
-        <li>Copy the client ID and paste it here.</li>
+        {a.setupSteps.map((step) => (
+          <li key={step}>
+            <RichText
+              text={step}
+              tags={{ ...links, origin: () => <CopyableOrigin /> }}
+            />
+          </li>
+        ))}
       </ol>
       <form
         onSubmit={(event) => {
@@ -272,7 +246,7 @@ function GoogleSetupStep({
         noValidate
       >
         <label className="block text-sm font-medium" htmlFor={inputId}>
-          Client ID
+          {a.clientId}
         </label>
         <input
           id={inputId}
@@ -281,7 +255,7 @@ function GoogleSetupStep({
             setValue(event.target.value);
             setError(undefined);
           }}
-          placeholder="1234567890-abc123.apps.googleusercontent.com"
+          placeholder={CLIENT_ID_EXAMPLE}
           autoComplete="off"
           spellCheck={false}
           aria-invalid={error !== undefined}
@@ -289,11 +263,9 @@ function GoogleSetupStep({
           className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
         />
         <ErrorNote id={errorId} message={error} />
-        <p className="text-xs text-zinc-500">
-          Saved as a setting in this browser. The client ID isn't secret.
-        </p>
+        <p className="text-xs text-zinc-500">{a.clientIdNote}</p>
         <button type="submit" className={PRIMARY_BUTTON}>
-          Save and continue
+          {a.saveAndContinue}
         </button>
       </form>
     </StepFrame>
@@ -319,6 +291,14 @@ function GoogleConnectStep({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const ready = module?.prepare === undefined || prepared;
+  const t = useT();
+  const a = t.accounts;
+  const tags = {
+    origin: () => <CopyableOrigin />,
+    audience: (text: string) => (
+      <ExternalLink href={GOOGLE_CLOUD_LINKS.audience}>{text}</ExternalLink>
+    ),
+  };
 
   // Load Google's sign-in script first, so the popup opens inside the click.
   useEffect(() => {
@@ -329,49 +309,38 @@ function GoogleConnectStep({
         if (active) setPrepared(true);
       },
       (cause: unknown) => {
-        if (active) setError(errorMessage(cause));
+        if (active) setError(errorMessage(cause, t));
       },
     );
     return () => {
       active = false;
     };
-  }, [module]);
+  }, [module, t]);
 
   const start = () => {
     setBusy(true);
     setError(undefined);
     connect()
       .catch((cause: unknown) => {
-        setError(errorMessage(cause));
+        setError(errorMessage(cause, t));
       })
       .finally(() => {
         setBusy(false);
       });
   };
 
-  let label = error === undefined ? "Continue with Google" : "Try again";
-  if (!ready) label = "Loading Google sign-in…";
-  else if (busy) label = "Waiting for Google…";
+  let label = error === undefined ? a.continueWithGoogle : t.common.tryAgain;
+  if (!ready) label = a.loadingGoogle;
+  else if (busy) label = a.waitingForGoogle;
 
   return (
-    <StepFrame titleId={titleId} title="Connect Google" onBack={onBack}>
+    <StepFrame titleId={titleId} title={a.connectGoogle} onBack={onBack}>
       <ul className="list-disc space-y-1.5 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-        <li>A Google window opens. Choose your account and allow access.</li>
-        <li>
-          The app asks for full access to your mailbox, because “Delete forever”
-          needs it. There's no server: your mail goes straight from Google to
-          this browser.
-        </li>
-        <li>
-          It also asks to read your contacts, for address suggestions while
-          writing. That's optional: without it, suggestions come from your
-          recent mail.
-        </li>
-        <li>
-          While your Google Cloud app is in <em>Testing</em>, Google warns that
-          it isn't verified. Choose <em>Advanced</em> → <em>Go to …</em> to
-          continue.
-        </li>
+        {a.connectNotes.map((note) => (
+          <li key={note}>
+            <RichText text={note} />
+          </li>
+        ))}
       </ul>
       <button
         type="button"
@@ -384,27 +353,16 @@ function GoogleConnectStep({
       <ErrorNote message={error} />
       <details className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
         <summary className="cursor-default font-medium">
-          Did Google show an error?
+          {a.googleError}
         </summary>
         <dl className="mt-2 space-y-2">
-          <HelpItem term="“invalid_client” or “no registered origin”">
-            The client in Google Cloud is missing this app's address under{" "}
-            <em>Authorized JavaScript origins</em>, or it isn't of type{" "}
-            <em>Web application</em>. Add exactly:
-            <CopyableOrigin />
-            Changes can take a few minutes to take effect.
+          <HelpItem term={a.helpOrigin}>
+            <RichText text={a.helpOriginText} tags={tags} />
           </HelpItem>
-          <HelpItem term="“Access blocked: … has not completed the Google verification process”">
-            Your address isn't a test user. Add it under{" "}
-            <ExternalLink href={GOOGLE_CLOUD_LINKS.audience}>
-              Audience → Test users
-            </ExternalLink>
-            .
+          <HelpItem term={a.helpBlocked}>
+            <RichText text={a.helpBlockedText} tags={tags} />
           </HelpItem>
-          <HelpItem term="A message about your organization or admin">
-            Your Google Workspace administrator blocks unverified apps. Only
-            they can allow this app.
-          </HelpItem>
+          <HelpItem term={a.helpAdmin}>{a.helpAdminText}</HelpItem>
         </dl>
       </details>
       {setup?.current()?.source === "browser" && (
@@ -413,12 +371,15 @@ function GoogleConnectStep({
           onClick={onChangeClientId}
           className="text-sm text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
         >
-          Use a different client ID
+          {a.otherClientId}
         </button>
       )}
     </StepFrame>
   );
 }
+
+/** What a client ID looks like (the same in every language). */
+const CLIENT_ID_EXAMPLE = "1234567890-abc123.apps.googleusercontent.com";
 
 const PRIMARY_BUTTON =
   "w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60 pointer-coarse:min-h-11";
@@ -434,13 +395,14 @@ function StepFrame({
   onBack?: () => void;
   children: ReactNode;
 }) {
+  const a = useT().accounts;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         {onBack && (
           <button
             type="button"
-            aria-label="Back"
+            aria-label={a.back}
             onClick={onBack}
             className="grid size-8 place-items-center rounded-md text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:size-11"
           >
@@ -504,6 +466,7 @@ function CopyableOrigin() {
   const origin = window.location.origin;
   const [copied, setCopied] = useState(false);
   const canCopy = "clipboard" in navigator;
+  const a = useT().accounts;
   return (
     <span className="my-1.5 flex items-center gap-2">
       <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 px-2 py-1 text-xs dark:bg-zinc-800">
@@ -524,7 +487,7 @@ function CopyableOrigin() {
           }}
           className="shrink-0 rounded px-2 py-1 text-xs font-medium text-blue-700 hover:bg-zinc-100 dark:text-blue-300 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? a.copied : a.copy}
         </button>
       )}
     </span>

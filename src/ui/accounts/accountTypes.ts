@@ -1,11 +1,9 @@
 import type { ProviderType } from "../../core/model";
 
-/** A card in the "Add account" type selection. */
+/** A card in the "Add account" type selection (its texts: `t.accounts.types`). */
 export interface AccountTypeCard {
   /** A provider type, or a placeholder for one that isn't built yet. */
   readonly type: ProviderType | "microsoft" | "imap";
-  readonly title: string;
-  readonly description: string;
   /** Short mark shown on the card (no brand logos). */
   readonly mark: string;
   /** Not built yet: shown greyed out. */
@@ -14,32 +12,10 @@ export interface AccountTypeCard {
 
 /** The account types, in display order. */
 export const ACCOUNT_TYPE_CARDS: readonly AccountTypeCard[] = [
-  {
-    type: "gmail",
-    title: "Google",
-    description: "Gmail and Google Workspace",
-    mark: "G",
-  },
-  {
-    type: "microsoft",
-    title: "Microsoft",
-    description: "Outlook.com, Microsoft 365 and Exchange Online",
-    mark: "M",
-    comingLater: true,
-  },
-  {
-    type: "imap",
-    title: "Other mail server",
-    description: "Any provider with IMAP",
-    mark: "@",
-    comingLater: true,
-  },
-  {
-    type: "demo",
-    title: "Demo account",
-    description: "Sample mail that lives only in this browser",
-    mark: "D",
-  },
+  { type: "gmail", mark: "G" },
+  { type: "microsoft", mark: "M", comingLater: true },
+  { type: "imap", mark: "@", comingLater: true },
+  { type: "demo", mark: "D" },
 ];
 
 /** Google Cloud pages used in the setup checklist. */
