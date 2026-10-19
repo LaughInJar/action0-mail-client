@@ -58,6 +58,12 @@ export interface ProviderCapabilities {
   readonly manageMailboxes: boolean;
   /** Colours a mailbox may get; empty if colours can't be set. */
   readonly mailboxColors: readonly MailboxColor[];
+  /**
+   * {@link MailboxChange.hidden} and {@link NewMailbox.hidden} work: the
+   * user's mailboxes can be hidden from the folder list (Gmail yes; Graph
+   * can't change it after a folder exists).
+   */
+  readonly hideMailboxes: boolean;
   /** Supports {@link MailProvider.listThreads} and {@link MailProvider.getThread}. */
   readonly threads: boolean;
   /** Supports {@link MailProvider.listSenders}. */
@@ -67,6 +73,11 @@ export interface ProviderCapabilities {
    * as `unavailable` while the permission for it is missing).
    */
   readonly editSignatures: boolean;
+  /**
+   * Where {@link MailProvider.updateSignature} keeps signatures: with the
+   * provider (Gmail), or only in this browser (Graph can't read Outlook's).
+   */
+  readonly signatureStore: "provider" | "browser";
 }
 
 /** Date order of a message list. */

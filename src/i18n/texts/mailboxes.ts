@@ -2,6 +2,8 @@ import type { MailboxRole, StandardMailbox } from "../../core/model";
 
 const en: {
   readonly roles: Readonly<Record<MailboxRole, string>>;
+  /** The same in Outlook's words, for folder accounts. */
+  readonly folderRoles: Readonly<Record<MailboxRole, string>>;
   readonly standard: Readonly<Record<StandardMailbox, string>>;
 } = {
   roles: {
@@ -14,6 +16,17 @@ const en: {
     archive: "Archive",
     junk: "Spam",
     trash: "Trash",
+  },
+  folderRoles: {
+    inbox: "Inbox",
+    flagged: "Flagged",
+    important: "Important",
+    sent: "Sent Items",
+    drafts: "Drafts",
+    all: "All mail",
+    archive: "Archive",
+    junk: "Junk Email",
+    trash: "Deleted Items",
   },
   standard: {
     categories: "Categories",
@@ -36,6 +49,17 @@ const de: typeof en = {
     archive: "Archiv",
     junk: "Spam",
     trash: "Papierkorb",
+  },
+  folderRoles: {
+    inbox: "Posteingang",
+    flagged: "Gekennzeichnet",
+    important: "Wichtig",
+    sent: "Gesendete Elemente",
+    drafts: "Entwürfe",
+    all: "Alle Nachrichten",
+    archive: "Archiv",
+    junk: "Junk-E-Mail",
+    trash: "Gelöschte Elemente",
   },
   standard: {
     categories: "Kategorien",

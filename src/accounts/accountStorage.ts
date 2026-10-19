@@ -7,6 +7,7 @@ export const ACCOUNTS_KEY = "a0.accounts";
 
 const PROVIDER_TYPES: ReadonlySet<string> = new Set<ProviderType>([
   "gmail",
+  "microsoft",
   "demo",
 ]);
 

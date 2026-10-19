@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { validateGoogleClientId } from "../app/googleSetup";
+import { validateMicrosoftClientId } from "../app/microsoftSetup";
 import { StaticAuthSession } from "../auth/staticSession";
 import { MailError } from "../core/errors";
 import { asAccountId } from "../core/ids";
@@ -39,20 +40,42 @@ function googleLikeModule({
 }
 
 /** A setup like the real one, but registering the stand-in module. */
-function googleSetup(module: ProviderModule) {
+function setupFor(
+  module: ProviderModule,
+  validate: ProviderSetup["validate"] = validateGoogleClientId,
+) {
   let stored: string | undefined;
   return (registry: AccountRegistry): ProviderSetup[] => [
     {
-      type: "gmail",
+      type: module.type,
       current: () =>
         stored === undefined ? undefined : { value: stored, source: "browser" },
-      validate: validateGoogleClientId,
+      validate,
       apply: (value) => {
         stored = value.trim();
         registry.registerModule(module);
       },
     },
   ];
+}
+const googleSetup = (module: ProviderModule) => setupFor(module);
+
+const MAX: Account = {
+  id: asAccountId("microsoft:max@contoso.com"),
+  type: "microsoft",
+  email: "max@contoso.com",
+};
+
+/** A stand-in for the Microsoft module: no MSAL involved. */
+function microsoftLikeModule(): ProviderModule {
+  return {
+    type: "microsoft",
+    label: "Microsoft",
+    connect: () =>
+      Promise.resolve({ account: MAX, auth: new StaticAuthSession() }),
+    restore: () => new StaticAuthSession(),
+    createProvider: () => new FakeMailProvider(createDemoData(TEST_NOW)),
+  };
 }
 
 const demoOnly = () => [
@@ -76,16 +99,16 @@ describe("Add account dialog", () => {
       within(dialog).getByRole("button", { name: /^Demo account/ }),
     ).toBeEnabled();
     expect(
-      within(dialog).getByRole("button", { name: /^Microsoft.*Coming later/ }),
-    ).toBeDisabled();
-    expect(
       within(dialog).getByRole("button", {
         name: /^Other mail server.*Coming later/,
       }),
     ).toBeDisabled();
-    // Neither a Google module nor a Google setup in this test.
+    // Neither modules nor setups for Google and Microsoft in this test.
     expect(
       within(dialog).queryByRole("button", { name: /^Google/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: /^Microsoft/ }),
     ).not.toBeInTheDocument();
 
     await user.keyboard("{Escape}");
@@ -236,5 +259,48 @@ describe("connecting", () => {
       0,
     );
     expect(screen.getByText(/verification process/)).toBeInTheDocument();
+  });
+});
+
+describe("Microsoft setup in the wizard", () => {
+  it("shows the Entra checklist with the redirect URI, takes the client ID and connects", async () => {
+    const { user } = renderApp({
+      signedIn: false,
+      modules: demoOnly(),
+      setups: setupFor(microsoftLikeModule(), validateMicrosoftClientId),
+    });
+    await user.click(
+      screen.getByRole("button", { name: /^Microsoft.*One-time setup/ }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Set up Microsoft" }),
+    ).toBeInTheDocument();
+    // The exact redirect URI to register, of type SPA.
+    expect(
+      screen.getByText(`${window.location.origin}/redirect.html`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "App registrations" }),
+    ).toHaveAttribute("href", expect.stringContaining("entra.microsoft.com"));
+
+    const field = screen.getByLabelText("Client ID");
+    await user.type(field, "Abc8Q~notTheId");
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/client secret/);
+
+    await user.clear(field);
+    await user.type(field, "0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b");
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
+    expect(
+      await screen.findByRole("heading", { name: "Connect Microsoft" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByText("Did Microsoft show an error?"));
+    expect(screen.getByText(/AADSTS50011/)).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Continue with Microsoft" }),
+    );
+    expect(await toastText("Connected max@contoso.com")).toBeInTheDocument();
+    expect(window.location.hash).toContain(encodeURIComponent(MAX.id));
   });
 });

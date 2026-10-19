@@ -9,6 +9,7 @@ import { Sheet } from "../common/Sheet";
 import { useLabelActions } from "./useLabelActions";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
+import { mailboxTexts } from "./mailboxTexts";
 
 /** Shows "Manage labels" while it's open. */
 export function ManageLabelsHost() {
@@ -24,11 +25,13 @@ export function ManageLabelsHost() {
 function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
   const setManageLabels = useUi((state) => state.setManageLabels);
   const setLabelDialog = useUi((state) => state.setLabelDialog);
-  const email = useAccountHandle(accountId)?.account.email;
+  const handle = useAccountHandle(accountId);
+  const email = handle?.account.email;
+  const canHide = handle?.provider.capabilities.hideMailboxes ?? false;
   const { data: mailboxes = [], isPending } = useMailboxList(accountId);
   const labels = useLabelActions();
   const t = useT();
-  const l = t.labels;
+  const l = mailboxTexts(t, handle?.provider.capabilities);
   const titleId = useId();
   const close = () => {
     setManageLabels(null);
@@ -106,20 +109,22 @@ function ManageLabelsDialog({ accountId }: { accountId: AccountId }) {
               >
                 {t.common.edit}
               </button>
-              <button
-                type="button"
-                aria-label={
-                  mailbox.hidden
-                    ? l.showNamed(mailbox.name)
-                    : l.hideNamed(mailbox.name)
-                }
-                onClick={() => {
-                  labels.toggleHidden(accountId, mailbox);
-                }}
-                className={`${action} min-w-12`}
-              >
-                {mailbox.hidden ? l.show : l.hide}
-              </button>
+              {canHide && (
+                <button
+                  type="button"
+                  aria-label={
+                    mailbox.hidden
+                      ? l.showNamed(mailbox.name)
+                      : l.hideNamed(mailbox.name)
+                  }
+                  onClick={() => {
+                    labels.toggleHidden(accountId, mailbox);
+                  }}
+                  className={`${action} min-w-12`}
+                >
+                  {mailbox.hidden ? l.show : l.hide}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={l.deleteNamed(mailbox.name)}

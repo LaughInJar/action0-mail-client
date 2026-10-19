@@ -12,16 +12,56 @@ import { errorMessage } from "../common/errorMessage";
 import { Icon } from "../common/Icon";
 import {
   ACCOUNT_TYPE_CARDS,
+  ENTRA_LINKS,
   GOOGLE_CLOUD_LINKS,
   type AccountTypeCard,
 } from "./accountTypes";
-import { useT } from "../../i18n/context";
-import { RichText } from "../common/RichText";
+import { useT, type I18n } from "../../i18n/context";
+import { RichText, type TagRenderer } from "../common/RichText";
+
+/** Providers that are set up (client ID) and authorized in the wizard. */
+type SignInType = Exclude<ProviderType, "demo">;
 
 type Step =
   | { readonly kind: "choose" }
-  | { readonly kind: "setup"; readonly type: ProviderType }
-  | { readonly kind: "connect"; readonly type: ProviderType };
+  | { readonly kind: "setup"; readonly type: SignInType }
+  | { readonly kind: "connect"; readonly type: SignInType };
+
+/** Where Microsoft's sign-in returns to (the redirect URI to register). */
+function microsoftRedirectUri(): string {
+  return new URL(
+    `${import.meta.env.BASE_URL}redirect.html`,
+    window.location.origin,
+  ).href;
+}
+
+/** A provider's wizard texts, and the links and values its texts refer to. */
+function setupCopy(type: SignInType, t: I18n) {
+  const external = (links: Readonly<Record<string, string>>) =>
+    Object.fromEntries(
+      Object.entries(links).map(([name, href]): [string, TagRenderer] => [
+        name,
+        (text) => <ExternalLink href={href}>{text}</ExternalLink>,
+      ]),
+    );
+  if (type === "gmail")
+    return {
+      texts: t.accounts.google,
+      tags: {
+        ...external(GOOGLE_CLOUD_LINKS),
+        origin: () => <CopyableValue value={window.location.origin} />,
+      },
+      example: "1234567890-abc123.apps.googleusercontent.com",
+    };
+  return {
+    texts: t.accounts.microsoft,
+    tags: {
+      ...external(ENTRA_LINKS),
+      redirect: () => <CopyableValue value={microsoftRedirectUri()} />,
+    },
+    example: "00000000-0000-0000-0000-000000000000",
+  };
+}
 
 /** Props of {@link AddAccountFlow}. */
 export interface AddAccountFlowProps {
@@ -77,7 +117,8 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
       );
     case "setup":
       return (
-        <GoogleSetupStep
+        <SetupStep
+          type={step.type}
           titleId={titleId}
           onBack={() => {
             setStep({ kind: "choose" });
@@ -89,7 +130,8 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
       );
     case "connect":
       return (
-        <GoogleConnectStep
+        <ConnectStep
+          type={step.type}
           titleId={titleId}
           onBack={() => {
             setStep({ kind: "choose" });
@@ -109,11 +151,12 @@ function ChooseStep({
   connectDemo,
 }: {
   titleId: string;
-  onChoose: (type: ProviderType, needsSetup: boolean) => void;
+  onChoose: (type: SignInType, needsSetup: boolean) => void;
   connectDemo: () => Promise<void>;
 }) {
   const modules = useAvailableModules();
   const googleSetup = useProviderSetup("gmail");
+  const microsoftSetup = useProviderSetup("microsoft");
   const [error, setError] = useState<string>();
   const t = useT();
   const a = t.accounts;
@@ -123,6 +166,8 @@ function ChooseStep({
     if (modules.some((module) => module.type === card.type))
       return "available" as const;
     if (card.type === "gmail" && googleSetup) return "needs-setup" as const;
+    if (card.type === "microsoft" && microsoftSetup)
+      return "needs-setup" as const;
     return "unavailable" as const;
   };
   const cards = ACCOUNT_TYPE_CARDS.map((card) => ({
@@ -145,7 +190,7 @@ function ChooseStep({
                   connectDemo().catch((cause: unknown) => {
                     setError(errorMessage(cause, t));
                   });
-                } else if (card.type !== "microsoft" && card.type !== "imap") {
+                } else if (card.type !== "imap") {
                   onChoose(card.type, status === "needs-setup");
                 }
               }}
@@ -190,16 +235,18 @@ function ChooseStep({
   );
 }
 
-function GoogleSetupStep({
+function SetupStep({
+  type,
   titleId,
   onBack,
   onSaved,
 }: {
+  type: SignInType;
   titleId: string;
   onBack: () => void;
   onSaved: () => void;
 }) {
-  const setup = useProviderSetup("gmail");
+  const setup = useProviderSetup(type);
   const current = setup?.current();
   const [value, setValue] = useState(
     current?.source === "browser" ? current.value : "",
@@ -207,33 +254,26 @@ function GoogleSetupStep({
   const [error, setError] = useState<string>();
   const inputId = useId();
   const errorId = useId();
-  const a = useT().accounts;
-  const links = Object.fromEntries(
-    Object.entries(GOOGLE_CLOUD_LINKS).map(([name, href]) => [
-      name,
-      (text: string) => <ExternalLink href={href}>{text}</ExternalLink>,
-    ]),
-  );
+  const t = useT();
+  const a = t.accounts;
+  const { texts, tags, example } = setupCopy(type, t);
 
   const save = () => {
     if (!setup) return;
     const problem = setup.validate(value);
-    setError(problem && a.setupProblems[problem]);
+    setError(problem && texts.problems[problem]);
     if (problem !== undefined) return;
     setup.apply(value);
     onSaved();
   };
 
   return (
-    <StepFrame titleId={titleId} title={a.setUpGoogle} onBack={onBack}>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.setupIntro}</p>
+    <StepFrame titleId={titleId} title={texts.setUp} onBack={onBack}>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">{texts.intro}</p>
       <ol className="list-decimal space-y-2 pl-5 text-sm">
-        {a.setupSteps.map((step) => (
+        {texts.steps.map((step) => (
           <li key={step}>
-            <RichText
-              text={step}
-              tags={{ ...links, origin: () => <CopyableOrigin /> }}
-            />
+            <RichText text={step} tags={tags} />
           </li>
         ))}
       </ol>
@@ -255,7 +295,7 @@ function GoogleSetupStep({
             setValue(event.target.value);
             setError(undefined);
           }}
-          placeholder={CLIENT_ID_EXAMPLE}
+          placeholder={example}
           autoComplete="off"
           spellCheck={false}
           aria-invalid={error !== undefined}
@@ -272,35 +312,32 @@ function GoogleSetupStep({
   );
 }
 
-function GoogleConnectStep({
+function ConnectStep({
+  type,
   titleId,
   onBack,
   onChangeClientId,
   connect,
 }: {
+  type: SignInType;
   titleId: string;
   onBack: () => void;
   onChangeClientId: () => void;
   connect: () => Promise<void>;
 }) {
   const module = useAvailableModules().find(
-    (candidate) => candidate.type === "gmail",
+    (candidate) => candidate.type === type,
   );
-  const setup = useProviderSetup("gmail");
+  const setup = useProviderSetup(type);
   const [prepared, setPrepared] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const ready = module?.prepare === undefined || prepared;
   const t = useT();
   const a = t.accounts;
-  const tags = {
-    origin: () => <CopyableOrigin />,
-    audience: (text: string) => (
-      <ExternalLink href={GOOGLE_CLOUD_LINKS.audience}>{text}</ExternalLink>
-    ),
-  };
+  const { texts, tags } = setupCopy(type, t);
 
-  // Load Google's sign-in script first, so the popup opens inside the click.
+  // Load the sign-in library first, so the popup opens inside the click.
   useEffect(() => {
     if (!module?.prepare) return;
     let active = true;
@@ -329,14 +366,14 @@ function GoogleConnectStep({
       });
   };
 
-  let label = error === undefined ? a.continueWithGoogle : t.common.tryAgain;
-  if (!ready) label = a.loadingGoogle;
-  else if (busy) label = a.waitingForGoogle;
+  let label = error === undefined ? texts.continueWith : t.common.tryAgain;
+  if (!ready) label = texts.loading;
+  else if (busy) label = texts.waiting;
 
   return (
-    <StepFrame titleId={titleId} title={a.connectGoogle} onBack={onBack}>
+    <StepFrame titleId={titleId} title={texts.connect} onBack={onBack}>
       <ul className="list-disc space-y-1.5 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-        {a.connectNotes.map((note) => (
+        {texts.notes.map((note) => (
           <li key={note}>
             <RichText text={note} />
           </li>
@@ -353,16 +390,14 @@ function GoogleConnectStep({
       <ErrorNote message={error} />
       <details className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
         <summary className="cursor-default font-medium">
-          {a.googleError}
+          {texts.errorQuestion}
         </summary>
         <dl className="mt-2 space-y-2">
-          <HelpItem term={a.helpOrigin}>
-            <RichText text={a.helpOriginText} tags={tags} />
-          </HelpItem>
-          <HelpItem term={a.helpBlocked}>
-            <RichText text={a.helpBlockedText} tags={tags} />
-          </HelpItem>
-          <HelpItem term={a.helpAdmin}>{a.helpAdminText}</HelpItem>
+          {texts.help.map(({ term, text }) => (
+            <HelpItem key={term} term={term}>
+              <RichText text={text} tags={tags} />
+            </HelpItem>
+          ))}
         </dl>
       </details>
       {setup?.current()?.source === "browser" && (
@@ -377,9 +412,6 @@ function GoogleConnectStep({
     </StepFrame>
   );
 }
-
-/** What a client ID looks like (the same in every language). */
-const CLIENT_ID_EXAMPLE = "1234567890-abc123.apps.googleusercontent.com";
 
 const PRIMARY_BUTTON =
   "w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60 pointer-coarse:min-h-11";
@@ -461,22 +493,21 @@ function ExternalLink({
   );
 }
 
-/** This app's origin (what Google must know), with a copy button. */
-function CopyableOrigin() {
-  const origin = window.location.origin;
+/** A value to enter elsewhere (this app's origin, a redirect URI), with a copy button. */
+function CopyableValue({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const canCopy = "clipboard" in navigator;
   const a = useT().accounts;
   return (
     <span className="my-1.5 flex items-center gap-2">
       <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 px-2 py-1 text-xs dark:bg-zinc-800">
-        {origin}
+        {value}
       </code>
       {canCopy && (
         <button
           type="button"
           onClick={() => {
-            navigator.clipboard.writeText(origin).then(
+            navigator.clipboard.writeText(value).then(
               () => {
                 setCopied(true);
               },

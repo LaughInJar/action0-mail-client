@@ -3,7 +3,7 @@ import { actions } from "./texts/actions";
 import { common } from "./texts/common";
 import { composer } from "./texts/composer";
 import { errors } from "./texts/errors";
-import { labels } from "./texts/labels";
+import { folders, labels } from "./texts/labels";
 import { layout } from "./texts/layout";
 import { list } from "./texts/list";
 import { mailboxes } from "./texts/mailboxes";
@@ -24,6 +24,7 @@ export const messages = {
     common: common.en,
     composer: composer.en,
     errors: errors.en,
+    folders: folders.en,
     labels: labels.en,
     layout: layout.en,
     list: list.en,
@@ -39,6 +40,7 @@ export const messages = {
     common: common.de,
     composer: composer.de,
     errors: errors.de,
+    folders: folders.de,
     labels: labels.de,
     layout: layout.de,
     list: list.de,

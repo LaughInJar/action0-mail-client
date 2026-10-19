@@ -58,9 +58,11 @@ const labels: ProviderCapabilities = {
   maxAttachmentBytes: 25 * 1024 * 1024,
   manageMailboxes: true,
   mailboxColors: [],
+  hideMailboxes: true,
   threads: true,
   senders: true,
   editSignatures: true,
+  signatureStore: "provider",
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };
 

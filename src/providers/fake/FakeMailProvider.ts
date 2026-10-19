@@ -55,6 +55,11 @@ export interface FakeMailData {
   readonly mailboxColors?: readonly MailboxColor[];
   /** Addresses the account sends from; by default just `me`, without a signature. */
   readonly senders?: readonly Sender[];
+  /**
+   * Behave like Outlook: mailboxes are exclusive folders, and archive,
+   * trash and spam move messages into the folder with that role.
+   */
+  readonly folders?: boolean;
 }
 
 /** Options of {@link FakeMailProvider}. */
@@ -102,9 +107,11 @@ export class FakeMailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: [],
+    hideMailboxes: true,
     threads: true,
     senders: true,
     editSignatures: true,
+    signatureStore: "provider",
   };
   /** Set to make writes fail with a provider error. */
   failWrites: boolean;
@@ -137,6 +144,7 @@ export class FakeMailProvider implements MailProvider {
   #lastArrival: number;
   #arrived = 0;
   #messages: Message[];
+  readonly #folders: boolean;
 
   constructor(data: FakeMailData, options: FakeMailProviderOptions = {}) {
     this.#mailboxes = data.mailboxes;
@@ -158,10 +166,20 @@ export class FakeMailProvider implements MailProvider {
     this.#arrivals = options.arrivals;
     this.#now = options.now ?? Date.now;
     this.#lastArrival = this.#now();
+    this.#folders = data.folders ?? false;
     this.capabilities = {
       ...this.capabilities,
       contacts: data.contacts !== undefined,
       mailboxColors: data.mailboxColors ?? [],
+      ...(this.#folders
+        ? {
+            mailboxKinds: ["folder", "view"],
+            labels: false,
+            hideMailboxes: false,
+            threads: false,
+            mailboxColors: [],
+          }
+        : {}),
     };
   }
 
@@ -301,6 +319,14 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const inbox = this.#roleId("inbox");
+    if (this.#folders) {
+      const archive = this.#roleId("archive");
+      return this.#write(ids, signal, (message) =>
+        inbox !== undefined && message.mailboxIds.includes(inbox)
+          ? this.#intoFolder(message, archive)
+          : message,
+      );
+    }
     return this.#write(ids, signal, (message) => ({
       ...message,
       mailboxIds: message.mailboxIds.filter((id) => id !== inbox),
@@ -312,6 +338,10 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const inbox = this.#roleId("inbox");
+    if (this.#folders)
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, inbox),
+      );
     return this.#write(ids, signal, (message) =>
       inbox === undefined || message.mailboxIds.includes(inbox)
         ? message
@@ -336,6 +366,10 @@ export class FakeMailProvider implements MailProvider {
     { from, to }: { readonly from: MailboxId; readonly to: MailboxId },
     signal?: AbortSignal,
   ): Promise<MutationResult> {
+    if (this.#folders)
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, to),
+      );
     const fromIsView =
       this.#mailboxes.find((mailbox) => mailbox.id === from)?.kind === "view";
     return this.#write(ids, signal, (message) => ({
@@ -374,6 +408,10 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const trash = this.#roleId("trash");
+    if (this.#folders)
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, trash),
+      );
     return this.#write(ids, signal, (message) =>
       trash === undefined ? message : withMembership(message, [trash], []),
     );
@@ -384,6 +422,12 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const trash = this.#roleId("trash");
+    if (this.#folders) {
+      const inbox = this.#roleId("inbox");
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, inbox),
+      );
+    }
     return this.#write(ids, signal, (message) =>
       trash === undefined ? message : withMembership(message, [], [trash]),
     );
@@ -394,6 +438,10 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const [junk, inbox] = [this.#roleId("junk"), this.#roleId("inbox")];
+    if (this.#folders)
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, junk),
+      );
     return this.#write(ids, signal, (message) =>
       junk === undefined
         ? message
@@ -406,6 +454,10 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<MutationResult> {
     const [junk, inbox] = [this.#roleId("junk"), this.#roleId("inbox")];
+    if (this.#folders)
+      return this.#write(ids, signal, (message) =>
+        this.#intoFolder(message, inbox),
+      );
     return this.#write(ids, signal, (message) =>
       junk === undefined
         ? message
@@ -608,9 +660,9 @@ export class FakeMailProvider implements MailProvider {
     const mailbox: Mailbox = {
       id: asMailboxId(`label-${String(this.#nextId++)}`),
       name: leaf,
-      kind: "label",
+      kind: this.#folders ? "folder" : "label",
       selectable: true,
-      hidden,
+      hidden: hidden && !this.#folders,
       assignable: true,
       ...(parentId === undefined ? {} : { parentId }),
       ...(color ? { color } : {}),
@@ -662,10 +714,22 @@ export class FakeMailProvider implements MailProvider {
     return updated;
   }
 
-  /** Nested mailboxes move up a level; messages just lose the label. */
+  /**
+   * Labels: nested mailboxes move up a level; messages just lose the label.
+   * Folders: the folder moves into the trash, with its messages.
+   */
   async deleteMailbox(id: MailboxId, signal?: AbortSignal): Promise<void> {
     await this.#refuseIfFailing(signal);
     const gone = this.#userMailbox(id);
+    const trash = this.#roleId("trash");
+    if (this.#folders && trash !== undefined) {
+      this.#setMailboxes(
+        this.#mailboxes.map((mailbox) =>
+          mailbox.id === id ? { ...mailbox, parentId: trash } : mailbox,
+        ),
+      );
+      return;
+    }
     this.#setMailboxes(
       this.#mailboxes.flatMap((mailbox) => {
         if (mailbox.id === id) return [];
@@ -727,6 +791,18 @@ export class FakeMailProvider implements MailProvider {
   }
 
   /** A mailbox of the user's own (not a system mailbox). */
+  /** Folder semantics: the message leaves its folder for `target`. */
+  #intoFolder(message: Message, target: MailboxId | undefined): Message {
+    if (target === undefined) return message;
+    const isFolder = (id: MailboxId) =>
+      this.#mailboxes.find((mailbox) => mailbox.id === id)?.kind === "folder";
+    return withMembership(
+      message,
+      [target],
+      message.mailboxIds.filter((id) => id !== target && isFolder(id)),
+    );
+  }
+
   #userMailbox(id: MailboxId): Mailbox {
     const mailbox = this.#mailboxes.find((m) => m.id === id);
     if (!mailbox)
@@ -747,9 +823,9 @@ export class FakeMailProvider implements MailProvider {
     const trimmed = name.trim();
     if (trimmed === "")
       throw new MailError("provider", "A label needs a name.", {
-        reason: "labelNeedsName",
+        reason: this.#folders ? "folderNeedsName" : "labelNeedsName",
       });
-    if (trimmed.includes("/"))
+    if (!this.#folders && trimmed.includes("/"))
       throw new MailError("provider", "Label names can’t contain “/”.", {
         reason: "labelNoSlash",
       });
@@ -763,7 +839,11 @@ export class FakeMailProvider implements MailProvider {
       throw new MailError(
         "provider",
         `There’s already a label called “${trimmed}”.`,
-        { status: 409, reason: "labelExists", params: { name: trimmed } },
+        {
+          status: 409,
+          reason: this.#folders ? "folderExists" : "labelExists",
+          params: { name: trimmed },
+        },
       );
     return trimmed;
   }

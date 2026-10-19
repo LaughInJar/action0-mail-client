@@ -14,6 +14,7 @@ import { colorName } from "./colorName";
 import { useLabelActions } from "./useLabelActions";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
+import { mailboxTexts } from "./mailboxTexts";
 
 /** Shows the label dialog while one is open. */
 export function LabelDialogHost() {
@@ -59,10 +60,11 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const labels = useLabelActions();
   const t = useT();
-  const l = t.labels;
-  const palette =
-    useAccountHandle(dialog.accountId)?.provider.capabilities.mailboxColors ??
-    [];
+  const capabilities = useAccountHandle(dialog.accountId)?.provider
+    .capabilities;
+  const l = mailboxTexts(t, capabilities);
+  const palette = capabilities?.mailboxColors ?? [];
+  const canHide = capabilities?.hideMailboxes ?? false;
   const titleId = useId();
   const nameId = useId();
   const parentFieldId = useId();
@@ -247,17 +249,19 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
               </div>
             </fieldset>
           )}
-          <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
-            <input
-              type="checkbox"
-              checked={shown}
-              onChange={(event) => {
-                setShown(event.target.checked);
-              }}
-              className="size-4"
-            />
-            {l.showInList}
-          </label>
+          {canHide && (
+            <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
+              <input
+                type="checkbox"
+                checked={shown}
+                onChange={(event) => {
+                  setShown(event.target.checked);
+                }}
+                className="size-4"
+              />
+              {l.showInList}
+            </label>
+          )}
           {error && (
             <p
               id={errorId}

@@ -16,6 +16,8 @@ import type { ConfirmAction } from "../../state/uiStore";
 import { MailError } from "../../core/errors";
 import { errorMessage } from "../common/errorMessage";
 import { useT, type I18n } from "../../i18n/context";
+import { useAccountRegistry } from "../../accounts/context";
+import { mailboxTexts } from "./mailboxTexts";
 
 /** The confirmed action of a "delete label" confirmation. */
 export type DeleteLabelAction = Extract<
@@ -113,10 +115,13 @@ export function useLabelActions(): LabelActions {
   const queryClient = useQueryClient();
   const store = useUiStore();
   const router = useRouter();
+  const registry = useAccountRegistry();
   const t = useT();
 
   return useMemo((): LabelActions => {
-    const l = t.labels;
+    /** Label or folder wording, by the account. */
+    const textsOf = (accountId: AccountId) =>
+      mailboxTexts(t, registry.get(accountId)?.provider.capabilities);
     const showError = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
         message: `${prefix}: ${errorMessage(error, t)}`,
@@ -129,7 +134,7 @@ export function useLabelActions(): LabelActions {
       await actions.update(accountId, mailbox.id, change);
       const inverse = inverseChange(mailbox, change);
       store.getState().showToast({
-        message: describe(mailbox, change, mailboxes, l),
+        message: describe(mailbox, change, mailboxes, textsOf(accountId)),
         tone: "info",
         revert: () => {
           actions
@@ -143,7 +148,7 @@ export function useLabelActions(): LabelActions {
       create: async (accountId, spec, { undoable = false } = {}) => {
         const mailbox = await actions.create(accountId, spec);
         store.getState().showToast({
-          message: l.created(mailbox.name),
+          message: textsOf(accountId).created(mailbox.name),
           tone: "info",
           ...(undoable
             ? {
@@ -190,7 +195,7 @@ export function useLabelActions(): LabelActions {
 
       toggleHidden: (accountId, mailbox) => {
         edit(accountId, mailbox, { hidden: !mailbox.hidden }).catch(
-          showError(l.couldntChange),
+          showError(textsOf(accountId).couldntChange),
         );
       },
 
@@ -198,9 +203,9 @@ export function useLabelActions(): LabelActions {
         const mailboxes = cachedMailboxes(queryClient, accountId);
         const nested = subtreeIds(mailbox.id, mailboxes).size > 1;
         store.getState().setConfirm({
-          title: l.deleteTitle(mailbox.name),
-          message: l.deleteMessage(nested),
-          confirmLabel: l.deleteLabel,
+          title: textsOf(accountId).deleteTitle(mailbox.name),
+          message: textsOf(accountId).deleteMessage(nested),
+          confirmLabel: textsOf(accountId).deleteLabel,
           action: {
             kind: "delete-label",
             accountId,
@@ -230,13 +235,13 @@ export function useLabelActions(): LabelActions {
         actions.remove(accountId, mailboxId).then(
           () => {
             store.getState().showToast({
-              message: l.deleted(name),
+              message: textsOf(accountId).deleted(name),
               tone: "info",
             });
           },
-          showError(l.couldntDelete(name)),
+          showError(textsOf(accountId).couldntDelete(name)),
         );
       },
     };
-  }, [actions, queryClient, router, store, t]);
+  }, [actions, queryClient, registry, router, store, t]);
 }

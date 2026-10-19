@@ -31,7 +31,7 @@ import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { useCurrentList } from "../messages/useCurrentList";
 import { useT } from "../../i18n/context";
-import { mailboxName } from "../common/mailboxNames";
+import { mailboxName, usesFolders } from "../common/mailboxNames";
 
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
@@ -155,7 +155,9 @@ export function useMailActions(): MailActions {
     const roleOf = (id: MailboxId) => mailboxOf(id)?.role;
     const nameOf = (id: MailboxId) => {
       const found = mailboxOf(id);
-      return found ? mailboxName(found, t) : a.theMailbox;
+      return found
+        ? mailboxName(found, t, usesFolders(mailboxes ?? []))
+        : a.theMailbox;
     };
 
     const targets = (): MessageId[] => {
@@ -234,7 +236,12 @@ export function useMailActions(): MailActions {
         return;
       }
       stepAway(changes);
-      run(intent, options.failure);
+      // Only what changes: folder providers would otherwise also move
+      // messages an archive doesn't apply to (those outside the inbox).
+      run(
+        { ...intent, ids: changes.map((change) => change.id) },
+        options.failure,
+      );
       if (!options.done) return;
       const inverse = inverseOf(intent, changes, {
         labels: capabilities?.labels ?? false,

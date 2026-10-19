@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
@@ -19,13 +20,16 @@ const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as {
  * `connect-src https:` lets one-click unsubscribe (RFC 8058) reach the
  * sender's server. Remote images may load from anywhere once allowed, so
  * this barely widens what the app can reach.
+ *
+ * `frame-src` allows Google's sign-in frame and MSAL's hidden renewal
+ * iframe, which returns to this site's `redirect.html` ('self').
  */
 const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
   "connect-src 'self' https:",
-  "frame-src https://accounts.google.com/gsi/",
+  "frame-src 'self' https://accounts.google.com/gsi/ https://login.microsoftonline.com",
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",
   "object-src 'none'",
@@ -55,6 +59,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), contentSecurityPolicy()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
+  },
+  build: {
+    rolldownOptions: {
+      // redirect.html: where Microsoft's sign-in returns to.
+      input: {
+        main: fileURLToPath(new URL("index.html", import.meta.url)),
+        redirect: fileURLToPath(new URL("redirect.html", import.meta.url)),
+      },
+    },
   },
   // The port is part of the OAuth "Authorized JavaScript origin", so it must never drift.
   server: { port: 5173, strictPort: true },

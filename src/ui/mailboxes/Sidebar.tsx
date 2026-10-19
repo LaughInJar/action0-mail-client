@@ -12,6 +12,7 @@ import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 import { useT } from "../../i18n/context";
 import { APP_TITLE } from "../sync/useDocumentTitle";
+import { mailboxTexts } from "../labels/mailboxTexts";
 
 /** Column (a): app title, account/mailbox tree and account management. */
 export function Sidebar({ onNavigate }: MailboxTreeProps) {
@@ -70,7 +71,7 @@ function LabelButtons({ onNavigate }: MailboxTreeProps) {
   const handle = useAccountHandle(route?.accountId);
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const setManageLabels = useUi((state) => state.setManageLabels);
-  const l = useT().labels;
+  const l = mailboxTexts(useT(), handle?.provider.capabilities);
   if (!handle?.provider.capabilities.manageMailboxes) return null;
   const { id } = handle.account;
   const button =

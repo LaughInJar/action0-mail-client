@@ -182,3 +182,73 @@ const de: typeof en = {
 
 /** Labels: the pickers, the label dialog and menu, Manage labels. */
 export const labels = { en, de };
+
+/**
+ * The same texts for accounts with folders (Outlook): what differs from the
+ * label wording. Folders have no colours and can't be hidden.
+ */
+const enFolders: typeof en = {
+  ...en,
+  filterLabels: "Filter folders",
+  findLabel: "Find a folder",
+  createLabel: (path) => `Create folder “${path}”`,
+  nameMissing: "Give the folder a name.",
+  noSlash: "Names can’t contain “/”. Choose a parent folder instead.",
+  preview: "Folder",
+  newLabel: "New folder",
+  newLabelIn: (parent) => `New folder in “${parent}”`,
+  editLabel: (name) => `Edit folder “${name}”`,
+  menuOf: (name) => `Folder ${name}`,
+  moveUnder: "Move into…",
+  addSublabel: "Add subfolder…",
+  manageLabels: "Manage folders",
+  loadingLabels: "Loading folders…",
+  noLabels: "No folders of your own yet.",
+  allLabels: "All folders",
+  saved: (name) => `Saved folder “${name}”`,
+  movedUnder: (name, parent) => `Moved “${name}” into “${parent}”`,
+  created: (name) => `Created folder “${name}”`,
+  couldntChange: "Couldn’t change the folder",
+  deleteTitle: (name) => `Delete folder “${name}”?`,
+  deleteMessage: (nested) =>
+    nested
+      ? "The folder, the folders inside it and all their messages move to Deleted Items, where you can restore them."
+      : "The folder and its messages move to Deleted Items, where you can restore them.",
+  deleteLabel: "Delete folder",
+  deleted: (name) => `Deleted folder “${name}”`,
+};
+
+const deFolders: typeof en = {
+  ...de,
+  filterLabels: "Ordner filtern",
+  findLabel: "Ordner suchen",
+  createLabel: (path) => `Ordner „${path}“ erstellen`,
+  nameMissing: "Gib dem Ordner einen Namen.",
+  noSlash:
+    "Namen dürfen kein „/“ enthalten. Wähl stattdessen einen übergeordneten Ordner.",
+  preview: "Ordner",
+  newLabel: "Neuer Ordner",
+  newLabelIn: (parent) => `Neuer Ordner in „${parent}“`,
+  editLabel: (name) => `Ordner „${name}“ bearbeiten`,
+  menuOf: (name) => `Ordner ${name}`,
+  moveUnder: "Verschieben in …",
+  addSublabel: "Unterordner hinzufügen …",
+  manageLabels: "Ordner verwalten",
+  loadingLabels: "Ordner werden geladen …",
+  noLabels: "Noch keine eigenen Ordner.",
+  allLabels: "Alle Ordner",
+  saved: (name) => `Ordner „${name}“ gespeichert`,
+  movedUnder: (name, parent) => `„${name}“ nach „${parent}“ verschoben`,
+  created: (name) => `Ordner „${name}“ erstellt`,
+  couldntChange: "Ändern des Ordners fehlgeschlagen",
+  deleteTitle: (name) => `Ordner „${name}“ löschen?`,
+  deleteMessage: (nested) =>
+    nested
+      ? "Der Ordner, die Ordner darin und alle ihre Nachrichten kommen in „Gelöschte Elemente“, wo du sie wiederherstellen kannst."
+      : "Der Ordner und seine Nachrichten kommen in „Gelöschte Elemente“, wo du sie wiederherstellen kannst.",
+  deleteLabel: "Ordner löschen",
+  deleted: (name) => `Ordner „${name}“ gelöscht`,
+};
+
+/** {@link labels} in folder wording, for folder-based accounts. */
+export const folders = { en: enFolders, de: deFolders };

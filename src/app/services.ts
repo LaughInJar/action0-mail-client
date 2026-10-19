@@ -11,6 +11,11 @@ import { createHashRouter, type HashRouter } from "../state/router";
 import { createUiStore, type UiStore } from "../state/uiStore";
 import type { AppConfig } from "./config";
 import { createGoogleSetup, storedGoogleClientId } from "./googleSetup";
+import {
+  createMicrosoftSetup,
+  storedMicrosoftClientId,
+} from "./microsoftSetup";
+import { createMicrosoftModule } from "../providers/microsoft/module";
 
 /** Everything the UI needs, created once at startup (or per test). */
 export interface AppServices {
@@ -66,8 +71,9 @@ export function createAppServices(options: AppServicesOptions): AppServices {
 }
 
 /**
- * Provider modules available at startup: Gmail, if a client ID is known
- * (from the build or, failing that, from this browser), and the demo account.
+ * Provider modules available at startup: Gmail and Microsoft, each if its
+ * client ID is known (from the build or, failing that, from this browser),
+ * and the demo account.
  */
 export function createDefaultModules(
   config: AppConfig,
@@ -75,15 +81,26 @@ export function createDefaultModules(
   localStorage: Storage | undefined,
 ): ProviderModule[] {
   const clientId = config.googleClientId ?? storedGoogleClientId(localStorage);
+  const microsoftId =
+    config.microsoftClientId ?? storedMicrosoftClientId(localStorage);
   return [
     ...(clientId === undefined
       ? []
       : [createGmailModule({ clientId, tokenStorage: sessionStorage })]),
+    ...(microsoftId === undefined
+      ? []
+      : [
+          createMicrosoftModule({
+            clientId: microsoftId,
+            sessionStorage,
+            settings: localStorage,
+          }),
+        ]),
     createDemoModule(),
   ];
 }
 
-/** Runtime setups: Google's client ID can be entered in the Add account wizard. */
+/** Runtime setups: Google's and Microsoft's client IDs can be entered in the Add account wizard. */
 export function createDefaultSetups(
   config: AppConfig,
   sessionStorage: Storage | undefined,
@@ -95,6 +112,12 @@ export function createDefaultSetups(
       buildClientId: config.googleClientId,
       settings: localStorage,
       tokenStorage: sessionStorage,
+    }),
+    createMicrosoftSetup({
+      registry,
+      buildClientId: config.microsoftClientId,
+      settings: localStorage,
+      sessionStorage,
     }),
   ];
 }

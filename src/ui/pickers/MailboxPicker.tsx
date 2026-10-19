@@ -15,6 +15,7 @@ import { splitPath, useLabelActions } from "../labels/useLabelActions";
 import { useCoarsePointer } from "../layout/useBreakpoint";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
+import { mailboxTexts } from "../labels/mailboxTexts";
 
 /** Shows the move or label picker while one is open. */
 export function MailboxPickerHost() {
@@ -43,7 +44,9 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const route = useRoute();
   const actions = useMailActions();
   const t = useT();
-  const l = t.labels;
+  const capabilities = useAccountHandle(picker.accountId)?.provider
+    .capabilities;
+  const l = mailboxTexts(t, capabilities);
   const queryClient = useQueryClient();
   const { data: mailboxes = [] } = useMailboxList(picker.accountId);
   const [filter, setFilter] = useState("");
@@ -55,9 +58,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const listId = useId();
   const labelsMode = picker.mode === "labels";
   const labels = useLabelActions();
-  const canCreate =
-    useAccountHandle(picker.accountId)?.provider.capabilities.manageMailboxes ??
-    false;
+  const canCreate = capabilities?.manageMailboxes ?? false;
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string>();
 
