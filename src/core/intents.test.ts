@@ -165,6 +165,23 @@ describe("inverseOf for trash, spam and deletion", () => {
       }),
     ).toEqual([{ kind: "move", ids: ["a"], from: "junk", to: "projects" }]);
   });
+
+  it("puts trashed mail back into its folder for folder providers", () => {
+    const a = summary("a", ["projects"]);
+    const b = summary("b", ["inbox"]);
+    const changes = [
+      change(a, { mailboxIds: [box("trash")] }),
+      change(b, { mailboxIds: [box("trash")] }),
+    ];
+    expect(
+      inverseOf({ kind: "trash", ids: ids("a", "b") }, changes, {
+        labels: false,
+      }),
+    ).toEqual([
+      { kind: "move", ids: ["a"], from: "trash", to: "projects" },
+      { kind: "move", ids: ["b"], from: "trash", to: "inbox" },
+    ]);
+  });
 });
 
 describe("runIntent", () => {

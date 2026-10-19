@@ -27,11 +27,16 @@ export function isOwnMailbox(mailbox: Mailbox): boolean {
 }
 
 /**
- * Mailboxes others can be nested in: the user's own, and grouping nodes
- * that only exist because something is nested in them (Gmail's implied
- * parents).
+ * Mailboxes others can be nested in: the user's own, grouping nodes that
+ * only exist because something is nested in them (Gmail's implied parents),
+ * and in folder accounts Inbox and Archive (Outlook keeps folders in them).
  */
 export function isNestable(mailbox: Mailbox): boolean {
+  if (
+    mailbox.kind === "folder" &&
+    (mailbox.role === "inbox" || mailbox.role === "archive")
+  )
+    return true;
   return (
     mailbox.kind !== "view" &&
     mailbox.role === undefined &&

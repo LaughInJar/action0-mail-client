@@ -89,7 +89,10 @@ export function runIntent(
 
 /** Options of {@link inverseOf}. */
 export interface InverseOptions {
-  /** The provider supports free label changes (Gmail); otherwise moves are undone by moving back. */
+  /**
+   * The provider supports free label changes (Gmail); otherwise moves (and
+   * trash, spam) are undone by moving back into the original folder.
+   */
   readonly labels: boolean;
 }
 
@@ -131,7 +134,8 @@ export function inverseOf(
     case "set-labels":
       return labels ? labelInverses(changes) : moveBackInverses(changes);
     case "trash":
-      return [{ kind: "untrash", ids }];
+      // Folders: back into the folder it came from, not just the inbox.
+      return labels ? [{ kind: "untrash", ids }] : moveBackInverses(changes);
     case "untrash":
       return [{ kind: "trash", ids }];
     case "report-spam":

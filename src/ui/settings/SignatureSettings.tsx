@@ -51,13 +51,19 @@ function AccountSignatures({
 }) {
   const { data: senders, isPending, error } = useSenders(handle.account.id);
   const t = useT();
+  const inBrowser = handle.provider.capabilities.signatureStore === "browser";
   return (
     <div className="space-y-3">
-      {showAccount && (
-        <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-          {handle.account.email}
+      <div>
+        {showAccount && (
+          <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+            {handle.account.email}
+          </p>
+        )}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {inBrowser ? t.settings.savedInBrowser : t.settings.savedWithProvider}
         </p>
-      )}
+      </div>
       {isPending && (
         <p className="text-xs text-zinc-500">{t.settings.loadingSignatures}</p>
       )}

@@ -7,6 +7,7 @@ import { useFocusTrap } from "../common/useFocusTrap";
 import { useLabelActions } from "./useLabelActions";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
+import { mailboxTexts } from "./mailboxTexts";
 
 /** Shows the label menu while one is open. */
 export function LabelMenuHost() {
@@ -27,10 +28,10 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
   const setLabelDialog = useUi((state) => state.setLabelDialog);
   const { data: mailboxes } = useMailboxList(menu.accountId);
   const mailbox = findMailbox(mailboxes, menu.mailboxId);
-  const colors =
-    useAccountHandle(menu.accountId)?.provider.capabilities.mailboxColors ?? [];
+  const capabilities = useAccountHandle(menu.accountId)?.provider.capabilities;
+  const colors = capabilities?.mailboxColors ?? [];
   const labels = useLabelActions();
-  const l = useT().labels;
+  const l = mailboxTexts(useT(), capabilities);
   const menuRef = useRef<HTMLDivElement>(null);
   // The click that ends a long-press lands on whatever opened under the
   // finger: only presses that started on the backdrop or the menu count.
@@ -76,12 +77,16 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
         setLabelDialog({ mode: "create", accountId, parentId: mailbox.id });
       },
     },
-    {
-      label: mailbox.hidden ? l.showInFolderList : l.hideFromFolderList,
-      run: () => {
-        labels.toggleHidden(accountId, mailbox);
-      },
-    },
+    ...(capabilities?.hideMailboxes
+      ? [
+          {
+            label: mailbox.hidden ? l.showInFolderList : l.hideFromFolderList,
+            run: () => {
+              labels.toggleHidden(accountId, mailbox);
+            },
+          },
+        ]
+      : []),
     {
       label: l.deleteMenu,
       danger: true,

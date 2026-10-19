@@ -242,9 +242,11 @@ export class GmailProvider implements MailProvider {
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
     mailboxColors: GMAIL_LABEL_COLORS,
+    hideMailboxes: true,
     threads: true,
     senders: true,
     editSignatures: true,
+    signatureStore: "provider",
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;

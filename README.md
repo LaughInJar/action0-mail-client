@@ -2,10 +2,11 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view.
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels; conversation view comes later.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
-- Several Gmail accounts side by side.
+- Several accounts side by side, Gmail and Microsoft mixed.
+- Microsoft accounts work with folders: drag or move mail into a folder (it leaves the one it was in), create folders right from **Move to…**, and archive, delete and spam move mail into Archive, Deleted Items and Junk Email. Undo puts it back into the folder it came from. The star is Outlook's flag, and **Flagged** lists flagged mail of every folder.
 - New mail and changes made elsewhere (on your phone, in Gmail web) show up by themselves: every minute while the app is in front, every five minutes in the background, and right away when you come back to the tab. The tab title shows the unread count of all inboxes, and desktop notifications (if you turn them on) tell you about new Inbox mail while you're in another tab or app. Phones only allow notifications for installed apps, so they aren't offered there yet.
 - Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
@@ -35,7 +36,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173/?demo> to start with the demo account. To read your Gmail, set up an OAuth client first (next section).
+Open <http://localhost:5173/?demo> to start with the demo account. To read your Gmail, set up an OAuth client first (next section); for Outlook.com or Microsoft 365, register the app in Microsoft Entra ([Setting up Microsoft sign-in](#setting-up-microsoft-sign-in)).
 
 ## Setting up Google sign-in
 
@@ -84,11 +85,42 @@ Google shows these errors in its own window, so the app can't see them; the wiza
 | The popup doesn't open                                                  | The browser blocked it. Allow popups for the site and click again.                                                                                                                                                                                                             |
 | Address suggestions only come from recent mail                          | The composer says why: either the **People API** isn't enabled in your Google Cloud project (enable it, wait a few minutes), or contacts access was declined in the Google window (sign out and add the account again to be asked once more).                                  |
 
+## Setting up Microsoft sign-in
+
+Microsoft accounts use [MSAL.js](https://github.com/AzureAD/microsoft-authentication-library-for-js) (authorization code flow with PKCE, in a popup) and Microsoft Graph. You need your own app registration in **Microsoft Entra**; its client ID isn't a secret. Registering needs an Entra directory: any Microsoft 365 work or school account, or a free Azure account. A personal Outlook.com account can _sign in_ to the app, but can't register one.
+
+1. Open the [Microsoft Entra admin center](https://entra.microsoft.com/) → **App registrations** → **New registration**.
+   - **Name:** e.g. action0.
+   - **Supported account types:** **Accounts in any organizational directory and personal Microsoft accounts** (work, school and Outlook.com accounts).
+   - **Redirect URI:** platform **Single-page application (SPA)**, `http://localhost:5173/redirect.html`. Add the same path on any deployment later (`https://…/redirect.html`).
+2. Open **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add `Mail.ReadWrite`, `Mail.Send` and `People.Read` (`User.Read` is already there). No client secret, no certificate.
+3. Copy the **Application (client) ID** from the app's **Overview** and give it to the app: in **Add account → Microsoft** (saved as a setting in that browser), or as `VITE_MICROSOFT_CLIENT_ID` in `.env.local` (takes precedence).
+4. **Add account → Microsoft → Continue with Microsoft**, choose your account and allow access.
+
+Things to know:
+
+- Tokens stay in sessionStorage. MSAL renews them by itself for about 24 hours (and longer while the browser is signed in to Microsoft and allows the hidden renewal frame); after that, or in a new tab without a Microsoft session, the **Reconnect** bar asks for one click.
+- Some organizations only allow apps an administrator approved. Microsoft then says _Need admin approval_, and the app explains that only your IT can allow it.
+- Outlook's own signatures can't be read through Graph: set yours up once in **Settings → Writing**; it's saved in that browser. Graph can't list "send as" addresses either, so mail goes out from the account's own address.
+- **Delete forever** works like Outlook's <kbd>Shift</kbd>+<kbd>Delete</kbd>: Outlook can still bring messages back for a while under _Recover deleted items_. Deleting a folder moves it and its mail to Deleted Items, as Outlook does.
+- Attachments: up to 25 MB per mail for work and school accounts, 20 MB for Outlook.com. Files over 3 MB go up in pieces through an upload session.
+- Live updates follow every folder with Graph's change lists ("delta"); changes to mail older than 30 days that were made elsewhere show up when the folder is opened again, except read/unread state and moves, which always come through.
+- Conversation view isn't available for Microsoft accounts yet (the switch in Settings says so); Outlook's categories and Focused/Other come later too.
+
+### Troubleshooting Microsoft sign-in
+
+| Microsoft says                                                                    | Fix                                                                                                                                            |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AADSTS50011**: the redirect URI doesn't match                                   | Add exactly `http://localhost:5173/redirect.html` (or your deployment's) as a redirect URI of platform **Single-page application**, not _Web_. |
+| **AADSTS700016**, _unauthorized_client_, or "not supported for personal accounts" | The client ID is wrong, or **Supported account types** under **Authentication** doesn't include the kind of account you used.                  |
+| **Need admin approval** (AADSTS65001, 90094)                                      | Your organization only allows approved apps. An administrator has to grant consent for the app in Entra (**Enterprise applications**).         |
+| The popup doesn't open                                                            | The browser blocked it. Allow popups for the site and click again.                                                                             |
+
 ## Testing on a phone
 
 `npm run dev:lan` makes the dev server reachable on your local network. The demo works there right away (`http://<your-ip>:5173/?demo`).
 
-Google sign-in does not: Google only allows plain `http://` origins for `localhost`. To sign in from a phone, serve the app over HTTPS, for example through a tunnel, and add that HTTPS origin to the OAuth client's _Authorized JavaScript origins_. Vite only accepts known host names, so also add the tunnel host to `server.allowedHosts` in `vite.config.ts` while testing.
+Google and Microsoft sign-in do not: both only allow plain `http://` for `localhost`. To sign in from a phone, serve the app over HTTPS, for example through a tunnel, and add that HTTPS origin to the OAuth client's _Authorized JavaScript origins_ (Google) and `https://<tunnel>/redirect.html` as an SPA redirect URI (Microsoft). Vite only accepts known host names, so also add the tunnel host to `server.allowedHosts` in `vite.config.ts` while testing.
 
 ## Scripts
 
@@ -143,10 +175,13 @@ In the folder tree, <kbd>Shift</kbd>+<kbd>F10</kbd> (or the Menu key), a right-c
 ```
 src/
   core/        Domain model, MailProvider interface, errors, reply rules. No dependencies.
-  auth/        AuthSession interface; google/ = Google Identity Services token client
+  auth/        AuthSession interface; google/ = Google Identity Services token client,
+               microsoft/ = MSAL (loaded on first use)
   providers/
     gmail/     Gmail REST adapter: HTTP client (retries, concurrency limit),
                label mapping, MIME parsing, mappers, drafts, People API
+    microsoft/ Microsoft Graph adapter: HTTP client ($batch, throttling, immutable
+               ids), folder mapping, mappers, drafts and upload sessions, delta sync
     mime/      Builds outgoing MIME messages (shared by raw-message adapters)
     fake/      In-memory provider: tests and the demo account
   accounts/    Account registry: one auth session + provider per account
@@ -176,15 +211,15 @@ The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc862
 - `folder` — exclusive, one per message (Exchange, IMAP),
 - `view` — computed, like Gmail's "All Mail" or "Starred".
 
-An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; a folder-based provider will move the message to its archive folder. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not. The user's own mailboxes (assignable, without a role) can be created, renamed, moved, recoloured, hidden and deleted where the provider supports it (`manageMailboxes`). Gmail stores only label paths ("Work/Clients"), so renaming or moving a label renames every label inside it too.
+An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; Outlook (Graph) moves the message to its Archive folder. Undo of a move, trash or spam in a folder account moves the message back to the folder it came from. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not. The user's own mailboxes (assignable, without a role) can be created, renamed, moved, recoloured, hidden and deleted where the provider supports it (`manageMailboxes`). Gmail stores only label paths ("Work/Clients"), so renaming or moving a label renames every label inside it too.
 
 ### What is stored where
 
 | Where          | What                                                                                                                                                                                                                           | How long                            |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
 | Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
-| sessionStorage | OAuth access tokens; mailbox lists and message list pages (cache; search results stay in memory)                                                                                                                               | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language and the addresses of senders you trust with remote images)                                         | Until sign-out                      |
+| sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists and message list pages (cache; search results stay in memory)                                                                                            | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, and the signatures of Microsoft accounts)  | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 
@@ -194,7 +229,7 @@ Tokens never go to localStorage, and mail content is never stored long-term.
 2. The mail is shown in an **iframe sandbox without `allow-scripts`** (`allow-same-origin` is only there so the app can measure the content's height, which is safe without scripts).
 3. A **Content Security Policy inside the iframe** (`default-src 'none'`) blocks every remote request — images, CSS backgrounds and imports, fonts — until you click _Load images_, which allows remote images for that message only. Inline (`cid:`) images are embedded as `data:` URLs.
 
-The production build also sets a strict CSP for the app itself. It lets the app connect to any https address (`connect-src https:`) for one reason: one-click unsubscribe sends a POST to the sender's server. That request carries no cookies and no referrer, and the app never reads the answer.
+The production build also sets a strict CSP for the app itself. It lets the app connect to any https address (`connect-src https:`) for one reason: one-click unsubscribe sends a POST to the sender's server. That request carries no cookies and no referrer, and the app never reads the answer. Frames are limited to Google's sign-in, Microsoft's sign-in (MSAL renews tokens in a hidden frame) and the app's own `redirect.html`, where Microsoft's sign-in returns.
 
 ## Tests and CI
 

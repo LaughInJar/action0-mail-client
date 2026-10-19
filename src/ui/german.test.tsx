@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { demoHash, renderApp } from "../test/renderApp";
+import { createFolderData } from "../test/folderData";
+import { demoHash, renderApp, TEST_NOW } from "../test/renderApp";
 
 vi.setConfig({ testTimeout: 15_000 });
 
@@ -94,6 +95,30 @@ describe("the German interface", () => {
     expect(document.documentElement.lang).toBe("en");
     expect(
       screen.getByRole("tree", { name: "Accounts and mailboxes" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("the German interface with an Outlook account", () => {
+  it("uses Outlook's German folder names and folder wording", async () => {
+    renderApp({ data: () => createFolderData(TEST_NOW) });
+    await subject("Quarterly numbers");
+    const tree = screen.getByRole("tree", { name: "Konten und Postfächer" });
+    for (const name of [
+      "Posteingang",
+      "Gesendete Elemente",
+      "Junk-E-Mail",
+      "Gelöschte Elemente",
+      "Gekennzeichnet",
+    ])
+      expect(
+        within(tree).getByRole("treeitem", { name: new RegExp(`^${name}`) }),
+      ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Neuer Ordner" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ordner verwalten" }),
     ).toBeInTheDocument();
   });
 });

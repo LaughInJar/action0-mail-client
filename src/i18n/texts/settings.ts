@@ -49,8 +49,10 @@ const en = {
   sendRightAway: "Off: send right away",
   seconds: (seconds: number) => `${seconds} seconds`,
   signatures: "Signatures",
-  signaturesHint:
-    "Added under what you write, above quoted mail. Saved to your account, so they also show up in Gmail.",
+  signaturesHint: "Added under what you write, above quoted mail.",
+  savedWithProvider: "Saved to your account, so they also show up in Gmail.",
+  savedInBrowser:
+    "Saved in this browser only: apps can’t read or change Outlook’s own signatures.",
   loadingSignatures: "Loading signatures…",
   couldntLoadSignatures: (why: string) =>
     `Couldn’t load the signatures: ${why}`,
@@ -123,8 +125,11 @@ const de: typeof en = {
   sendRightAway: "Aus: sofort senden",
   seconds: (seconds) => `${seconds} Sekunden`,
   signatures: "Signaturen",
-  signaturesHint:
-    "Steht unter dem, was du schreibst, über zitierten Mails. Wird in deinem Konto gespeichert und erscheint so auch in Gmail.",
+  signaturesHint: "Steht unter dem, was du schreibst, über zitierten Mails.",
+  savedWithProvider:
+    "Wird in deinem Konto gespeichert und erscheint so auch in Gmail.",
+  savedInBrowser:
+    "Nur in diesem Browser gespeichert: Apps können die Signaturen von Outlook weder lesen noch ändern.",
   loadingSignatures: "Signaturen werden geladen …",
   couldntLoadSignatures: (why) =>
     `Die Signaturen konnten nicht geladen werden: ${why}`,

@@ -19,7 +19,8 @@ export type MailErrorCode =
 /**
  * Known causes the app describes itself, so the interface can say them in
  * its language (with {@link MailError.params}). Errors without a reason
- * show their message as it is (e.g. the provider's own text).
+ * show their message as it is (e.g. the provider's own text). Sign-in
+ * reasons name the provider in `params.provider` ("Google" if absent).
  */
 export type MailErrorReason =
   | "notConnected"
@@ -48,7 +49,16 @@ export type MailErrorReason =
   | "senderRefused"
   | "needsHttps"
   | "demoRefused"
-  | "demoContactsOff";
+  | "demoContactsOff"
+  | "adminApprovalNeeded"
+  | "noArchiveFolder"
+  | "notAFolder"
+  | "folderNeedsName"
+  | "folderExists"
+  | "folderInsideItself"
+  | "attachmentUploadBlocked"
+  | "wrongAccount"
+  | "peopleUnavailable";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

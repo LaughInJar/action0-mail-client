@@ -13,7 +13,11 @@ export type AuthStatus = "signed-in" | "expired" | "signed-out";
  */
 export interface AuthSession {
   readonly status: AuthStatus;
-  /** Expiry of the current access token (epoch ms), if there is one. */
+  /**
+   * Expiry of the current access token (epoch ms), if there is one. Sessions
+   * that renew silently (MSAL) leave it undefined, so nothing opens a popup
+   * to refresh them.
+   */
   readonly expiresAt: number | undefined;
 
   /**

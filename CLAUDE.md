@@ -165,3 +165,10 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Replies and forwards in German get "Am 16.10.2026 um 20:59 schrieb Anna Berger:"; subjects keep Re:/Fwd:.
   - Not translated: shortcut keys, Gmail's own error texts, the demo's sample mails, README and code.
   - A typed English/German catalogue without a library (missing German text fails the build) and a lint rule against untranslated UI text.
+- **Microsoft accounts (Exchange / Outlook through Graph) decisions:**
+  - Work/school (Microsoft 365, Exchange Online) and personal (Outlook.com) accounts, one Entra app registration (SPA, "any organisation and personal accounts"). MSAL.js popup with auth code + PKCE; tokens in sessionStorage (MSAL renews silently for about 24 h, then the Reconnect bar). The wizard shows the Entra checklist and takes the client ID (stored per browser; `VITE_MICROSOFT_CLIENT_ID` takes precedence).
+  - Parity with Gmail except labels: folder tree with roles (Outlook's internal folders hidden), a Flagged view (the star is Outlook's flag), search, archive, read/unread, move, delete, spam, delete forever, empty, compose/drafts/attachments, People suggestions, unsubscribe, live updates. Undo puts mail back into the folder it came from.
+  - Signatures for Microsoft accounts are edited in action0 and stored per browser (Graph can't read Outlook's). From shows only the account's address (Graph can't list aliases).
+  - Folder management is included, reusing the label menus in folder wording (create, rename, move, delete; no colours or hiding). Deleting a folder moves it and its mail to Deleted Items.
+  - System folders of Microsoft accounts use Outlook's names in both languages (Deleted Items / Gelöschte Elemente, Junk Email, Sent Items, Flagged / Gekennzeichnet), so the tree matches Outlook and the folder texts.
+  - Later, as separate features: conversation view for Microsoft accounts, Outlook categories as labels, Focused/Other.

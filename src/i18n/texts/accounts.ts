@@ -48,52 +48,100 @@ const en = {
     },
   },
 
-  // Setting Google up. Tags: see RichText.
-  setUpGoogle: "Set up Google",
-  setupIntro:
-    "Google only lets registered apps read mail. Register this app once in your own Google Cloud project. It's free and takes about ten minutes; the README has the details.",
-  setupSteps: [
-    "Create a project, <gmailApi>enable the Gmail API</gmailApi> and, for address suggestions, <peopleApi>the People API</peopleApi>.",
-    "In the <authPlatform>Google Auth Platform</authPlatform>, enter an app name and your email. Under <audience>Audience</audience>, choose <em>External</em> and add every address you want to connect as a <em>test user</em>.",
-    "Under <dataAccess>Data access</dataAccess>, add the scopes <code>https://mail.google.com/</code>, <code>contacts.readonly</code> and <code>contacts.other.readonly</code>.",
-    "Under <clients>Clients</clients>, create a client of type <em>Web application</em>. Add this exact address under <em>Authorized JavaScript origins</em> and leave redirect URIs empty:<origin/>",
-    "Copy the client ID and paste it here.",
-  ],
+  // Setting a provider up and connecting it. Tags: see RichText.
   clientId: "Client ID",
   clientIdNote:
     "Saved as a setting in this browser. The client ID isn't secret.",
   saveAndContinue: "Save and continue",
-  setupProblems: {
-    missing: "Paste the client ID from Google Cloud.",
-    secret:
-      "That's the client secret. The app needs the client ID, which ends with .apps.googleusercontent.com.",
-    url: "That's a web address. The client ID ends with .apps.googleusercontent.com.",
-    malformed:
-      "This doesn't look like a Google client ID. It ends with .apps.googleusercontent.com.",
-  } satisfies Record<SetupProblem, string>,
-
-  // Connecting Google.
-  connectGoogle: "Connect Google",
-  continueWithGoogle: "Continue with Google",
-  loadingGoogle: "Loading Google sign-in…",
-  waitingForGoogle: "Waiting for Google…",
-  connectNotes: [
-    "A Google window opens. Choose your account and allow access.",
-    "The app asks for full access to your mailbox, because “Delete forever” needs it. There's no server: your mail goes straight from Google to this browser.",
-    "It also asks to read your contacts, for address suggestions while writing. That's optional: without it, suggestions come from your recent mail.",
-    "While your Google Cloud app is in <em>Testing</em>, Google warns that it isn't verified. Choose <em>Advanced</em> → <em>Go to …</em> to continue.",
-  ],
-  googleError: "Did Google show an error?",
-  helpOrigin: "“invalid_client” or “no registered origin”",
-  helpOriginText:
-    "The client in Google Cloud is missing this app's address under <em>Authorized JavaScript origins</em>, or it isn't of type <em>Web application</em>. Add exactly:<origin/>Changes can take a few minutes to take effect.",
-  helpBlocked:
-    "“Access blocked: … has not completed the Google verification process”",
-  helpBlockedText:
-    "Your address isn't a test user. Add it under <audience>Audience → Test users</audience>.",
-  helpAdmin: "A message about your organization or admin",
-  helpAdminText:
-    "Your Google Workspace administrator blocks unverified apps. Only they can allow this app.",
+  google: {
+    setUp: "Set up Google",
+    intro:
+      "Google only lets registered apps read mail. Register this app once in your own Google Cloud project. It's free and takes about ten minutes; the README has the details.",
+    steps: [
+      "Create a project, <gmailApi>enable the Gmail API</gmailApi> and, for address suggestions, <peopleApi>the People API</peopleApi>.",
+      "In the <authPlatform>Google Auth Platform</authPlatform>, enter an app name and your email. Under <audience>Audience</audience>, choose <em>External</em> and add every address you want to connect as a <em>test user</em>.",
+      "Under <dataAccess>Data access</dataAccess>, add the scopes <code>https://mail.google.com/</code>, <code>contacts.readonly</code> and <code>contacts.other.readonly</code>.",
+      "Under <clients>Clients</clients>, create a client of type <em>Web application</em>. Add this exact address under <em>Authorized JavaScript origins</em> and leave redirect URIs empty:<origin/>",
+      "Copy the client ID and paste it here.",
+    ],
+    problems: {
+      missing: "Paste the client ID from Google Cloud.",
+      secret:
+        "That's the client secret. The app needs the client ID, which ends with .apps.googleusercontent.com.",
+      url: "That's a web address. The client ID ends with .apps.googleusercontent.com.",
+      malformed:
+        "This doesn't look like a Google client ID. It ends with .apps.googleusercontent.com.",
+    } satisfies Record<SetupProblem, string>,
+    connect: "Connect Google",
+    continueWith: "Continue with Google",
+    loading: "Loading Google sign-in…",
+    waiting: "Waiting for Google…",
+    notes: [
+      "A Google window opens. Choose your account and allow access.",
+      "The app asks for full access to your mailbox, because “Delete forever” needs it. There's no server: your mail goes straight from Google to this browser.",
+      "It also asks to read your contacts, for address suggestions while writing. That's optional: without it, suggestions come from your recent mail.",
+      "While your Google Cloud app is in <em>Testing</em>, Google warns that it isn't verified. Choose <em>Advanced</em> → <em>Go to …</em> to continue.",
+    ],
+    errorQuestion: "Did Google show an error?",
+    help: [
+      {
+        term: "“invalid_client” or “no registered origin”",
+        text: "The client in Google Cloud is missing this app's address under <em>Authorized JavaScript origins</em>, or it isn't of type <em>Web application</em>. Add exactly:<origin/>Changes can take a few minutes to take effect.",
+      },
+      {
+        term: "“Access blocked: … has not completed the Google verification process”",
+        text: "Your address isn't a test user. Add it under <audience>Audience → Test users</audience>.",
+      },
+      {
+        term: "A message about your organization or admin",
+        text: "Your Google Workspace administrator blocks unverified apps. Only they can allow this app.",
+      },
+    ],
+  },
+  microsoft: {
+    setUp: "Set up Microsoft",
+    intro:
+      "Microsoft only lets registered apps read mail. Register this app once in Microsoft Entra. It's free and takes about five minutes; the README has the details. You need a Microsoft 365 work account or a (free) Azure account for it: an Outlook.com account can sign in, but can't register apps.",
+    steps: [
+      "In the <entra>Microsoft Entra admin center</entra>, open <registrations>App registrations</registrations> and choose <em>New registration</em>. Name it, e.g. action0.",
+      "Under <em>Supported account types</em>, choose <em>Accounts in any organizational directory and personal Microsoft accounts</em>.",
+      "Under <em>Redirect URI</em>, choose <em>Single-page application (SPA)</em> and enter exactly:<redirect/>",
+      "After registering, open <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em> and add <code>Mail.ReadWrite</code>, <code>Mail.Send</code> and <code>People.Read</code> (<code>User.Read</code> is already there).",
+      "On the <em>Overview</em> page, copy the <em>Application (client) ID</em> and paste it here.",
+    ],
+    problems: {
+      missing: "Paste the Application (client) ID from Microsoft Entra.",
+      secret:
+        "That's a client secret. The app needs the Application (client) ID, which looks like 00000000-0000-0000-0000-000000000000.",
+      url: "That's a web address. The Application (client) ID looks like 00000000-0000-0000-0000-000000000000.",
+      malformed:
+        "This doesn't look like an Application (client) ID. It looks like 00000000-0000-0000-0000-000000000000.",
+    } satisfies Record<SetupProblem, string>,
+    connect: "Connect Microsoft",
+    continueWith: "Continue with Microsoft",
+    loading: "Loading Microsoft sign-in…",
+    waiting: "Waiting for Microsoft…",
+    notes: [
+      "A Microsoft window opens. Choose your account and allow access.",
+      "The app asks to read, change and send your mail, and to see the people you write with, for address suggestions. There's no server: your mail goes straight from Microsoft to this browser.",
+      "Signatures can't be read from Outlook: you set them up once in Settings → Writing (they're kept in this browser).",
+    ],
+    errorQuestion: "Did Microsoft show an error?",
+    help: [
+      {
+        term: "“AADSTS50011”: the redirect URI doesn't match",
+        text: "The app registration is missing this exact redirect URI, of type <em>Single-page application</em> (not <em>Web</em>):<redirect/>",
+      },
+      {
+        term: "“AADSTS700016”, “unauthorized_client” or “not supported for personal accounts”",
+        text: "The client ID is wrong, or the app doesn't allow this kind of account. Check <em>Supported account types</em> under the app's <em>Authentication</em>.",
+      },
+      {
+        term: "“Need admin approval”",
+        text: "Your organization only allows apps an administrator approved. Only your IT can grant consent for this app.",
+      },
+    ],
+  },
   otherClientId: "Use a different client ID",
   copy: "Copy",
   copied: "Copied",
@@ -146,50 +194,99 @@ const de: typeof en = {
     },
   },
 
-  setUpGoogle: "Google einrichten",
-  setupIntro:
-    "Google lässt nur registrierte Apps Mails lesen. Registriere diese App einmal in deinem eigenen Google-Cloud-Projekt. Das ist kostenlos und dauert etwa zehn Minuten; Details stehen im README.",
-  setupSteps: [
-    "Leg ein Projekt an, <gmailApi>aktiviere die Gmail API</gmailApi> und, für Adressvorschläge, <peopleApi>die People API</peopleApi>.",
-    "Gib in der <authPlatform>Google Auth Platform</authPlatform> einen App-Namen und deine E-Mail-Adresse ein. Wähl unter <audience>Zielgruppe (Audience)</audience> <em>Extern</em> und füge jede Adresse, die du verbinden willst, als <em>Testnutzer</em> hinzu.",
-    "Füge unter <dataAccess>Datenzugriff (Data access)</dataAccess> die Bereiche <code>https://mail.google.com/</code>, <code>contacts.readonly</code> und <code>contacts.other.readonly</code> hinzu.",
-    "Leg unter <clients>Clients</clients> einen Client vom Typ <em>Webanwendung</em> an. Trag genau diese Adresse unter <em>Autorisierte JavaScript-Quellen</em> ein und lass die Weiterleitungs-URIs leer:<origin/>",
-    "Kopier die Client-ID und füge sie hier ein.",
-  ],
   clientId: "Client-ID",
   clientIdNote:
     "Wird als Einstellung in diesem Browser gespeichert. Die Client-ID ist nicht geheim.",
   saveAndContinue: "Speichern und weiter",
-  setupProblems: {
-    missing: "Füge die Client-ID aus Google Cloud ein.",
-    secret:
-      "Das ist das Client-Secret. Die App braucht die Client-ID, die auf .apps.googleusercontent.com endet.",
-    url: "Das ist eine Webadresse. Die Client-ID endet auf .apps.googleusercontent.com.",
-    malformed:
-      "Das sieht nicht nach einer Google-Client-ID aus. Sie endet auf .apps.googleusercontent.com.",
+  google: {
+    setUp: "Google einrichten",
+    intro:
+      "Google lässt nur registrierte Apps Mails lesen. Registriere diese App einmal in deinem eigenen Google-Cloud-Projekt. Das ist kostenlos und dauert etwa zehn Minuten; Details stehen im README.",
+    steps: [
+      "Leg ein Projekt an, <gmailApi>aktiviere die Gmail API</gmailApi> und, für Adressvorschläge, <peopleApi>die People API</peopleApi>.",
+      "Gib in der <authPlatform>Google Auth Platform</authPlatform> einen App-Namen und deine E-Mail-Adresse ein. Wähl unter <audience>Zielgruppe (Audience)</audience> <em>Extern</em> und füge jede Adresse, die du verbinden willst, als <em>Testnutzer</em> hinzu.",
+      "Füge unter <dataAccess>Datenzugriff (Data access)</dataAccess> die Bereiche <code>https://mail.google.com/</code>, <code>contacts.readonly</code> und <code>contacts.other.readonly</code> hinzu.",
+      "Leg unter <clients>Clients</clients> einen Client vom Typ <em>Webanwendung</em> an. Trag genau diese Adresse unter <em>Autorisierte JavaScript-Quellen</em> ein und lass die Weiterleitungs-URIs leer:<origin/>",
+      "Kopier die Client-ID und füge sie hier ein.",
+    ],
+    problems: {
+      missing: "Füge die Client-ID aus Google Cloud ein.",
+      secret:
+        "Das ist das Client-Secret. Die App braucht die Client-ID, die auf .apps.googleusercontent.com endet.",
+      url: "Das ist eine Webadresse. Die Client-ID endet auf .apps.googleusercontent.com.",
+      malformed:
+        "Das sieht nicht nach einer Google-Client-ID aus. Sie endet auf .apps.googleusercontent.com.",
+    },
+    connect: "Google verbinden",
+    continueWith: "Weiter mit Google",
+    loading: "Google-Anmeldung wird geladen …",
+    waiting: "Warte auf Google …",
+    notes: [
+      "Ein Google-Fenster öffnet sich. Wähl dein Konto und erlaube den Zugriff.",
+      "Die App bittet um vollen Zugriff auf dein Postfach, weil „Endgültig löschen“ ihn braucht. Es gibt keinen Server: Deine Mails gehen direkt von Google in diesen Browser.",
+      "Sie bittet auch darum, deine Kontakte zu lesen, für Adressvorschläge beim Schreiben. Das ist freiwillig: Ohne kommen die Vorschläge aus deinen letzten Mails.",
+      "Solange deine Google-Cloud-App im Status <em>Test</em> ist, warnt Google, dass sie nicht überprüft ist. Wähl <em>Erweitert</em> → <em>Zu … wechseln</em>, um fortzufahren.",
+    ],
+    errorQuestion: "Hat Google einen Fehler angezeigt?",
+    help: [
+      {
+        term: "„invalid_client“ oder „no registered origin“",
+        text: "Beim Client in Google Cloud fehlt die Adresse dieser App unter <em>Autorisierte JavaScript-Quellen</em>, oder er ist nicht vom Typ <em>Webanwendung</em>. Trag genau das ein:<origin/>Es kann ein paar Minuten dauern, bis Änderungen wirken.",
+      },
+      {
+        term: "„Zugriff blockiert: … hat das Bestätigungsverfahren von Google nicht abgeschlossen“",
+        text: "Deine Adresse ist nicht als Testnutzer eingetragen. Füge sie unter <audience>Zielgruppe → Testnutzer</audience> hinzu.",
+      },
+      {
+        term: "Eine Meldung über deine Organisation oder die Administration",
+        text: "Die Administration deines Google Workspace blockiert nicht überprüfte Apps. Nur sie kann diese App erlauben.",
+      },
+    ],
   },
-
-  connectGoogle: "Google verbinden",
-  continueWithGoogle: "Weiter mit Google",
-  loadingGoogle: "Google-Anmeldung wird geladen …",
-  waitingForGoogle: "Warte auf Google …",
-  connectNotes: [
-    "Ein Google-Fenster öffnet sich. Wähl dein Konto und erlaube den Zugriff.",
-    "Die App bittet um vollen Zugriff auf dein Postfach, weil „Endgültig löschen“ ihn braucht. Es gibt keinen Server: Deine Mails gehen direkt von Google in diesen Browser.",
-    "Sie bittet auch darum, deine Kontakte zu lesen, für Adressvorschläge beim Schreiben. Das ist freiwillig: Ohne kommen die Vorschläge aus deinen letzten Mails.",
-    "Solange deine Google-Cloud-App im Status <em>Test</em> ist, warnt Google, dass sie nicht überprüft ist. Wähl <em>Erweitert</em> → <em>Zu … wechseln</em>, um fortzufahren.",
-  ],
-  googleError: "Hat Google einen Fehler angezeigt?",
-  helpOrigin: "„invalid_client“ oder „no registered origin“",
-  helpOriginText:
-    "Beim Client in Google Cloud fehlt die Adresse dieser App unter <em>Autorisierte JavaScript-Quellen</em>, oder er ist nicht vom Typ <em>Webanwendung</em>. Trag genau das ein:<origin/>Es kann ein paar Minuten dauern, bis Änderungen wirken.",
-  helpBlocked:
-    "„Zugriff blockiert: … hat das Bestätigungsverfahren von Google nicht abgeschlossen“",
-  helpBlockedText:
-    "Deine Adresse ist nicht als Testnutzer eingetragen. Füge sie unter <audience>Zielgruppe → Testnutzer</audience> hinzu.",
-  helpAdmin: "Eine Meldung über deine Organisation oder die Administration",
-  helpAdminText:
-    "Die Administration deines Google Workspace blockiert nicht überprüfte Apps. Nur sie kann diese App erlauben.",
+  microsoft: {
+    setUp: "Microsoft einrichten",
+    intro:
+      "Microsoft lässt nur registrierte Apps Mails lesen. Registriere diese App einmal in Microsoft Entra. Das ist kostenlos und dauert etwa fünf Minuten; Details stehen im README. Du brauchst dafür ein Microsoft-365-Arbeitskonto oder ein (kostenloses) Azure-Konto: Mit einem Outlook.com-Konto kannst du dich anmelden, aber keine Apps registrieren.",
+    steps: [
+      "Öffne im <entra>Microsoft Entra Admin Center</entra> die <registrations>App-Registrierungen</registrations> und wähl <em>Neue Registrierung</em>. Gib ihr einen Namen, z. B. action0.",
+      "Wähl unter <em>Unterstützte Kontotypen</em> <em>Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten</em>.",
+      "Wähl unter <em>Umleitungs-URI</em> <em>Single-Page-Webanwendung (SPA)</em> und trag genau das ein:<redirect/>",
+      "Öffne nach dem Registrieren <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> und füge <code>Mail.ReadWrite</code>, <code>Mail.Send</code> und <code>People.Read</code> hinzu (<code>User.Read</code> ist schon da).",
+      "Kopier auf der Seite <em>Übersicht</em> die <em>Anwendungs-ID (Client)</em> und füge sie hier ein.",
+    ],
+    problems: {
+      missing: "Füge die Anwendungs-ID (Client) aus Microsoft Entra ein.",
+      secret:
+        "Das ist ein geheimer Clientschlüssel. Die App braucht die Anwendungs-ID (Client), die so aussieht: 00000000-0000-0000-0000-000000000000.",
+      url: "Das ist eine Webadresse. Die Anwendungs-ID (Client) sieht so aus: 00000000-0000-0000-0000-000000000000.",
+      malformed:
+        "Das sieht nicht nach einer Anwendungs-ID (Client) aus. Sie sieht so aus: 00000000-0000-0000-0000-000000000000.",
+    },
+    connect: "Microsoft verbinden",
+    continueWith: "Weiter mit Microsoft",
+    loading: "Microsoft-Anmeldung wird geladen …",
+    waiting: "Warte auf Microsoft …",
+    notes: [
+      "Ein Microsoft-Fenster öffnet sich. Wähl dein Konto und erlaube den Zugriff.",
+      "Die App bittet darum, deine Mails zu lesen, zu ändern und zu senden, und die Personen zu sehen, mit denen du schreibst, für Adressvorschläge. Es gibt keinen Server: Deine Mails gehen direkt von Microsoft in diesen Browser.",
+      "Signaturen lassen sich nicht aus Outlook lesen: Du richtest sie einmal unter Einstellungen → Schreiben ein (sie bleiben in diesem Browser).",
+    ],
+    errorQuestion: "Hat Microsoft einen Fehler angezeigt?",
+    help: [
+      {
+        term: "„AADSTS50011“: Die Umleitungs-URI passt nicht",
+        text: "Bei der App-Registrierung fehlt genau diese Umleitungs-URI, vom Typ <em>Single-Page-Webanwendung</em> (nicht <em>Web</em>):<redirect/>",
+      },
+      {
+        term: "„AADSTS700016“, „unauthorized_client“ oder „not supported for personal accounts“",
+        text: "Die Client-ID ist falsch, oder die App erlaubt diese Art von Konto nicht. Prüf die <em>Unterstützten Kontotypen</em> unter <em>Authentifizierung</em> der App.",
+      },
+      {
+        term: "„Administratorgenehmigung erforderlich“",
+        text: "Deine Organisation erlaubt nur Apps, die eine Administration genehmigt hat. Nur deine IT kann dieser App zustimmen.",
+      },
+    ],
+  },
   otherClientId: "Eine andere Client-ID verwenden",
   copy: "Kopieren",
   copied: "Kopiert",
