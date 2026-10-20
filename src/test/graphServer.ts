@@ -495,6 +495,20 @@ export class FakeGraph {
       items = items.filter(
         (m) => m.internetMessageId === byId[1]?.replace(/''/g, "'"),
       );
+    const byConversation = /conversationId eq '(.*)'/.exec(filter);
+    if (byConversation) {
+      // Like Graph: filtering by conversation can't be combined with sorting.
+      if (query.has("$orderby"))
+        return {
+          status: 400,
+          body: {
+            error: { code: "InefficientFilter", message: "Too complex." },
+          },
+        };
+      items = items.filter(
+        (m) => m.conversationId === byConversation[1]?.replace(/''/g, "'"),
+      );
+    }
     const order = query.get("$orderby") ?? "receivedDateTime desc";
     items.sort((a, b) =>
       (a.receivedDateTime ?? "").localeCompare(b.receivedDateTime ?? ""),

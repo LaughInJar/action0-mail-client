@@ -10,6 +10,7 @@ import {
   asMailboxId,
   asMessageId,
   asSyncToken,
+  asThreadId,
 } from "../../core/ids";
 import { MemoryStorage } from "../../test/memoryStorage";
 import { FakeGraph } from "../../test/graphServer";
@@ -34,19 +35,21 @@ function setup(options: { personal?: boolean } = {}) {
   const graph = new FakeGraph();
   server.use(...graph.handlers());
   const settings = new MemoryStorage();
-  const provider = new GraphProvider(
-    new GraphHttp({
-      auth: new StaticAuthSession(),
-      sleep: () => Promise.resolve(),
-    }),
-    {
-      settings,
-      signatureKey: "a0.signatures.test",
-      now: () => NOW,
-      ...options,
-    },
-  );
-  return { graph, provider, settings };
+  /** A provider on the same mailbox, e.g. a fresh one after a reload. */
+  const another = () =>
+    new GraphProvider(
+      new GraphHttp({
+        auth: new StaticAuthSession(),
+        sleep: () => Promise.resolve(),
+      }),
+      {
+        settings,
+        signatureKey: "a0.signatures.test",
+        now: () => NOW,
+        ...options,
+      },
+    );
+  return { graph, provider: another(), settings, another };
 }
 
 const id = asMessageId;
@@ -664,5 +667,142 @@ describe("GraphProvider people, senders and signatures", () => {
     expect(
       setup({ personal: true }).provider.capabilities.maxAttachmentBytes,
     ).toBe(20 * 1024 * 1024);
+  });
+});
+
+describe("GraphProvider conversations", () => {
+  /** Anna's conversation: Inbox, your reply in Sent Items, Inbox again. */
+  function conversations(graph: FakeGraph) {
+    graph.add({
+      id: "a1",
+      conversationId: "conv-a",
+      receivedDateTime: "2026-10-10T10:00:00Z",
+    });
+    graph.add(
+      {
+        id: "a2",
+        conversationId: "conv-a",
+        subject: "Re: a",
+        receivedDateTime: "2026-10-12T10:00:00Z",
+      },
+      "sentitems",
+    );
+    graph.add({
+      id: "a3",
+      conversationId: "conv-a",
+      receivedDateTime: "2026-10-14T10:00:00Z",
+    });
+    graph.add({
+      id: "b1",
+      conversationId: "conv-b",
+      receivedDateTime: "2026-10-13T10:00:00Z",
+      flag: { flagStatus: "flagged" },
+    });
+    graph.add({
+      id: "c1",
+      conversationId: "conv-c",
+      receivedDateTime: "2026-10-11T10:00:00Z",
+    });
+  }
+  const ids = (page: {
+    items: readonly { id: string; messages: readonly { id: string }[] }[];
+  }) =>
+    page.items.map((thread) => [
+      thread.id,
+      thread.messages.map((m) => m.id).join(","),
+    ]);
+
+  it("lists each conversation once, newest first, with its messages from every folder", async () => {
+    const { graph, provider } = setup();
+    conversations(graph);
+    // Inbox by date: a3, b1, c1, a1.
+    const first = await provider.listThreads({
+      mailboxId: box("inbox-id"),
+      limit: 2,
+    });
+    expect(ids(first)).toEqual([
+      ["conv-a", "a1,a2,a3"],
+      ["conv-b", "b1"],
+    ]);
+    // a1 is on the next page, but conv-a was already shown with a3.
+    const second = await provider.listThreads({
+      mailboxId: box("inbox-id"),
+      limit: 2,
+      ...(first.nextCursor ? { cursor: first.nextCursor } : {}),
+    });
+    expect(ids(second)).toEqual([["conv-c", "c1"]]);
+    expect(second.nextCursor).toBeUndefined();
+    // Conversations are fetched batched, without sorting (Graph refuses that).
+    expect(graph.requests("GET", /^me\/messages$/).length).toBeGreaterThan(0);
+    expect(
+      graph
+        .requests("GET", /^me\/messages$/)
+        .every((request) => request.batched && !request.query.has("$orderby")),
+    ).toBe(true);
+  });
+
+  it("lists the conversations of Sent Items and of the Flagged view", async () => {
+    const { graph, provider } = setup();
+    conversations(graph);
+    const sent = await provider.listThreads({
+      mailboxId: box("sent-id"),
+      limit: 10,
+    });
+    expect(ids(sent)).toEqual([["conv-a", "a1,a2,a3"]]);
+    const flagged = await provider.listThreads({
+      mailboxId: FLAGGED_VIEW_ID,
+      limit: 10,
+    });
+    expect(ids(flagged)).toEqual([["conv-b", "b1"]]);
+  });
+
+  it("sorts search results and oldest first by conversation, also after a reload", async () => {
+    const { graph, provider, another } = setup();
+    conversations(graph);
+    const oldest = await provider.listThreads({
+      mailboxId: box("inbox-id"),
+      order: "oldest",
+      limit: 1,
+    });
+    // By each conversation's newest Inbox message: c1 (11th), b1 (13th), a3 (14th).
+    expect(ids(oldest)).toEqual([["conv-c", "c1"]]);
+    // A fresh provider (a reload) continues where the cursor points.
+    const next = await another().listThreads({
+      mailboxId: box("inbox-id"),
+      order: "oldest",
+      limit: 2,
+      ...(oldest.nextCursor ? { cursor: oldest.nextCursor } : {}),
+    });
+    expect(ids(next).map(([thread]) => thread)).toEqual(["conv-b", "conv-a"]);
+
+    const found = await provider.listThreads({
+      mailboxId: ALL_VIEW_ID,
+      search: "re: a",
+      limit: 10,
+    });
+    expect(ids(found)).toEqual([["conv-a", "a1,a2,a3"]]);
+  });
+
+  it("opens a whole conversation with bodies and attachments, oldest first", async () => {
+    const { graph, provider } = setup();
+    conversations(graph);
+    const attached = graph.messages.find((m) => m.id === "a2");
+    if (attached)
+      attached.attachments = [
+        {
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          id: "att-1",
+          name: "plan.pdf",
+          contentType: "application/pdf",
+          size: 3,
+        },
+      ];
+    const thread = await provider.getThread(asThreadId("conv-a"));
+    expect(thread.messages.map((m) => m.id)).toEqual(["a1", "a2", "a3"]);
+    expect(thread.messages[0]?.body).toEqual({ html: "<p>a1</p>" });
+    expect(thread.messages[1]?.attachments.map((a) => a.filename)).toEqual([
+      "plan.pdf",
+    ]);
+    expect(provider.capabilities.threads).toBe(true);
   });
 });

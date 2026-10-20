@@ -137,11 +137,26 @@ export function useMailActions(): MailActions {
     const isolating = isolatingMailboxes(mailboxes ?? []);
     const a = t.actions;
     const count = conversations ? t.common.conversations : t.common.messages;
-    /** Rows → messages: a conversation stands for all its messages. */
-    const expand = (ids: readonly MessageId[]): MessageId[] =>
-      conversations && route
-        ? threadMessageIds(queryClient, route.accountId, ids)
-        : [...ids];
+    /**
+     * Rows → messages: a conversation stands for all its messages. In a
+     * folder (folder accounts), actions that move mail take only its
+     * messages in that folder, like Outlook: sent replies stay in Sent.
+     */
+    const expand = (
+      ids: readonly MessageId[],
+      kind: MailIntent["kind"] = "set-flags",
+    ): MessageId[] => {
+      if (!conversations || !route) return [...ids];
+      const all = threadMessageIds(queryClient, route.accountId, ids);
+      if (kind === "set-flags" || mailbox?.kind !== "folder") return all;
+      const here = mailbox.id;
+      const inFolder = new Set(
+        cachedSummaries(queryClient, route.accountId, all)
+          .filter((message) => message.mailboxIds.includes(here))
+          .map((message) => message.id),
+      );
+      return all.filter((id) => inFolder.has(id));
+    };
     /** How many rows the changes touch (conversations, or messages). */
     const touched = (changes: readonly MessageChange[]) =>
       conversations
@@ -227,7 +242,7 @@ export function useMailActions(): MailActions {
       if (!route || rowIntent.ids.length === 0) return;
       const intent: MailIntent = exact
         ? rowIntent
-        : { ...rowIntent, ids: expand(rowIntent.ids) };
+        : { ...rowIntent, ids: expand(rowIntent.ids, rowIntent.kind) };
       const { showToast } = store.getState();
       const { changes } = preview({ accountId: route.accountId, intent });
       if (changes.length === 0) {

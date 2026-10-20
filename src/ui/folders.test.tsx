@@ -1,13 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FakeMailProvider } from "../providers/fake/FakeMailProvider";
+import { UI_STATE_KEY } from "../state/uiStore";
 import { createFolderData, FOLDER } from "../test/folderData";
 import { demoHash, renderApp, TEST_NOW } from "../test/renderApp";
 
 vi.setConfig({ testTimeout: 15_000 });
 
 const data = () => createFolderData(TEST_NOW);
-const subject = (name: string) =>
+const subject = (name: string | RegExp) =>
   screen.findByRole("heading", { level: 1, name });
 const toastText = (text: string | RegExp) =>
   screen.findByText(text, { selector: "div[aria-live] span" });
@@ -155,3 +156,109 @@ describe("an account with folders (Outlook)", () => {
 function asId(id: string) {
   return id as Parameters<FakeMailProvider["getMessage"]>[0];
 }
+
+describe("conversations in an account with folders", () => {
+  /** Conversation view, opened on the trip conversation (rows go by their oldest message). */
+  function openTrip(mailboxId: string = FOLDER.inbox) {
+    window.localStorage.setItem(
+      UI_STATE_KEY,
+      JSON.stringify({
+        state: { settings: { conversations: true } },
+        version: 1,
+      }),
+    );
+    const app = renderApp({ data, hash: demoHash(mailboxId, "plan-1") });
+    return { ...app, fake: provider(app.services) };
+  }
+  const folders = async (fake: FakeMailProvider) =>
+    Promise.all(
+      ["plan-1", "plan-2", "plan-3"].map(
+        async (m) => (await fake.getMessage(asId(m))).mailboxIds,
+      ),
+    );
+
+  it("archives only the conversation's Inbox messages; the sent reply stays", async () => {
+    const { user, fake } = openTrip();
+    await subject(/^Trip plan/);
+    await user.keyboard("a");
+    expect(await toastText("Archived 1 conversation")).toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.archive],
+        [FOLDER.sent],
+        [FOLDER.archive],
+      ]);
+    });
+    await user.keyboard("z");
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.inbox],
+        [FOLDER.sent],
+        [FOLDER.inbox],
+      ]);
+    });
+  });
+
+  it("deletes and moves only the messages in the current folder", async () => {
+    const { user, fake } = openTrip();
+    await subject(/^Trip plan/);
+    await user.keyboard("{Delete}");
+    expect(
+      await toastText("Moved 1 conversation to Trash"),
+    ).toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.trash],
+        [FOLDER.sent],
+        [FOLDER.trash],
+      ]);
+    });
+    await user.keyboard("z");
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.inbox],
+        [FOLDER.sent],
+        [FOLDER.inbox],
+      ]);
+    });
+
+    await user.keyboard("v");
+    const dialog = await screen.findByRole("dialog", { name: /Move to/ });
+    await user.keyboard("Projects{Enter}");
+    expect(dialog).not.toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.projects],
+        [FOLDER.sent],
+        [FOLDER.projects],
+      ]);
+    });
+  });
+
+  it("marks the whole conversation read", async () => {
+    const { user, fake } = openTrip();
+    await subject(/^Trip plan/);
+    await user.keyboard("{Shift>}U{/Shift}");
+    await waitFor(async () => {
+      expect((await fake.getMessage(asId("plan-2"))).flags.seen).toBe(false);
+    });
+    await user.keyboard("{Shift>}I{/Shift}");
+    await waitFor(async () => {
+      for (const m of ["plan-1", "plan-2", "plan-3"])
+        expect((await fake.getMessage(asId(m))).flags.seen).toBe(true);
+    });
+  });
+
+  it("deletes all of it from a view like Flagged", async () => {
+    const { user, fake } = openTrip(FOLDER.flagged);
+    await subject(/^Trip plan/);
+    await user.keyboard("{Delete}");
+    await waitFor(async () => {
+      expect(await folders(fake)).toEqual([
+        [FOLDER.trash],
+        [FOLDER.trash],
+        [FOLDER.trash],
+      ]);
+    });
+  });
+});

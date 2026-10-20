@@ -176,7 +176,6 @@ export class FakeMailProvider implements MailProvider {
             mailboxKinds: ["folder", "view"],
             labels: false,
             hideMailboxes: false,
-            threads: false,
             mailboxColors: [],
           }
         : {}),

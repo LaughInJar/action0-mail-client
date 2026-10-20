@@ -1,4 +1,9 @@
-import { asMailboxId, asMessageId, type MailboxId } from "../core/ids";
+import {
+  asMailboxId,
+  asMessageId,
+  asThreadId,
+  type MailboxId,
+} from "../core/ids";
 import type { Mailbox, MailboxRole, Message } from "../core/model";
 import { DEMO_EMAIL } from "../providers/fake/demoData";
 import type { FakeMailData } from "../providers/fake/FakeMailProvider";
@@ -33,9 +38,11 @@ function message(
   mailboxId: MailboxId,
   hoursAgo: number,
   now: number,
+  extra: Partial<Message> = {},
 ): Message {
   return {
     id: asMessageId(id),
+    threadId: asThreadId(`c-${id}`),
     mailboxIds: [mailboxId],
     from: { name: "Anna Berger", address: "anna@example.com" },
     to: [{ address: DEMO_EMAIL }],
@@ -50,6 +57,7 @@ function message(
     hasAttachments: false,
     body: { text: `About ${subject.toLowerCase()}.` },
     attachments: [],
+    ...extra,
   };
 }
 
@@ -80,6 +88,20 @@ export function createFolderData(now: number): FakeMailData {
       message("quarterly", "Quarterly numbers", FOLDER.inbox, 1, now),
       message("lunch", "Lunch on Friday", FOLDER.inbox, 3, now),
       message("kickoff", "Project kickoff", FOLDER.projects, 24, now),
+      // A conversation in the Inbox with your reply in Sent Items.
+      message("plan-1", "Trip plan", FOLDER.inbox, 50, now, {
+        threadId: asThreadId("c-trip"),
+        flags: { seen: true, flagged: true },
+      }),
+      message("plan-2", "Re: Trip plan", FOLDER.sent, 49, now, {
+        threadId: asThreadId("c-trip"),
+        from: { name: "Demo User", address: DEMO_EMAIL },
+        to: [{ name: "Anna Berger", address: "anna@example.com" }],
+      }),
+      message("plan-3", "Re: Trip plan", FOLDER.inbox, 48, now, {
+        threadId: asThreadId("c-trip"),
+        flags: { seen: false, flagged: false },
+      }),
       message("receipt", "Old receipt", FOLDER.archive, 240, now),
     ],
   };
