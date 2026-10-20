@@ -172,3 +172,6 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Folder management is included, reusing the label menus in folder wording (create, rename, move, delete; no colours or hiding). Deleting a folder moves it and its mail to Deleted Items.
   - System folders of Microsoft accounts use Outlook's names in both languages (Deleted Items / Gelöschte Elemente, Junk Email, Sent Items, Flagged / Gekennzeichnet), so the tree matches Outlook and the folder texts.
   - Later, as separate features: conversation view for Microsoft accounts, Outlook categories as labels, Focused/Other.
+- **Conversation view for Microsoft accounts decisions:**
+  - The existing Settings → Reading switch (one for all accounts, per browser) now covers Microsoft accounts. Conversations are Outlook's own (its conversation ID); list, reader, keys, search and live updates behave as for Gmail.
+  - In folder accounts, archive, move, delete and spam on a conversation act on its messages in the current folder (like Outlook; sent replies stay in Sent Items); in views (Flagged, All mail) on all of its messages. Read/unread and star act on the whole conversation as before.

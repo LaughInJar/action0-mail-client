@@ -11,12 +11,14 @@ import {
   asMailboxId,
   asMessageId,
   asSyncToken,
+  asThreadId,
   type AttachmentId,
   type Cursor,
   type DraftId,
   type MailboxId,
   type MessageId,
   type SyncToken,
+  type ThreadId,
 } from "../../core/ids";
 import type {
   EmailAddress,
@@ -35,6 +37,7 @@ import type {
   MailboxChange,
   MailChange,
   MailProvider,
+  MessageOrder,
   MutationResult,
   NewMailbox,
   ProviderCapabilities,
@@ -103,6 +106,15 @@ const MAX_SORTED_RESULTS = 1000;
 
 /** Pages fetched at most to fill one page of a view (filtered client-side). */
 const MAX_VIEW_PAGES = 5;
+
+/** Messages of one conversation fetched at most. */
+const MAX_THREAD_MESSAGES = 100;
+
+/** Messages read at most to list conversations oldest first. */
+const MAX_OLDEST_SCAN = 20_000;
+
+/** `$select` for ordering conversations: just enough to group and filter. */
+const ORDER_SELECT = "id,conversationId,receivedDateTime,parentFolderId,flag";
 
 /** Options of {@link GraphProvider}. */
 export interface GraphProviderOptions {
@@ -184,8 +196,8 @@ export class GraphProvider implements MailProvider {
   #wellKnown: Promise<WellKnownFolders> | undefined;
   /** Files of drafts already uploaded: draft id → (local id → attachment id). */
   readonly #uploaded = new Map<string, Map<string, string>>();
-  /** Oldest-first search results, by snapshot key. */
-  readonly #snapshots = new Map<string, readonly MessageSummary[]>();
+  /** Sorted results kept for paging (messages, or conversation ids), by key. */
+  readonly #snapshots = new Map<string, readonly unknown[]>();
   #nextSnapshot = 1;
 
   constructor(http: GraphHttp, options: GraphProviderOptions = {}) {
@@ -208,7 +220,7 @@ export class GraphProvider implements MailProvider {
       manageMailboxes: true,
       mailboxColors: [],
       hideMailboxes: false,
-      threads: false,
+      threads: true,
       senders: true,
       editSignatures: true,
       signatureStore: "browser",
@@ -249,13 +261,19 @@ export class GraphProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
     const text = search?.trim();
-    if (cursor?.startsWith("snapshot:"))
-      return this.#fromSnapshot(cursor, limit);
+    const keep = await this.#viewFilter(mailboxId);
     if (text && order === "oldest")
-      return this.#oldestMatches(mailboxId, text, limit, signal);
+      return this.#snapshotPage(
+        cursor,
+        limit,
+        async () =>
+          (await this.#matches(mailboxId, text, keep, signal)).sort((a, b) =>
+            a.receivedAt.localeCompare(b.receivedAt),
+          ),
+        (items) => Promise.resolve(items),
+      );
 
     const view = isViewId(mailboxId);
-    const keep = await this.#viewFilter(mailboxId);
     let url: URL;
     if (cursor) url = new URL(cursor);
     else if (text) {
@@ -264,22 +282,7 @@ export class GraphProvider implements MailProvider {
         { $search: searchValue(text), $select: SUMMARY_SELECT, $top: limit },
       );
     } else {
-      const direction = order === "oldest" ? "asc" : "desc";
-      url = this.#http.url(
-        view ? "me/messages" : `me/mailFolders/${enc(mailboxId)}/messages`,
-        {
-          $select: SUMMARY_SELECT,
-          $top: limit,
-          $orderby: `receivedDateTime ${direction}`,
-          // Graph wants the $orderby property in $filter too, and first.
-          ...(mailboxId === FLAGGED_VIEW_ID
-            ? {
-                $filter:
-                  "receivedDateTime ge 1900-01-01T00:00:00Z and flag/flagStatus eq 'flagged'",
-              }
-            : {}),
-        },
-      );
+      url = this.#listUrl(mailboxId, order, SUMMARY_SELECT, limit);
     }
 
     // Views filter what Graph returns, so a page may need a few requests.
@@ -299,12 +302,98 @@ export class GraphProvider implements MailProvider {
     };
   }
 
-  listThreads(): Promise<Page<ThreadSummary>> {
-    return Promise.reject(this.#noThreads());
+  /**
+   * Outlook's conversations (its conversation id) with a message in the
+   * mailbox. Graph can't list conversations, so newest first walks the
+   * mailbox's messages page by page and shows each conversation on the page
+   * that holds its newest message there (so it appears exactly once). Search
+   * and oldest first collect and sort the conversations first, then page
+   * through them as a snapshot.
+   */
+  async listThreads(
+    { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
+    signal?: AbortSignal,
+  ): Promise<Page<ThreadSummary>> {
+    const text = search?.trim();
+    const keep = await this.#viewFilter(mailboxId);
+    if (text || order === "oldest")
+      return this.#snapshotPage(
+        cursor,
+        limit,
+        () => this.#conversationOrder(mailboxId, text, order, keep, signal),
+        async (ids) => {
+          const threads = await this.#threadSummaries(ids, signal);
+          return ids.flatMap((id) => {
+            const thread = threads.get(id);
+            return thread ? [thread] : [];
+          });
+        },
+      );
+
+    const belongs = (message: MessageSummary) =>
+      isViewId(mailboxId)
+        ? keep(message)
+        : message.mailboxIds.includes(mailboxId);
+    const items: ThreadSummary[] = [];
+    let next: string | undefined =
+      cursor ?? this.#listUrl(mailboxId, "newest", SUMMARY_SELECT, limit).href;
+    for (let pages = 0; next !== undefined && pages < MAX_VIEW_PAGES; pages++) {
+      const page: GraphPage<GraphMessage> = await this.#http.get<
+        GraphPage<GraphMessage>
+      >(new URL(next), undefined, signal);
+      next = page["@odata.nextLink"];
+      const listed = (page.value ?? []).map(toMessageSummary).filter(keep);
+      const onPage = new Set<string>(listed.map((message) => message.id));
+      const ids = [...new Set(listed.map(conversationOf))];
+      const threads = await this.#threadSummaries(ids, signal, listed);
+      for (const id of ids) {
+        const thread = threads.get(id);
+        const newest = thread?.messages.filter(belongs).at(-1);
+        // Shown on an earlier page if its newest message there is newer.
+        if (thread && newest && onPage.has(newest.id)) items.push(thread);
+      }
+      if (items.length > 0) break;
+    }
+    return {
+      items,
+      ...(next === undefined ? {} : { nextCursor: asCursor(next) }),
+    };
   }
 
-  getThread(): Promise<Thread> {
-    return Promise.reject(this.#noThreads());
+  /** A whole conversation from every folder, with bodies and attachments, oldest first. */
+  async getThread(id: ThreadId, signal?: AbortSignal): Promise<Thread> {
+    let messages = await this.#all<GraphMessage>(
+      "me/messages",
+      {
+        $filter: conversationFilter(id),
+        $select: MESSAGE_SELECT,
+        $top: 50,
+      },
+      signal,
+      MAX_THREAD_MESSAGES,
+    );
+    if (messages.length === 0) {
+      // A message without a conversation id is a conversation of its own.
+      const { message } = await this.#fetchMessage(asMessageId(id), signal);
+      messages = [message];
+    }
+    const attachments = bodiesOrThrow(
+      await this.#http.batch<GraphPage<GraphAttachment>>(
+        messages.map((message) => ({
+          method: "GET",
+          path: `me/messages/${enc(message.id)}/attachments?$select=${ATTACHMENT_SELECT}`,
+        })),
+        signal,
+      ),
+    );
+    return {
+      id,
+      messages: messages
+        .map((message, index) =>
+          toMessage(message, attachments[index]?.value ?? []),
+        )
+        .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt)),
+    };
   }
 
   async getMessage(id: MessageId, signal?: AbortSignal): Promise<Message> {
@@ -869,19 +958,14 @@ export class GraphProvider implements MailProvider {
       (!flaggedOnly || message.flags.flagged);
   }
 
-  /**
-   * Search results oldest first: Graph can't sort a search, so the matches
-   * (up to {@link MAX_SORTED_RESULTS}) are collected and sorted, then paged
-   * through as a snapshot. Cursors are `snapshot:<key>:<offset>`.
-   */
-  async #oldestMatches(
+  /** Every search match the mailbox shows (up to {@link MAX_SORTED_RESULTS}). */
+  async #matches(
     mailboxId: MailboxId,
     text: string,
-    limit: number,
+    keep: (message: MessageSummary) => boolean,
     signal: AbortSignal | undefined,
-  ): Promise<Page<MessageSummary>> {
-    const keep = await this.#viewFilter(mailboxId);
-    const matches = (
+  ): Promise<MessageSummary[]> {
+    return (
       await this.#all<GraphMessage>(
         isViewId(mailboxId)
           ? "me/messages"
@@ -892,35 +976,149 @@ export class GraphProvider implements MailProvider {
       )
     )
       .map(toMessageSummary)
-      .filter(keep)
-      .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
-    const key = String(this.#nextSnapshot++);
-    this.#snapshots.set(key, matches);
-    for (const old of this.#snapshots.keys()) {
-      if (this.#snapshots.size <= MAX_SNAPSHOTS) break;
-      this.#snapshots.delete(old);
-    }
-    return this.#fromSnapshot(asCursor(`snapshot:${key}:0`), limit);
+      .filter(keep);
   }
 
-  #fromSnapshot(cursor: Cursor, limit: number): Page<MessageSummary> {
-    const [, key = "", offsetText = "0"] = cursor.split(":");
-    const snapshot = this.#snapshots.get(key);
-    if (!snapshot)
-      throw new MailError("not-found", "These search results expired.");
-    const offset = Number(offsetText);
+  /**
+   * Conversation ids of a mailbox (or of the search matches in it), sorted
+   * by their newest message there: newest or oldest first.
+   */
+  async #conversationOrder(
+    mailboxId: MailboxId,
+    text: string | undefined,
+    order: MessageOrder,
+    keep: (message: MessageSummary) => boolean,
+    signal: AbortSignal | undefined,
+  ): Promise<string[]> {
+    const messages = text
+      ? await this.#matches(mailboxId, text, keep, signal)
+      : (
+          await this.#all<GraphMessage>(
+            this.#listUrl(mailboxId, "oldest", ORDER_SELECT, 1000),
+            {},
+            signal,
+            MAX_OLDEST_SCAN,
+          )
+        )
+          .map(toMessageSummary)
+          .filter(keep);
+    const newest = new Map<string, string>();
+    for (const message of messages) {
+      const id = conversationOf(message);
+      const known = newest.get(id);
+      if (known === undefined || message.receivedAt > known)
+        newest.set(id, message.receivedAt);
+    }
+    const sorted = [...newest].sort((a, b) => a[1].localeCompare(b[1]));
+    if (order === "newest") sorted.reverse();
+    return sorted.map(([id]) => id);
+  }
+
+  /**
+   * One page of sorted results kept as a snapshot. Cursors are
+   * `snapshot:<key>:<offset>`; a snapshot that's gone (e.g. after a reload)
+   * is collected again and paging continues at the offset.
+   */
+  async #snapshotPage<T, R>(
+    cursor: Cursor | undefined,
+    limit: number,
+    collect: () => Promise<readonly T[]>,
+    load: (slice: readonly T[]) => Promise<readonly R[]>,
+  ): Promise<Page<R>> {
+    const [, oldKey = "", offsetText = "0"] = cursor?.startsWith("snapshot:")
+      ? cursor.split(":")
+      : [];
+    let key = oldKey;
+    let items = this.#snapshots.get(key) as readonly T[] | undefined;
+    if (items === undefined) {
+      items = await collect();
+      key = String(this.#nextSnapshot++);
+      this.#snapshots.set(key, items);
+      for (const old of this.#snapshots.keys()) {
+        if (this.#snapshots.size <= MAX_SNAPSHOTS) break;
+        this.#snapshots.delete(old);
+      }
+    }
+    const offset = Number(offsetText) || 0;
     const end = offset + limit;
     return {
-      items: snapshot.slice(offset, end),
-      ...(end < snapshot.length
+      items: await load(items.slice(offset, end)),
+      ...(end < items.length
         ? { nextCursor: asCursor(`snapshot:${key}:${String(end)}`) }
         : {}),
     };
   }
 
+  /** The listing of a folder or view by date. */
+  #listUrl(
+    mailboxId: MailboxId,
+    order: MessageOrder,
+    select: string,
+    top: number,
+  ): URL {
+    return this.#http.url(
+      isViewId(mailboxId)
+        ? "me/messages"
+        : `me/mailFolders/${enc(mailboxId)}/messages`,
+      {
+        $select: select,
+        $top: top,
+        $orderby: `receivedDateTime ${order === "oldest" ? "asc" : "desc"}`,
+        // Graph wants the $orderby property in $filter too, and first.
+        ...(mailboxId === FLAGGED_VIEW_ID
+          ? {
+              $filter:
+                "receivedDateTime ge 1900-01-01T00:00:00Z and flag/flagStatus eq 'flagged'",
+            }
+          : {}),
+      },
+    );
+  }
+
+  /**
+   * Conversations with all their messages (every folder), as summaries,
+   * oldest first; batched. `known` messages complete them (a message without
+   * a conversation id is a conversation of its own).
+   */
+  async #threadSummaries(
+    ids: readonly string[],
+    signal: AbortSignal | undefined,
+    known: readonly MessageSummary[] = [],
+  ): Promise<Map<string, ThreadSummary>> {
+    const results = await this.#http.batch<GraphPage<GraphMessage>>(
+      ids.map((id) => ({
+        method: "GET",
+        path: `me/messages?${new URLSearchParams({
+          $filter: conversationFilter(id),
+          $select: SUMMARY_SELECT,
+          $top: String(MAX_THREAD_MESSAGES),
+        }).toString()}`,
+      })),
+      signal,
+    );
+    const threads = new Map<string, ThreadSummary>();
+    for (const [index, id] of ids.entries()) {
+      const result = results[index];
+      if (result && !result.ok) throw result.error;
+      const messages = new Map<string, MessageSummary>();
+      for (const message of known)
+        if (conversationOf(message) === id) messages.set(message.id, message);
+      for (const message of result?.body.value ?? [])
+        messages.set(message.id, toMessageSummary(message));
+      if (messages.size === 0) continue;
+      threads.set(id, {
+        id: asThreadId(id),
+        messages: [...messages.values()].sort((a, b) =>
+          a.receivedAt.localeCompare(b.receivedAt),
+        ),
+      });
+    }
+    return threads;
+  }
+
   /** Every item of a collection, following `@odata.nextLink` (up to `max`). */
   async #all<T>(
-    path: string,
+    path: string | URL,
     params: QueryParams,
     signal: AbortSignal | undefined,
     max = Infinity,
@@ -1264,13 +1462,16 @@ export class GraphProvider implements MailProvider {
       values.push(...(page.value ?? []));
     }
   }
+}
 
-  #noThreads(): MailError {
-    return new MailError(
-      "unavailable",
-      "Conversations aren’t available for Outlook accounts yet.",
-    );
-  }
+/** The conversation a message belongs to (its own id if it has none). */
+function conversationOf(message: MessageSummary): string {
+  return message.threadId ?? message.id;
+}
+
+/** `$filter` for the messages of a conversation. */
+function conversationFilter(id: string): string {
+  return `conversationId eq '${id.replace(/'/g, "''")}'`;
 }
 
 function notAFolder(id: string): MailError {
