@@ -58,9 +58,9 @@ const en = {
     intro:
       "Google only lets registered apps read mail. Register this app once in your own Google Cloud project. It's free and takes about ten minutes; the README has the details.",
     steps: [
-      "Create a project, <gmailApi>enable the Gmail API</gmailApi> and, for address suggestions, <peopleApi>the People API</peopleApi>.",
+      "Create a project, <gmailApi>enable the Gmail API</gmailApi>, for address suggestions <peopleApi>the People API</peopleApi> and, for the calendar, <calendarApi>the Google Calendar API</calendarApi>.",
       "In the <authPlatform>Google Auth Platform</authPlatform>, enter an app name and your email. Under <audience>Audience</audience>, choose <em>External</em> and add every address you want to connect as a <em>test user</em>.",
-      "Under <dataAccess>Data access</dataAccess>, add the scopes <code>https://mail.google.com/</code>, <code>contacts.readonly</code> and <code>contacts.other.readonly</code>.",
+      "Under <dataAccess>Data access</dataAccess>, add the scopes <code>https://mail.google.com/</code>, <code>contacts.readonly</code>, <code>contacts.other.readonly</code>, <code>calendar.calendarlist.readonly</code> and <code>calendar.events</code>.",
       "Under <clients>Clients</clients>, create a client of type <em>Web application</em>. Add this exact address under <em>Authorized JavaScript origins</em> and leave redirect URIs empty:<origin/>",
       "Copy the client ID and paste it here.",
     ],
@@ -106,7 +106,7 @@ const en = {
       "In the <entra>Microsoft Entra admin center</entra>, open <registrations>App registrations</registrations> and choose <em>New registration</em>. Name it, e.g. action0.",
       "Under <em>Supported account types</em>, choose <em>Accounts in any organizational directory and personal Microsoft accounts</em>.",
       "Under <em>Redirect URI</em>, choose <em>Single-page application (SPA)</em> and enter exactly:<redirect/>",
-      "After registering, open <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em> and add <code>Mail.ReadWrite</code>, <code>Mail.Send</code> and <code>People.Read</code> (<code>User.Read</code> is already there).",
+      "After registering, open <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em> and add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> and <code>Calendars.ReadWrite</code> (<code>User.Read</code> is already there).",
       "On the <em>Overview</em> page, copy the <em>Application (client) ID</em> and paste it here.",
     ],
     problems: {
@@ -203,9 +203,9 @@ const de: typeof en = {
     intro:
       "Google lässt nur registrierte Apps Mails lesen. Registriere diese App einmal in deinem eigenen Google-Cloud-Projekt. Das ist kostenlos und dauert etwa zehn Minuten; Details stehen im README.",
     steps: [
-      "Leg ein Projekt an, <gmailApi>aktiviere die Gmail API</gmailApi> und, für Adressvorschläge, <peopleApi>die People API</peopleApi>.",
+      "Leg ein Projekt an, <gmailApi>aktiviere die Gmail API</gmailApi>, für Adressvorschläge <peopleApi>die People API</peopleApi> und, für den Kalender, <calendarApi>die Google Calendar API</calendarApi>.",
       "Gib in der <authPlatform>Google Auth Platform</authPlatform> einen App-Namen und deine E-Mail-Adresse ein. Wähl unter <audience>Zielgruppe (Audience)</audience> <em>Extern</em> und füge jede Adresse, die du verbinden willst, als <em>Testnutzer</em> hinzu.",
-      "Füge unter <dataAccess>Datenzugriff (Data access)</dataAccess> die Bereiche <code>https://mail.google.com/</code>, <code>contacts.readonly</code> und <code>contacts.other.readonly</code> hinzu.",
+      "Füge unter <dataAccess>Datenzugriff (Data access)</dataAccess> die Bereiche <code>https://mail.google.com/</code>, <code>contacts.readonly</code>, <code>contacts.other.readonly</code>, <code>calendar.calendarlist.readonly</code> und <code>calendar.events</code> hinzu.",
       "Leg unter <clients>Clients</clients> einen Client vom Typ <em>Webanwendung</em> an. Trag genau diese Adresse unter <em>Autorisierte JavaScript-Quellen</em> ein und lass die Weiterleitungs-URIs leer:<origin/>",
       "Kopier die Client-ID und füge sie hier ein.",
     ],
@@ -251,7 +251,7 @@ const de: typeof en = {
       "Öffne im <entra>Microsoft Entra Admin Center</entra> die <registrations>App-Registrierungen</registrations> und wähl <em>Neue Registrierung</em>. Gib ihr einen Namen, z. B. action0.",
       "Wähl unter <em>Unterstützte Kontotypen</em> <em>Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten</em>.",
       "Wähl unter <em>Umleitungs-URI</em> <em>Single-Page-Webanwendung (SPA)</em> und trag genau das ein:<redirect/>",
-      "Öffne nach dem Registrieren <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> und füge <code>Mail.ReadWrite</code>, <code>Mail.Send</code> und <code>People.Read</code> hinzu (<code>User.Read</code> ist schon da).",
+      "Öffne nach dem Registrieren <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> und füge <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> und <code>Calendars.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
       "Kopier auf der Seite <em>Übersicht</em> die <em>Anwendungs-ID (Client)</em> und füge sie hier ein.",
     ],
     problems: {

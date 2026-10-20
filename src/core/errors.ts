@@ -58,7 +58,12 @@ export type MailErrorReason =
   | "folderInsideItself"
   | "attachmentUploadBlocked"
   | "wrongAccount"
-  | "peopleUnavailable";
+  | "peopleUnavailable"
+  | "calendarAccessNeeded"
+  | "icsBlocked"
+  | "icsNotFound"
+  | "icsUnreadable"
+  | "icsBadUrl";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

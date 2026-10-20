@@ -7,6 +7,7 @@ import {
 import type {
   AttachmentInfo,
   EmailAddress,
+  Invitation,
   Message,
   MessageBody,
   MessageSummary,
@@ -127,10 +128,26 @@ function bodyOf(message: GraphMessage): MessageBody {
     : { html: content };
 }
 
+const MEETING_MESSAGES: Readonly<Record<string, Invitation["method"]>> = {
+  meetingRequest: "request",
+  meetingCancelled: "cancel",
+  meetingAccepted: "reply",
+  meetingTenativelyAccepted: "reply",
+  meetingDeclined: "reply",
+};
+
+/** The invitation an event message is about (from its expanded event). */
+export function toInvitation(message: GraphMessage): Invitation | undefined {
+  const method = MEETING_MESSAGES[message.meetingMessageType ?? ""];
+  const uid = message.event?.iCalUId;
+  return method && uid ? { uid, method } : undefined;
+}
+
 /** A whole message, with the metadata of its attachments. */
 export function toMessage(
   message: GraphMessage,
   attachments: readonly GraphAttachment[],
+  invitation?: Invitation,
 ): Message {
   const headers = message.internetMessageHeaders;
   const unsubscribe = parseListUnsubscribe(
@@ -146,6 +163,7 @@ export function toMessage(
     ...(own === undefined ? {} : { internetMessageId: own }),
     references: messageIds(headerOf(headers, "References")),
     ...(unsubscribe ? { unsubscribe } : {}),
+    ...(invitation ? { invitation } : {}),
     body: bodyOf(message),
     attachments: attachments.flatMap((attachment) => {
       const info = toAttachmentInfo(attachment);

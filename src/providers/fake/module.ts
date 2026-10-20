@@ -1,8 +1,14 @@
 import type { ProviderModule } from "../../accounts/types";
+import type { CalendarAccess } from "../../core/calendar";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
+import { createDemoCalendar } from "./demoCalendar";
 import { createDemoArrival, createDemoData, DEMO_EMAIL } from "./demoData";
+import {
+  FakeCalendarProvider,
+  type FakeCalendarData,
+} from "./FakeCalendarProvider";
 import { FakeMailProvider, type FakeMailData } from "./FakeMailProvider";
 
 /** The demo account. */
@@ -22,6 +28,10 @@ export interface DemoModuleOptions {
   readonly arrivalEveryMs?: number | false;
   /** Clock for arrivals (tests). */
   readonly now?: () => number;
+  /** Replaces the demo calendar (used by tests). */
+  readonly calendar?: () => FakeCalendarData;
+  /** Calendar access as if the account hadn't allowed it yet (tests). */
+  readonly calendarAccess?: CalendarAccess;
 }
 
 /** Provider module of the demo account: in-memory data, no sign-in. */
@@ -30,6 +40,8 @@ export function createDemoModule({
   data = createDemoData,
   arrivalEveryMs = 2 * 60_000,
   now,
+  calendar = () => createDemoCalendar(now?.() ?? Date.now()),
+  calendarAccess = "granted",
 }: DemoModuleOptions = {}): ProviderModule {
   return {
     type: "demo",
@@ -37,6 +49,11 @@ export function createDemoModule({
     connect: () =>
       Promise.resolve({ account: DEMO_ACCOUNT, auth: new StaticAuthSession() }),
     restore: () => new StaticAuthSession(),
+    createCalendar: () =>
+      new FakeCalendarProvider(calendar(), {
+        latencyMs,
+        access: calendarAccess,
+      }),
     createProvider: () =>
       new FakeMailProvider(data(), {
         latencyMs,

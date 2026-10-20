@@ -6,6 +6,7 @@ import {
   ProviderSetupContext,
 } from "../accounts/context";
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
+import { IcsFactoryContext } from "../data/calendar";
 import { I18nProvider } from "../i18n/I18nProvider";
 import { CommandRegistryContext } from "../keyboard/context";
 import { RouterContext, UiStoreContext } from "../state/context";
@@ -53,7 +54,9 @@ export function AppProviders({
         <RouterContext value={services.router}>
           <CommandRegistryContext value={commands}>
             <ProviderSetupContext value={services.setups}>
-              <I18nProvider>{children}</I18nProvider>
+              <IcsFactoryContext value={services.icsFactory}>
+                <I18nProvider>{children}</I18nProvider>
+              </IcsFactoryContext>
             </ProviderSetupContext>
           </CommandRegistryContext>
         </RouterContext>

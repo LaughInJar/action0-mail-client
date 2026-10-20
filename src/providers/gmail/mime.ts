@@ -169,3 +169,17 @@ function withOptional(
     ...(text === undefined ? {} : { text }),
   };
 }
+
+/** The first part (depth first) that matches. */
+export function findPart(
+  part: GmailMessagePart | undefined,
+  matches: (part: GmailMessagePart) => boolean,
+): GmailMessagePart | undefined {
+  if (!part) return undefined;
+  if (matches(part)) return part;
+  for (const child of part.parts ?? []) {
+    const found = findPart(child, matches);
+    if (found) return found;
+  }
+  return undefined;
+}

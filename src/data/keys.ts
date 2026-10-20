@@ -6,6 +6,7 @@ import type {
   MessageId,
   ThreadId,
 } from "../core/ids";
+import type { CalendarId, DateRange } from "../core/calendar";
 import type { MessageOrder } from "../core/provider";
 
 /** Which message list: a mailbox's messages, or only those matching a search, by date. */
@@ -60,6 +61,28 @@ export const queryKeys = {
     messageId: MessageId,
     attachmentId: AttachmentId,
   ) => ["acct", accountId, "attachment", messageId, attachmentId] as const,
+  /**
+   * Everything of a calendar source: under its account (so it goes with
+   * the account), or `["ics", key]` for iCal subscriptions.
+   */
+  calendarSource: (source: string) =>
+    source.startsWith("ics:")
+      ? (["ics", source] as const)
+      : (["acct", source, "calendar"] as const),
+  calendars: (source: string) =>
+    [...queryKeys.calendarSource(source), "calendars"] as const,
+  /** Prefix of every event list of a source. */
+  calendarEvents: (source: string) =>
+    [...queryKeys.calendarSource(source), "events"] as const,
+  events: (source: string, calendarId: CalendarId, range: DateRange) =>
+    [
+      ...queryKeys.calendarEvents(source),
+      calendarId,
+      range.from,
+      range.to,
+    ] as const,
+  invitation: (accountId: AccountId, uid: string) =>
+    ["acct", accountId, "invitation", uid] as const,
 };
 
 /**

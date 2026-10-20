@@ -1176,8 +1176,10 @@ export class GmailProvider implements MailProvider {
     collectParts(payload, pending, (part) => {
       const mimeType = part.mimeType?.toLowerCase() ?? "";
       return (
-        (mimeType === "text/html" || mimeType === "text/plain") &&
-        !part.filename &&
+        // Invitations: the calendar part says which event it is.
+        (mimeType === "text/calendar" ||
+          ((mimeType === "text/html" || mimeType === "text/plain") &&
+            !part.filename)) &&
         part.body?.attachmentId !== undefined &&
         part.body.data === undefined
       );

@@ -7,6 +7,7 @@ import {
 } from "../../core/ids";
 import type {
   AttachmentInfo,
+  Invitation,
   EmailAddress,
   Mailbox,
   MailboxColor,
@@ -16,6 +17,7 @@ import type {
   Unsubscribe,
 } from "../../core/model";
 import type { FakeMailData } from "./FakeMailProvider";
+import { DEMO_INVITATION_UID } from "./demoCalendar";
 
 /** The demo account's own address. */
 export const DEMO_EMAIL = "demo@example.com";
@@ -318,6 +320,8 @@ interface MessageSeed {
   readonly thread?: string;
   /** For replies: the Message-ID it answers (key of that message). */
   readonly inReplyTo?: string;
+  /** A calendar invitation (see the demo calendar). */
+  readonly invitation?: Invitation;
 }
 
 function buildMessage(seed: MessageSeed, now: number): Message {
@@ -335,6 +339,7 @@ function buildMessage(seed: MessageSeed, now: number): Message {
     references:
       seed.inReplyTo === undefined ? [] : [`<${seed.inReplyTo}@demo.example>`],
     ...(seed.unsubscribe ? { unsubscribe: seed.unsubscribe } : {}),
+    ...(seed.invitation ? { invitation: seed.invitation } : {}),
     subject: seed.subject,
     snippet: seed.snippet,
     receivedAt: new Date(now - seed.minutesAgo * 60_000).toISOString(),
@@ -657,6 +662,21 @@ const SPECIAL_MESSAGES: readonly MessageSeed[] = [
     body: {
       html: '<p>Click <a href="https://spam.example/claim">here</a> to claim your prize.</p>',
     },
+  },
+  {
+    key: "invite-design",
+    from: PEOPLE[0] ?? ME,
+    subject: "Invitation: Design review",
+    snippet:
+      "Anna Berger invited you to Design review on Thursday, 11:00–12:00.",
+    // Older than the trip conversation, so the first page of the Inbox keeps it.
+    minutesAgo: 60 * 73,
+    mailboxIds: [M.inbox],
+    body: {
+      html: "<p>Anna Berger invited you to <b>Design review</b>.</p><p>Thursday, 11:00–12:00 · Meeting room 2</p><p>Let's go through the new logo and the website drafts.</p>",
+      text: "Anna Berger invited you to Design review. Thursday, 11:00–12:00, Meeting room 2.",
+    },
+    invitation: { uid: DEMO_INVITATION_UID, method: "request" },
   },
   {
     key: "trash-1",

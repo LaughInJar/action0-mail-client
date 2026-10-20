@@ -1,6 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { useStore } from "zustand";
-import type { HashRouter, Route } from "./router";
+import type { CalendarRoute, HashRouter, Route } from "./router";
 import type { UiActions, UiState, UiStore } from "./uiStore";
 
 /** Provides the {@link UiStore}. */
@@ -32,6 +32,12 @@ export function useRouter(): HashRouter {
 export function useRoute(): Route {
   const router = useRouter();
   return useSyncExternalStore(router.subscribe, router.getRoute);
+}
+
+/** The calendar route while the calendar is open, else `null`; re-renders on navigation. */
+export function useCalendarRoute(): CalendarRoute | null {
+  const router = useRouter();
+  return useSyncExternalStore(router.subscribe, router.getCalendarRoute);
 }
 
 /** Whether Settings is open; re-renders when that changes. */

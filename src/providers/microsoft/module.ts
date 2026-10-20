@@ -4,6 +4,7 @@ import {
   sessionAccountStore,
 } from "../../auth/microsoft/MicrosoftAuthSession";
 import {
+  CALENDAR_SCOPES,
   GRAPH_SCOPES,
   msalLoader,
   PERSONAL_TENANT_ID,
@@ -12,6 +13,7 @@ import {
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
 import { GraphHttp } from "./http";
+import { GraphCalendarProvider } from "./calendar";
 import { GraphProvider } from "./GraphProvider";
 
 /** Configuration of the Microsoft provider module. */
@@ -61,6 +63,8 @@ export function createMicrosoftModule({
       try {
         result = await client.acquireTokenPopup({
           scopes: [...GRAPH_SCOPES],
+          // New accounts consent to calendar access right away.
+          extraScopesToConsent: [...CALENDAR_SCOPES],
           prompt: "select_account",
         });
       } catch (error) {
@@ -83,6 +87,17 @@ export function createMicrosoftModule({
     },
 
     restore: sessionFor,
+
+    createCalendar: (_account, auth) => {
+      const session = auth as MicrosoftAuthSession;
+      return new GraphCalendarProvider(
+        new GraphHttp({
+          auth,
+          token: () => session.tokenFor(CALENDAR_SCOPES),
+        }),
+        session,
+      );
+    },
 
     createProvider: (account, auth) =>
       new GraphProvider(new GraphHttp({ auth }), {

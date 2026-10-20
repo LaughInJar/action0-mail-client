@@ -1,9 +1,16 @@
 import { asMailboxId, asMessageId, asThreadId } from "../../core/ids";
 import type { Message, MessageSummary } from "../../core/model";
+import { parseInvitation } from "../../core/calendar";
 import { parseListUnsubscribe } from "../../core/unsubscribe";
 import { parseAddressList } from "./addresses";
 import { isMembershipLabel } from "./labels";
-import { decodeMimeWords, getHeader, parsePayload } from "./mime";
+import {
+  decodeMimeWords,
+  decodePartText,
+  findPart,
+  getHeader,
+  parsePayload,
+} from "./mime";
 import type { GmailMessage } from "./types";
 
 /** Headers requested for list rows (`format=metadata`). */
@@ -53,6 +60,15 @@ export function toMessage(message: GmailMessage): Message {
     getHeader(headers, "List-Unsubscribe"),
     getHeader(headers, "List-Unsubscribe-Post"),
   );
+  const calendarPart = findPart(
+    message.payload,
+    (part) =>
+      part.mimeType?.toLowerCase() === "text/calendar" &&
+      part.body?.data !== undefined,
+  );
+  const invitation = calendarPart
+    ? parseInvitation(decodePartText(calendarPart))
+    : undefined;
   return {
     ...toMessageSummary(message),
     hasAttachments: attachments.some(
@@ -63,6 +79,7 @@ export function toMessage(message: GmailMessage): Message {
     replyTo: parseAddressList(getHeader(headers, "Reply-To")),
     ...messageIdHeaders(headers),
     ...(unsubscribe ? { unsubscribe } : {}),
+    ...(invitation ? { invitation } : {}),
     body,
     attachments,
   };

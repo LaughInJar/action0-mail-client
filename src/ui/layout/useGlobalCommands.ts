@@ -11,6 +11,7 @@ import { SEARCH_FIELD_ID } from "../messages/ListToolbar";
 import type { Breakpoint } from "./useBreakpoint";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
+import { dayKey } from "../calendar/dates";
 
 /** Id of the scroll container of the reader, for the scroll shortcuts. */
 export const READER_SCROLL_ID = "reader-scroll";
@@ -65,6 +66,22 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
     return [
       ...goTo,
       {
+        id: "go.calendar",
+        group: "goTo",
+        description: t.shortcuts.goCalendar,
+        keys: ["g c"],
+        when: () => router.getCalendarRoute() === null,
+        run: () => {
+          router.openCalendar({
+            view:
+              breakpoint === "narrow"
+                ? "day"
+                : store.getState().settings.calendarView,
+            date: dayKey(new Date()),
+          });
+        },
+      },
+      {
         id: "search.mail",
         group: "search",
         description: t.shortcuts.searchMail,
@@ -83,6 +100,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
         group: "search",
         description: t.shortcuts.filterFolders,
         keys: ["g f"],
+        when: () => router.getCalendarRoute() === null,
         run: () => {
           if (breakpoint === "medium") store.getState().setDrawerOpen(true);
           else if (breakpoint === "narrow") router.navigate(null);

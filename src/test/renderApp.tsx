@@ -6,6 +6,9 @@ import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { App } from "../app/App";
 import { createAppServices } from "../app/services";
+import type { CalendarAccess } from "../core/calendar";
+import type { IcsFactory } from "../data/calendar";
+import { createDemoCalendar } from "../providers/fake/demoCalendar";
 import { createDemoData } from "../providers/fake/demoData";
 import type { FakeMailData } from "../providers/fake/FakeMailProvider";
 import { createDemoModule, DEMO_ACCOUNT } from "../providers/fake/module";
@@ -25,6 +28,10 @@ export interface RenderAppOptions {
   readonly modules?: readonly ProviderModule[];
   /** Runtime provider setups (e.g. a Google client ID entered in the wizard). */
   readonly setups?: (registry: AccountRegistry) => readonly ProviderSetup[];
+  /** The demo calendar's access (default: granted). */
+  readonly calendarAccess?: CalendarAccess;
+  /** Creates iCal subscriptions' calendars (default: the real one, with `fetch`). */
+  readonly icsFactory?: IcsFactory;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -35,6 +42,8 @@ export function renderApp({
   data = () => createDemoData(TEST_NOW),
   modules,
   setups,
+  calendarAccess = "granted",
+  icsFactory,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
@@ -42,9 +51,17 @@ export function renderApp({
 
   const services = createAppServices({
     modules: modules ?? [
-      createDemoModule({ latencyMs: 0, data, arrivalEveryMs: false }),
+      createDemoModule({
+        latencyMs: 0,
+        data,
+        arrivalEveryMs: false,
+        // Events around TEST_NOW (week of Monday 2026-10-12).
+        calendar: () => createDemoCalendar(TEST_NOW),
+        calendarAccess,
+      }),
     ],
     ...(setups ? { createSetups: setups } : {}),
+    ...(icsFactory ? { icsFactory } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,

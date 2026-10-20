@@ -1,3 +1,4 @@
+import type { AuthSession } from "../auth/types";
 import type { AccountId } from "../core/ids";
 import type { Account, ProviderType } from "../core/model";
 import { Emitter } from "../lib/emitter";
@@ -90,11 +91,7 @@ export class AccountRegistry {
     const module = this.#modules.get(type);
     if (!module) throw new Error(`No provider module for "${type}"`);
     const { account, auth } = await module.connect();
-    const handle: AccountHandle = {
-      account,
-      auth,
-      provider: module.createProvider(account, auth),
-    };
+    const handle = handleOf(module, account, auth);
     const index = this.#handles.findIndex((h) => h.account.id === account.id);
     this.#handles =
       index === -1
@@ -124,8 +121,7 @@ export class AccountRegistry {
   #load(account: Account): AccountHandle[] {
     const module = this.#modules.get(account.type);
     if (!module) return [];
-    const auth = module.restore(account);
-    return [{ account, auth, provider: module.createProvider(account, auth) }];
+    return [handleOf(module, account, module.restore(account))];
   }
 
   #persist() {
@@ -135,4 +131,20 @@ export class AccountRegistry {
     ]);
     this.#emitter.emit();
   }
+}
+
+/** An account with its session, mail provider and (if any) calendars. */
+function handleOf(
+  module: ProviderModule,
+  account: Account,
+  auth: AuthSession,
+): AccountHandle {
+  return {
+    account,
+    auth,
+    provider: module.createProvider(account, auth),
+    ...(module.createCalendar
+      ? { calendar: module.createCalendar(account, auth) }
+      : {}),
+  };
 }

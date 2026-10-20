@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { asAccountId, asMailboxId, asMessageId } from "../core/ids";
 import {
   createHashRouter,
+  formatCalendarRoute,
   formatLocation,
   formatRoute,
   hasSettingsFlag,
   listRoute,
+  parseCalendarHash,
   parseHash,
   sameList,
 } from "./router";
@@ -179,6 +181,50 @@ describe("createHashRouter", () => {
     const router = createHashRouter(window);
     window.location.hash = formatRoute(route);
     window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(router.getRoute()).toEqual(route);
+    router.dispose();
+  });
+});
+
+describe("calendar routes", () => {
+  it("round-trip views, dates and an opaque event", () => {
+    const calendar = {
+      view: "week" as const,
+      date: "2026-10-15",
+      event: '["gmail:jane@example.com","cal/ev 1"]',
+    };
+    const hash = formatCalendarRoute(calendar);
+    expect(hash.startsWith("#/calendar/week/2026-10-15/")).toBe(true);
+    expect(parseCalendarHash(hash)).toEqual(calendar);
+    // A calendar hash is no mail route.
+    expect(parseHash(hash)).toBeNull();
+    expect(parseCalendarHash(formatRoute(route))).toBeNull();
+  });
+
+  it("repairs unknown views and dates", () => {
+    expect(parseCalendarHash("#/calendar/year/2026-10-15")?.view).toBe("week");
+    expect(parseCalendarHash("#/calendar/day/someday")?.date).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+  });
+
+  it("switches between mail and calendar and remembers the last mail route", () => {
+    const router = createHashRouter(window);
+    router.navigate(route);
+    router.openCalendar({ view: "month", date: "2026-10-01" });
+    expect(router.getRoute()).toBeNull();
+    expect(router.getCalendarRoute()).toEqual({
+      view: "month",
+      date: "2026-10-01",
+    });
+    expect(router.getLastMailRoute()).toEqual(route);
+    // Settings opens over the calendar too.
+    router.openSettings();
+    expect(hasSettingsFlag(window.location.hash)).toBe(true);
+    expect(window.location.hash).toContain("#/calendar/month/2026-10-01");
+    router.closeSettings();
+    router.navigate(router.getLastMailRoute());
+    expect(router.getCalendarRoute()).toBeNull();
     expect(router.getRoute()).toEqual(route);
     router.dispose();
   });

@@ -6,6 +6,11 @@ import { sessionTokenStore } from "../../auth/google/tokenStore";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
+import {
+  CALENDAR_API_BASE,
+  CALENDAR_SCOPES,
+  GoogleCalendarProvider,
+} from "./calendar";
 import { GmailHttp, PEOPLE_API_BASE } from "./http";
 import { GmailProvider } from "./GmailProvider";
 import type { GmailProfile } from "./types";
@@ -57,6 +62,7 @@ export function createGmailModule({
       clientId,
       scope: GMAIL_SCOPE,
       optionalScope: OPTIONAL_SCOPES,
+      onDemandScopes: CALENDAR_SCOPES,
       loginHint: account.email,
       tokenStore: sessionTokenStore(account.id, tokenStorage),
     });
@@ -73,7 +79,8 @@ export function createGmailModule({
       const ready = peekGis();
       const token = await requestGoogleToken(ready ?? (await loadGis()), {
         clientId,
-        scope: `${GMAIL_SCOPE} ${OPTIONAL_SCOPES}`,
+        // New accounts are asked for calendar access too (it can be unticked).
+        scope: `${GMAIL_SCOPE} ${OPTIONAL_SCOPES} ${CALENDAR_SCOPES.join(" ")}`,
         required: GMAIL_SCOPE,
         prompt: "select_account",
       });
@@ -94,6 +101,16 @@ export function createGmailModule({
     },
 
     restore: sessionFor,
+
+    createCalendar: (_account, auth) =>
+      new GoogleCalendarProvider(
+        new GmailHttp({
+          auth,
+          baseUrl: CALENDAR_API_BASE,
+          service: "Google Calendar",
+        }),
+        auth as GoogleAuthSession,
+      ),
 
     createProvider: (_account, auth) =>
       new GmailProvider(new GmailHttp({ auth }), {

@@ -6,6 +6,7 @@ import {
   GRAPH_SCOPES,
   needsInteraction,
   signInError,
+  type MsalClient as MsalLoaderClient,
   type MsalLoader,
 } from "./msal";
 
@@ -76,6 +77,8 @@ export class MicrosoftAuthSession implements AuthSession {
   readonly #emitter = new Emitter();
   #status: AuthStatus = "signed-in";
   #pending: Promise<void> | undefined;
+  /** Extra scopes (e.g. calendar access) the account hasn't consented to. */
+  readonly #missing = new Set<string>();
 
   constructor(options: MicrosoftAuthSessionOptions) {
     this.#options = options;
@@ -85,27 +88,95 @@ export class MicrosoftAuthSession implements AuthSession {
     return this.#status;
   }
 
+  /** The account's sign-in name. */
+  get loginHint(): string {
+    return this.#options.loginHint;
+  }
+
   /** Undefined: MSAL renews silently, so nothing needs to refresh it on a click. */
   get expiresAt(): undefined {
     return undefined;
   }
 
   async getAccessToken(): Promise<string> {
+    return this.#token([...GRAPH_SCOPES]);
+  }
+
+  /**
+   * Whether the account consented to these extra scopes (as far as known:
+   * a refusal shows up on the first {@link tokenFor}).
+   */
+  hasScopes(scopes: readonly string[]): boolean {
+    return !scopes.some((scope) => this.#missing.has(scope));
+  }
+
+  /**
+   * A token for extra scopes, e.g. calendar access. Without consent it
+   * rejects as `unavailable` (no Reconnect bar: mail keeps working) and
+   * {@link hasScopes} turns false until {@link requestScopes}.
+   */
+  async tokenFor(scopes: readonly string[]): Promise<string> {
+    try {
+      const token = await this.#token(scopes, false);
+      this.#setMissing(scopes, false);
+      return token;
+    } catch (error) {
+      if (!needsInteraction(error)) throw error;
+      // Mail still works without a popup: it's the extra consent that's missing.
+      await this.getAccessToken();
+      this.#setMissing(scopes, true);
+      throw new MailError("unavailable", "Calendar access isn't allowed yet.", {
+        cause: error,
+        reason: "calendarAccessNeeded",
+      });
+    }
+  }
+
+  /** Asks for consent to extra scopes (a popup: call it from a click). */
+  async requestScopes(scopes: readonly string[]): Promise<void> {
+    const msal = this.#options.msal.peek() ?? (await this.#options.msal.load());
+    let result: AuthenticationResult;
+    try {
+      result = await msal.acquireTokenPopup({
+        scopes: [...scopes],
+        loginHint: this.#options.loginHint,
+      });
+    } catch (error) {
+      throw signInError(error);
+    }
+    await this.#checkAccount(result, msal);
+    this.#remember(result);
+    this.#setMissing(scopes, false);
+  }
+
+  /** A token for `scopes`; MSAL errors that need the user are passed on when `expire` is off. */
+  async #token(scopes: readonly string[], expire = true): Promise<string> {
     if (this.#status !== "signed-in") throw this.#signInAgain();
     const msal = await this.#options.msal.load();
     const account = this.#account(msal.getAllAccounts());
-    const scopes = [...GRAPH_SCOPES];
     try {
       const result = account
-        ? await msal.acquireTokenSilent({ account, scopes })
-        : await msal.ssoSilent({ loginHint: this.#options.loginHint, scopes });
+        ? await msal.acquireTokenSilent({ account, scopes: [...scopes] })
+        : await msal.ssoSilent({
+            loginHint: this.#options.loginHint,
+            scopes: [...scopes],
+          });
       this.#remember(result);
       return result.accessToken;
     } catch (error) {
       if (!needsInteraction(error)) throw signInError(error);
+      if (!expire) throw error;
       this.markExpired();
       throw this.#signInAgain(error);
     }
+  }
+
+  #setMissing(scopes: readonly string[], missing: boolean) {
+    const before = this.hasScopes(scopes);
+    for (const scope of scopes)
+      if (missing) this.#missing.add(scope);
+      else this.#missing.delete(scope);
+    if (before !== this.hasScopes(scopes)) this.#emitter.emit();
   }
 
   signIn(): Promise<void> {
@@ -143,19 +214,28 @@ export class MicrosoftAuthSession implements AuthSession {
     } catch (error) {
       throw signInError(error);
     }
-    const signedInAs = result.account.username;
-    if (!sameAddress(signedInAs, this.#options.loginHint)) {
-      await msal.clearCache({ account: result.account });
-      throw new MailError(
-        "auth-required",
-        `Signed in as ${signedInAs} instead of ${this.#options.loginHint}.`,
-        {
-          reason: "wrongAccount",
-          params: { actual: signedInAs, expected: this.#options.loginHint },
-        },
-      );
-    }
+    await this.#checkAccount(result, msal);
     this.#remember(result);
+  }
+
+  /** Refuses a popup answer for another account than this one. */
+  async #checkAccount(
+    result: AuthenticationResult,
+    msal?: { clearCache: MsalLoaderClient["clearCache"] },
+  ): Promise<void> {
+    const signedInAs = result.account.username;
+    if (sameAddress(signedInAs, this.#options.loginHint)) return;
+    await (msal ?? this.#options.msal.peek())?.clearCache({
+      account: result.account,
+    });
+    throw new MailError(
+      "auth-required",
+      `Signed in as ${signedInAs} instead of ${this.#options.loginHint}.`,
+      {
+        reason: "wrongAccount",
+        params: { actual: signedInAs, expected: this.#options.loginHint },
+      },
+    );
   }
 
   /** This session's MSAL account: the remembered one, else by email. */

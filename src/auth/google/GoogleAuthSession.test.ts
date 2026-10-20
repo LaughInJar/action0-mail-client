@@ -250,3 +250,38 @@ describe("GoogleAuthSession", () => {
     });
   });
 });
+
+describe("GoogleAuthSession on-demand scopes", () => {
+  const CALENDAR = "https://www.googleapis.com/auth/calendar.events";
+
+  it("asks for them only on request, keeps them on refreshes, and never needs them", async () => {
+    const { session, scopes } = setup([
+      { kind: "token" },
+      { kind: "token", scope: `${SCOPE} ${CALENDAR}` },
+      { kind: "token", scope: `${SCOPE} ${CALENDAR}` },
+    ]);
+    await session.signIn();
+    expect(session.status).toBe("signed-in");
+    expect(session.hasScopes([CALENDAR])).toBe(false);
+    expect(scopes[0]).toBe(SCOPE);
+
+    await session.requestScopes([CALENDAR]);
+    expect(session.hasScopes([CALENDAR])).toBe(true);
+    expect(scopes[1]).toBe(`${SCOPE} ${CALENDAR}`);
+
+    // A refresh keeps asking for what was granted.
+    await session.signIn();
+    expect(scopes[2]).toBe(`${SCOPE} ${CALENDAR}`);
+  });
+
+  it("rejects when the user unticks them, and mail keeps working", async () => {
+    const { session } = setup([{ kind: "token" }, { kind: "token" }]);
+    await session.signIn();
+    const error: unknown = await session
+      .requestScopes([CALENDAR])
+      .catch((e: unknown) => e);
+    expect(isMailError(error, "unavailable")).toBe(true);
+    expect(session.status).toBe("signed-in");
+    expect(session.hasScopes([CALENDAR])).toBe(false);
+  });
+});

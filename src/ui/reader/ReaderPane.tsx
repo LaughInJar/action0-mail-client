@@ -20,6 +20,7 @@ import {
   type ComposeActions,
 } from "../composer/useComposeActions";
 import { AttachmentList } from "./AttachmentList";
+import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useMarkReadOnView } from "./useMarkReadOnView";
@@ -190,6 +191,7 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
               }
             : {})}
         />
+        <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />
         {compose.canCompose && (

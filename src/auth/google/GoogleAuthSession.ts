@@ -19,6 +19,12 @@ export interface GoogleAuthSessionOptions {
    * from before they were added), so the user is asked exactly once.
    */
   readonly optionalScope?: string;
+  /**
+   * Scopes asked for only on request ({@link GoogleAuthSession.requestScopes},
+   * e.g. calendar access), never needed for a valid token, and kept on
+   * refreshes once granted.
+   */
+  readonly onDemandScopes?: readonly string[];
   /** Email of the account, used as login hint so re-auth skips the account chooser. */
   readonly loginHint: string;
   readonly tokenStore: TokenStore;
@@ -48,11 +54,19 @@ export class GoogleAuthSession implements AuthSession {
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Optional scopes the user declined; not asked for again in this page. */
   readonly #declined = new Set<string>();
+  /**
+   * On-demand scopes granted in this page (e.g. calendar access), asked for
+   * again on every refresh so a new token keeps them.
+   */
+  readonly #onDemand = new Set<string>();
 
   constructor(options: GoogleAuthSessionOptions) {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#rememberDeclined(options.tokenStore.load());
+    const granted = options.tokenStore.load()?.scope.split(" ") ?? [];
+    for (const scope of options.onDemandScopes ?? [])
+      if (granted.includes(scope)) this.#onDemand.add(scope);
     this.#status = this.#hasUsableToken() ? "signed-in" : "expired";
     this.#scheduleExpiry();
   }
@@ -88,6 +102,33 @@ export class GoogleAuthSession implements AuthSession {
     return this.#pending;
   }
 
+  /**
+   * Whether the current token carries these scopes. On-demand scopes (like
+   * calendar access) are never needed for the token to count as valid.
+   */
+  hasScopes(scopes: readonly string[]): boolean {
+    const granted = new Set(
+      this.#options.tokenStore.load()?.scope.split(" ") ?? [],
+    );
+    return scopes.every(
+      (scope) => granted.has(scope) || this.#onDemand.has(scope),
+    );
+  }
+
+  /**
+   * Asks for more scopes (a popup: call it from a click). Resolves once
+   * they're granted; rejects if the user declined them.
+   */
+  async requestScopes(scopes: readonly string[]): Promise<void> {
+    await this.#requestToken(scopes);
+    if (!this.hasScopes(scopes))
+      throw new MailError(
+        "unavailable",
+        "The requested access was not granted.",
+        { reason: "accessNotGranted" },
+      );
+  }
+
   async signOut(): Promise<void> {
     const token = this.#options.tokenStore.load();
     clearTimeout(this.#expiryTimer);
@@ -110,16 +151,19 @@ export class GoogleAuthSession implements AuthSession {
   subscribe = (listener: () => void): (() => void) =>
     this.#emitter.subscribe(listener);
 
-  async #requestToken(): Promise<void> {
+  async #requestToken(extra: readonly string[] = []): Promise<void> {
     const { scope, optionalScope = "" } = this.#options;
     // Asking again for a declined scope would show Google's consent screen
     // on every refresh.
     const optional = optionalScope
       .split(" ")
       .filter((s) => s && !this.#declined.has(s));
+    const onDemand = [...this.#onDemand, ...extra].filter(
+      (s) => !optional.includes(s) && s !== scope,
+    );
     const request = {
       clientId: this.#options.clientId,
-      scope: [scope, ...optional].join(" "),
+      scope: [...new Set([scope, ...optional, ...onDemand])].join(" "),
       required: scope,
       prompt: "",
       loginHint: this.#options.loginHint,
@@ -133,6 +177,8 @@ export class GoogleAuthSession implements AuthSession {
     );
     this.#options.tokenStore.save(token);
     this.#rememberDeclined(token);
+    for (const s of token.scope.split(" "))
+      if (onDemand.includes(s)) this.#onDemand.add(s);
     this.#setStatus("signed-in");
     this.#scheduleExpiry();
     // Expiry changes even if the status doesn't.

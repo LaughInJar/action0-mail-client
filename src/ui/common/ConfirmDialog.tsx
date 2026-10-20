@@ -1,5 +1,6 @@
 import { useId, useRef } from "react";
-import { useUi } from "../../state/context";
+import { useUi, useUiStore } from "../../state/context";
+import { useSubscriptions } from "../calendar/useSubscriptions";
 import type { ConfirmState } from "../../state/uiStore";
 import { useMailActions } from "../actions/useMailActions";
 import { useLabelActions } from "../labels/useLabelActions";
@@ -23,6 +24,8 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
   const actions = useMailActions();
   const labels = useLabelActions();
   const unsubscribe = useUnsubscribe();
+  const subscriptions = useSubscriptions();
+  const store = useUiStore();
   const t = useT();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -38,6 +41,14 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
         break;
       case "delete-label":
         labels.runDelete(action);
+        break;
+      case "remove-calendar":
+        setConfirm(null);
+        subscriptions.remove(action.id);
+        store.getState().showToast({
+          message: t.calendar.removed(action.name),
+          tone: "info",
+        });
         break;
       case "delete-forever":
       case "empty":
