@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { StaticAuthSession } from "../../auth/staticSession";
@@ -16,7 +17,7 @@ import { MemoryStorage } from "../../test/memoryStorage";
 import { FakeGraph } from "../../test/graphServer";
 import { ALL_VIEW_ID, FLAGGED_VIEW_ID } from "./folders";
 import { GraphProvider, UPLOAD_CHUNK_BYTES } from "./GraphProvider";
-import { GraphHttp } from "./http";
+import { GRAPH_BASE, GraphHttp } from "./http";
 
 const server = setupServer();
 beforeAll(() => {
@@ -804,5 +805,38 @@ describe("GraphProvider conversations", () => {
       "plan.pdf",
     ]);
     expect(provider.capabilities.threads).toBe(true);
+  });
+});
+
+describe("GraphProvider invitations", () => {
+  it("reads which event an Outlook invitation is about", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "invite", subject: "Planning" });
+    graph.add({ id: "plain" });
+    server.use(
+      // Outlook's invitations are event messages, with their event.
+      http.get(`${GRAPH_BASE}me/messages/invite`, () =>
+        HttpResponse.json({
+          id: "invite",
+          "@odata.type": "#microsoft.graph.eventMessageRequest",
+          subject: "Planning",
+          parentFolderId: "inbox-id",
+        }),
+      ),
+      http.get(
+        `${GRAPH_BASE}me/messages/invite/microsoft.graph.eventMessage`,
+        () =>
+          HttpResponse.json({
+            id: "invite",
+            meetingMessageType: "meetingRequest",
+            event: { iCalUId: "planning@contoso.com" },
+          }),
+      ),
+    );
+    expect((await provider.getMessage(id("invite"))).invitation).toEqual({
+      uid: "planning@contoso.com",
+      method: "request",
+    });
+    expect((await provider.getMessage(id("plain"))).invitation).toBeUndefined();
   });
 });

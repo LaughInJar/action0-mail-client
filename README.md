@@ -2,7 +2,7 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels.
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several accounts side by side, Gmail and Microsoft mixed.
@@ -21,6 +21,7 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
 - Conversation view (Settings → Reading, off by default): one row per conversation ("Anna, me 3"), and the reader shows the whole conversation, oldest first, with older read messages folded to one line. Your replies and drafts show in place. Archive, labels, delete and the other actions apply to the whole conversation (in Microsoft accounts: to its messages in the folder you're in, like Outlook, so your sent replies stay in Sent Items); <kbd>n</kbd>/<kbd>p</kbd> move between its messages, <kbd>Enter</kbd> opens or closes one, and <kbd>r</kbd>/<kbd>f</kbd> answer the one at the cursor.
+- A calendar (the **Mail | Calendar** switch at the top left, or <kbd>g</kbd> <kbd>c</kbd>): the calendars of every Google and Microsoft account, and calendars added by their iCal address, in one week, month or agenda view (day and agenda on phones). Tick or untick each calendar; overlapping events sit side by side. Invitations get **Yes / Maybe / No**, in the event and right inside the invitation mail, which also says what else is planned at that time. Changing an answer can be undone (<kbd>z</kbd>). Creating and editing events comes next.
 - English and German: the interface follows the browser's language, and Settings → General can choose English or Deutsch instead. Dates and numbers follow the browser's regional format (Austrian German writes "Jänner"); German replies quote with "Am 16.10.2026 um 20:59 schrieb …:".
 - Settings (⚙ next to the theme switch): language, list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
 - Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
@@ -43,11 +44,11 @@ Open <http://localhost:5173/?demo> to start with the demo account. To read your 
 The app uses the Google Identity Services token model with the full-access scope `https://mail.google.com/`. Everything except permanent deletion would work with the narrower `gmail.modify`; "Delete forever" and "Empty Trash" need full access. For address suggestions it also asks for read access to your contacts (`contacts.readonly`, `contacts.other.readonly`), and for editing your Gmail signatures in Settings it asks for `gmail.settings.basic`; both are optional. You need your own OAuth client ID; it is not a secret and is embedded in the built app.
 
 1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project (or pick an existing one).
-2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it. Do the same for the **People API** (address suggestions from your contacts).
+2. Go to **APIs & Services → Library**, search for **Gmail API** and enable it. Do the same for the **People API** (address suggestions from your contacts) and the **Google Calendar API** (the calendar).
 3. Go to **Google Auth Platform** (formerly _OAuth consent screen_) and configure it:
    - **Branding:** an app name and your support email.
    - **Audience:** choose **Internal** if you only use accounts of your own Google Workspace organization. Otherwise choose **External**, keep the publishing status at **Testing**, and add every Gmail address you want to use under **Test users**.
-   - **Data access:** add the scopes `https://mail.google.com/`, `https://www.googleapis.com/auth/contacts.readonly`, `https://www.googleapis.com/auth/contacts.other.readonly` and `https://www.googleapis.com/auth/gmail.settings.basic`. If you set the app up earlier with fewer scopes, add the missing ones; each account then reconnects once.
+   - **Data access:** add the scopes `https://mail.google.com/`, `https://www.googleapis.com/auth/contacts.readonly`, `https://www.googleapis.com/auth/contacts.other.readonly`, `https://www.googleapis.com/auth/gmail.settings.basic`, `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and `https://www.googleapis.com/auth/calendar.events`. If you set the app up earlier with fewer scopes, add the missing ones; each account then reconnects once.
 4. Go to **Clients → Create client**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins:** `http://localhost:5173` (used by both `npm run dev` and `npm run preview`). Add the URL of any deployment later.
@@ -71,6 +72,7 @@ Things to know:
 - Live updates need a valid Google token too. If the tab sits unused for more than an hour, the token can't be renewed without a click, so updates and notifications pause; the tab title then says "Reconnect".
 - By default a message counts as read once it has been on screen for 1.5 seconds, so skimming through the list with <kbd>j</kbd>/<kbd>k</kbd> doesn't mark everything read (Settings can change that).
 - If you declined the settings permission, signatures can't be saved; Settings then offers **Allow editing**, which asks Google again.
+- Calendar access is optional, too: accounts connected before the calendar existed (or that unticked it) show **Allow calendar** in the calendar's column, which asks Google once. Mail keeps working either way.
 
 ### Troubleshooting Google sign-in
 
@@ -93,7 +95,7 @@ Microsoft accounts use [MSAL.js](https://github.com/AzureAD/microsoft-authentica
    - **Name:** e.g. action0.
    - **Supported account types:** **Accounts in any organizational directory and personal Microsoft accounts** (work, school and Outlook.com accounts).
    - **Redirect URI:** platform **Single-page application (SPA)**, `http://localhost:5173/redirect.html`. Add the same path on any deployment later (`https://…/redirect.html`).
-2. Open **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add `Mail.ReadWrite`, `Mail.Send` and `People.Read` (`User.Read` is already there). No client secret, no certificate.
+2. Open **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add `Mail.ReadWrite`, `Mail.Send`, `People.Read` and `Calendars.ReadWrite` (`User.Read` is already there). No client secret, no certificate.
 3. Copy the **Application (client) ID** from the app's **Overview** and give it to the app: in **Add account → Microsoft** (saved as a setting in that browser), or as `VITE_MICROSOFT_CLIENT_ID` in `.env.local` (takes precedence).
 4. **Add account → Microsoft → Continue with Microsoft**, choose your account and allow access.
 
@@ -107,6 +109,13 @@ Things to know:
 - Live updates follow every folder with Graph's change lists ("delta"); changes to mail older than 30 days that were made elsewhere show up when the folder is opened again, except read/unread state and moves, which always come through.
 - Conversations are Outlook's own (what Outlook web groups together). Graph can't list conversations, so the app groups the folder's messages itself; a page of conversations takes a few more requests than a page of messages.
 - Outlook's categories and Focused/Other come later.
+- Calendar access has its own consent: accounts connected before the calendar show **Allow calendar** in the calendar's column (one popup); new accounts consent while connecting.
+
+## Calendars by address (iCal)
+
+**Add calendar by address…** in the calendar's column subscribes to an `.ics` calendar (`https://` or `webcal://`). The app reads it straight from the browser, which only works when the calendar's server allows that (it has to send `Access-Control-Allow-Origin`). Many don't, including Google's and Outlook's own "secret iCal addresses", iCloud, and Nextcloud by default; the dialog then says so instead of adding it. Reading those, and CalDAV calendars, needs a small proxy, which comes as a later feature (it's also what IMAP will need).
+
+iCal addresses are often secret (whoever has one can read the calendar), so treat them like passwords: they're saved in this browser's settings (localStorage), shown with an **iCal** mark, and **Remove** forgets them. iCal calendars are read-only and refresh every 15 minutes.
 
 ### Troubleshooting Microsoft sign-in
 
@@ -165,6 +174,10 @@ Google and Microsoft sign-in do not: both only allow plain `http://` for `localh
 | <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                                 |
 | <kbd>n</kbd> / <kbd>p</kbd>                                                 | Next / previous message in a conversation                 |
 | <kbd>Enter</kbd> or <kbd>o</kbd> in a conversation                          | Open or close the message at the cursor                   |
+| <kbd>g</kbd> then <kbd>c</kbd>                                              | Go to the calendar                                        |
+| In the calendar: <kbd>t</kbd>                                               | Today                                                     |
+| In the calendar: <kbd>←</kbd> / <kbd>→</kbd>, <kbd>k</kbd> / <kbd>j</kbd>   | Previous / next day, week or month                        |
+| In the calendar: <kbd>d</kbd> / <kbd>w</kbd> / <kbd>m</kbd> / <kbd>a</kbd>  | Day / week / month / agenda                               |
 | <kbd>?</kbd>                                                                | Show all shortcuts                                        |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
@@ -175,7 +188,8 @@ In the folder tree, <kbd>Shift</kbd>+<kbd>F10</kbd> (or the Menu key), a right-c
 
 ```
 src/
-  core/        Domain model, MailProvider interface, errors, reply rules. No dependencies.
+  core/        Domain model, MailProvider and CalendarProvider interfaces, errors, reply
+               rules. No dependencies.
   auth/        AuthSession interface; google/ = Google Identity Services token client,
                microsoft/ = MSAL (loaded on first use)
   providers/
@@ -183,17 +197,19 @@ src/
                label mapping, MIME parsing, mappers, drafts, People API
     microsoft/ Microsoft Graph adapter: HTTP client ($batch, throttling, immutable
                ids), folder mapping, mappers, drafts and upload sessions, delta sync
+    ical/      iCal subscriptions: fetched from the browser, parsed with ical.js
+    */calendar Calendar adapters: Google Calendar API, Graph calendars
     mime/      Builds outgoing MIME messages (shared by raw-message adapters)
     fake/      In-memory provider: tests and the demo account
   accounts/    Account registry: one auth session + provider per account
   data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy;
-               draft saving and sending
+               draft saving and sending; calendar sources, events and answers
   compose/     Outgoing mail HTML: quoting, plain-text version, composer content
   state/       UI state (Zustand): focus, selection, layout; hash router
   i18n/        Interface texts in English and German (texts/), language choice, useT()
   keyboard/    Central shortcut registry
   security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
-  ui/          React components: layout, mailboxes, messages, reader, composer, help
+  ui/          React components: layout, mailboxes, messages, reader, composer, calendar, help
   app/         Composition root: wires providers, registry, cache and UI together
 ```
 
@@ -216,11 +232,11 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 
 ### What is stored where
 
-| Where          | What                                                                                                                                                                                                                           | How long                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions | Until reload                        |
-| sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists and message list pages (cache; search results stay in memory)                                                                                            | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, and the signatures of Microsoft accounts)  | Until sign-out                      |
+| Where          | What                                                                                                                                                                                                                                                                  | How long                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions                                        | Until reload                        |
+| sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                           | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked) | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term.
 

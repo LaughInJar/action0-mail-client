@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useRoute, useRouter } from "../../state/context";
+import { useCalendarRoute, useRoute, useRouter } from "../../state/context";
 import type { Breakpoint } from "./useBreakpoint";
 import { useMailboxList } from "../common/mailboxNames";
 
@@ -13,6 +13,7 @@ import { useMailboxList } from "../common/mailboxNames";
  */
 export function useNavigationDefaults(breakpoint: Breakpoint): void {
   const route = useRoute();
+  const calendar = useCalendarRoute();
   const router = useRouter();
   const accounts = useAccounts();
   const startedAtRoot = useRef(route === null);
@@ -22,6 +23,8 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
   );
 
   useEffect(() => {
+    // The calendar is open: mail has no route meanwhile.
+    if (calendar !== null) return;
     if (route !== null) {
       startedAtRoot.current = false;
       if (!accounts.some((handle) => handle.account.id === route.accountId)) {
@@ -41,5 +44,13 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
       startedAtRoot.current = false;
       router.navigate(target);
     }
-  }, [route, router, accounts, firstAccountId, mailboxes, breakpoint]);
+  }, [
+    route,
+    calendar,
+    router,
+    accounts,
+    firstAccountId,
+    mailboxes,
+    breakpoint,
+  ]);
 }

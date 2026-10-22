@@ -178,6 +178,15 @@ export interface Unsubscribe {
   readonly page?: string;
 }
 
+/**
+ * A calendar invitation in a mail: which event (iCalendar UID) and what the
+ * mail does with it (`METHOD`: a request, a cancellation, or an answer).
+ */
+export interface Invitation {
+  readonly uid: string;
+  readonly method: "request" | "cancel" | "reply";
+}
+
 /** Body of a message. Both parts are raw and **unsanitized**. */
 export interface MessageBody {
   readonly html?: string;
@@ -195,6 +204,8 @@ export interface Message extends MessageSummary {
   readonly references: readonly string[];
   /** Set for mailing lists that say how to unsubscribe. */
   readonly unsubscribe?: Unsubscribe;
+  /** Set for calendar invitations (an iCalendar part in the mail). */
+  readonly invitation?: Invitation;
   readonly body: MessageBody;
   readonly attachments: readonly AttachmentInfo[];
 }

@@ -22,6 +22,7 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  Invitation,
   Mailbox,
   Message,
   MessageFlags,
@@ -72,6 +73,7 @@ import {
   messageIds,
   SUMMARY_SELECT,
   toAddresses,
+  toInvitation,
   toMessage,
   toMessageSummary,
   toRecipient,
@@ -398,7 +400,37 @@ export class GraphProvider implements MailProvider {
 
   async getMessage(id: MessageId, signal?: AbortSignal): Promise<Message> {
     const { message, attachments } = await this.#fetchMessage(id, signal);
-    return toMessage(message, attachments);
+    return toMessage(
+      message,
+      attachments,
+      await this.#invitationOf(message, signal),
+    );
+  }
+
+  /**
+   * The invitation an event message (Outlook's invitations, cancellations
+   * and answers) is about: its event's UID. Other mail has none; a failed
+   * lookup just leaves it out.
+   */
+  async #invitationOf(
+    message: GraphMessage,
+    signal: AbortSignal | undefined,
+  ): Promise<Invitation | undefined> {
+    if (!message["@odata.type"]?.includes("eventMessage")) return undefined;
+    try {
+      const event = await this.#http.get<GraphMessage>(
+        `me/messages/${enc(message.id)}/microsoft.graph.eventMessage`,
+        {
+          $select: "id,meetingMessageType",
+          $expand: "event($select=iCalUId)",
+        },
+        signal,
+      );
+      return toInvitation(event);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return undefined;
+    }
   }
 
   getAttachment(

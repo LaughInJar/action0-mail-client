@@ -54,6 +54,14 @@ const enReasons: Reasons = {
     `You signed in as ${p.actual ?? ""}, but this account is ${p.expected ?? ""}. Please choose ${p.expected ?? ""}.`,
   peopleUnavailable: () =>
     "Microsoft’s list of people isn’t available for this account.",
+  calendarAccessNeeded: () =>
+    "This account hasn’t allowed calendar access yet.",
+  icsBlocked: (p) =>
+    `${p.host ?? "The server"} doesn’t let browser apps read this calendar. Only calendars whose server allows it can be added for now.`,
+  icsNotFound: (p) =>
+    `There’s no calendar at this address (${p.status ?? ""}). Check the link.`,
+  icsUnreadable: () => "This address doesn’t contain a calendar (iCal).",
+  icsBadUrl: () => "That isn’t a web address (https:// or webcal://).",
 };
 
 const deReasons: Reasons = {
@@ -109,6 +117,14 @@ const deReasons: Reasons = {
     `Du hast dich als ${p.actual ?? ""} angemeldet, dieses Konto ist aber ${p.expected ?? ""}. Bitte wähle ${p.expected ?? ""}.`,
   peopleUnavailable: () =>
     "Die Personenliste von Microsoft ist für dieses Konto nicht verfügbar.",
+  calendarAccessNeeded: () =>
+    "Dieses Konto hat den Kalenderzugriff noch nicht erlaubt.",
+  icsBlocked: (p) =>
+    `${p.host ?? "Der Server"} lässt Browser-Apps diesen Kalender nicht lesen. Vorerst gehen nur Kalender, deren Server das erlaubt.`,
+  icsNotFound: (p) =>
+    `Unter dieser Adresse gibt es keinen Kalender (${p.status ?? ""}). Prüf den Link.`,
+  icsUnreadable: () => "Diese Adresse enthält keinen Kalender (iCal).",
+  icsBadUrl: () => "Das ist keine Webadresse (https:// oder webcal://).",
 };
 
 const en = {

@@ -1,4 +1,5 @@
 import type { AuthSession } from "../auth/types";
+import type { CalendarProvider } from "../core/calendar";
 import type { Account, ProviderType } from "../core/model";
 import type { MailProvider } from "../core/provider";
 
@@ -28,6 +29,12 @@ export interface ProviderModule {
   restore(account: Account): AuthSession;
 
   createProvider(account: Account, auth: AuthSession): MailProvider;
+
+  /** The account's calendars, if the provider has them. */
+  readonly createCalendar?: (
+    account: Account,
+    auth: AuthSession,
+  ) => CalendarProvider;
 }
 
 /** A connected account with its session and provider. */
@@ -35,6 +42,8 @@ export interface AccountHandle {
   readonly account: Account;
   readonly auth: AuthSession;
   readonly provider: MailProvider;
+  /** The account's calendars, if its provider has them. */
+  readonly calendar?: CalendarProvider;
 }
 
 /**

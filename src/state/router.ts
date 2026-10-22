@@ -35,8 +35,53 @@ export type Route = {
   readonly compose?: string;
 } | null;
 
+/** The calendar's views. */
+export type CalendarView = "day" | "week" | "month" | "agenda";
+
+const CALENDAR_VIEWS: readonly string[] = ["day", "week", "month", "agenda"];
+
+/**
+ * The calendar in the URL: `#/calendar/<view>/<YYYY-MM-DD>[/<event>]`,
+ * where `event` is opaque (it names the open event).
+ */
+export interface CalendarRoute {
+  readonly view: CalendarView;
+  /** The date the view shows (local), "YYYY-MM-DD". */
+  readonly date: string;
+  readonly event?: string;
+}
+
+/** Parses a calendar location hash; `null` for any other hash. */
+export function parseCalendarHash(hash: string): CalendarRoute | null {
+  const [path] = splitOnce(hash.replace(/^#\/?/, ""), "?");
+  const [prefix, view, date, event, ...rest] = path.split("/").map(safeDecode);
+  if (prefix !== "calendar" || rest.length > 0) return null;
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "");
+  return {
+    view: CALENDAR_VIEWS.includes(view ?? "") ? (view as CalendarView) : "week",
+    date: valid && date ? date : today(),
+    ...(event ? { event } : {}),
+  };
+}
+
+/** Formats a calendar route as a location hash. */
+export function formatCalendarRoute(route: CalendarRoute): string {
+  const segments = [route.view, route.date, route.event].filter(
+    (segment): segment is string => segment !== undefined,
+  );
+  return `#/calendar/${segments.map(encodeURIComponent).join("/")}`;
+}
+
+/** Today as a local "YYYY-MM-DD". */
+function today(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${String(now.getFullYear())}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** Parses a location hash. Unknown or partial hashes become `null`. */
 export function parseHash(hash: string): Route {
+  if (parseCalendarHash(hash)) return null;
   const [path, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
   if (!path) return null;
   const segments = path.split("/").map(safeDecode);
@@ -98,15 +143,31 @@ export function hasSettingsFlag(hash: string): boolean {
 
 /** A location hash: the route, plus the `settings` flag while Settings is open. */
 export function formatLocation(route: Route, settings: boolean): string {
-  const hash = formatRoute(route);
+  return withFlag(formatRoute(route), settings);
+}
+
+/** A hash with the `settings` flag added (if `settings`). */
+function withFlag(hash: string, settings: boolean): string {
   if (!settings) return hash;
   return `${hash}${hash.includes("?") ? "&" : "?"}settings`;
 }
 
 /** Hash-based router. */
 export interface HashRouter {
-  /** Current route; the object identity only changes when the route changes. */
+  /**
+   * Current mail route; the object identity only changes when the route
+   * changes. `null` while the calendar is open.
+   */
   readonly getRoute: () => Route;
+  /** The last mail route (what the Mail switch goes back to), if any. */
+  readonly getLastMailRoute: () => Route;
+  /** The calendar, while it's open; otherwise `null`. Identity like {@link getRoute}. */
+  readonly getCalendarRoute: () => CalendarRoute | null;
+  /** Opens the calendar (a new history entry unless `replace`). */
+  readonly openCalendar: (
+    route: CalendarRoute,
+    options?: { replace?: boolean },
+  ) => void;
   /**
    * Navigates; `replace` avoids a new history entry. A new entry closes
    * Settings; replacing keeps it open.
@@ -141,34 +202,56 @@ const depthOf = (state: unknown): number =>
 export function createHashRouter(win: Window = window): HashRouter {
   const emitter = new Emitter();
   let current = parseHash(win.location.hash);
+  let lastMail = current;
+  let calendar = parseCalendarHash(win.location.hash);
   let settings = hasSettingsFlag(win.location.hash);
+
+  /** The location of the current mail route or calendar. */
+  const here = (withSettings: boolean) =>
+    calendar
+      ? withFlag(formatCalendarRoute(calendar), withSettings)
+      : formatLocation(current, withSettings);
 
   const sync = () => {
     const next = parseHash(win.location.hash);
+    const nextCalendar = parseCalendarHash(win.location.hash);
     const nextSettings = hasSettingsFlag(win.location.hash);
     const routeChanged = formatRoute(next) !== formatRoute(current);
-    if (!routeChanged && nextSettings === settings) return;
+    const calendarChanged =
+      (nextCalendar && formatCalendarRoute(nextCalendar)) !==
+      (calendar && formatCalendarRoute(calendar));
+    if (!routeChanged && !calendarChanged && nextSettings === settings) return;
     if (routeChanged) current = next;
+    if (current !== null) lastMail = current;
+    if (calendarChanged) calendar = nextCalendar;
     settings = nextSettings;
     emitter.emit();
+  };
+
+  const go = (url: string, replace: boolean) => {
+    if (url === here(settings)) return;
+    const depth = depthOf(win.history.state);
+    if (replace)
+      win.history.replaceState(
+        { ...(win.history.state as HistoryState | null), a0Depth: depth },
+        "",
+        url,
+      );
+    else win.history.pushState({ a0Depth: depth + 1 }, "", url);
+    sync();
   };
   win.addEventListener("popstate", sync);
   win.addEventListener("hashchange", sync);
 
   return {
     getRoute: () => current,
+    getCalendarRoute: () => calendar,
+    getLastMailRoute: () => lastMail,
     navigate: (route, { replace = false } = {}) => {
-      const url = formatLocation(route, replace && settings);
-      if (url === formatLocation(current, settings)) return;
-      const depth = depthOf(win.history.state);
-      if (replace)
-        win.history.replaceState(
-          { ...(win.history.state as HistoryState | null), a0Depth: depth },
-          "",
-          url,
-        );
-      else win.history.pushState({ a0Depth: depth + 1 }, "", url);
-      sync();
+      go(formatLocation(route, replace && settings), replace);
+    },
+    openCalendar: (route, { replace = false } = {}) => {
+      go(withFlag(formatCalendarRoute(route), replace && settings), replace);
     },
     isSettingsOpen: () => settings,
     openSettings: () => {
@@ -176,7 +259,7 @@ export function createHashRouter(win: Window = window): HashRouter {
       win.history.pushState(
         { a0Depth: depthOf(win.history.state) + 1, a0Settings: true },
         "",
-        formatLocation(current, true),
+        here(true),
       );
       sync();
     },
@@ -185,11 +268,7 @@ export function createHashRouter(win: Window = window): HashRouter {
       if ((win.history.state as HistoryState | null)?.a0Settings === true)
         win.history.back();
       else {
-        win.history.replaceState(
-          win.history.state,
-          "",
-          formatLocation(current, false),
-        );
+        win.history.replaceState(win.history.state, "", here(false));
         sync();
       }
     },

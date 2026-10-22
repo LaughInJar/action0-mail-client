@@ -1,9 +1,15 @@
-import { useEffect, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
+import {
+  useCalendarRoute,
+  useRoute,
+  useRouter,
+  useUi,
+  useUiStore,
+} from "../../state/context";
 import { useActionCommands } from "../actions/useActionCommands";
-import { useMailActions } from "../actions/useMailActions";
-import { useUndo } from "../actions/useUndo";
+import { useMailActions, type MailActions } from "../actions/useMailActions";
+import { useUndo, type Undo } from "../actions/useUndo";
 import { ComposerHost } from "../composer/ComposerHost";
 import { SendQueueBar } from "../composer/SendQueueBar";
 import { useComposeActions } from "../composer/useComposeActions";
@@ -32,10 +38,19 @@ import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
 import { useApplyTheme } from "./useApplyTheme";
-import { useBreakpoint } from "./useBreakpoint";
+import { useBreakpoint, type Breakpoint } from "./useBreakpoint";
+import { useCommands } from "../../keyboard/context";
+import type { Command } from "../../keyboard/registry";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useNavigationDefaults } from "./useNavigationDefaults";
 import { useT } from "../../i18n/context";
+
+/** The calendar, loaded when it's first opened. */
+const CalendarApp = lazy(() =>
+  import("../calendar/CalendarApp").then((module) => ({
+    default: module.CalendarApp,
+  })),
+);
 
 /** The app's top-level layout: the welcome screen, or the mail UI. */
 export function Shell() {
@@ -52,10 +67,10 @@ function MailApp() {
   const breakpoint = useBreakpoint();
   const t = useT();
   const route = useRoute();
+  const calendar = useCalendarRoute();
   const drawerOpen = useUi((state) => state.drawerOpen);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   useNavigationDefaults(breakpoint);
-  useListController(breakpoint);
   useGlobalCommands(breakpoint);
   const actions = useMailActions();
   const compose = useComposeActions();
@@ -70,14 +85,19 @@ function MailApp() {
   });
   useDocumentTitle();
   const undo = useUndo(actions, compose);
-  useActionCommands(actions, undo);
 
   useEffect(() => {
     if (breakpoint !== "medium") setDrawerOpen(false);
   }, [breakpoint, setDrawerOpen]);
 
   let content: ReactNode;
-  if (breakpoint === "wide") {
+  if (calendar !== null) {
+    content = (
+      <Suspense fallback={null}>
+        <CalendarApp breakpoint={breakpoint} />
+      </Suspense>
+    );
+  } else if (breakpoint === "wide") {
     content = (
       <ResizableColumns
         columns={[
@@ -148,6 +168,11 @@ function MailApp() {
       <ReconnectBar />
       <NotificationsBar />
       <div className="flex min-h-0 flex-1">{content}</div>
+      {calendar === null ? (
+        <MailCommands breakpoint={breakpoint} actions={actions} undo={undo} />
+      ) : (
+        <UndoCommand undo={undo} />
+      )}
       <ShortcutHelp />
       <MailboxPickerHost />
       <LabelMenuHost />
@@ -166,4 +191,44 @@ function MailApp() {
       <ToastHost onUndo={undo.undo} />
     </div>
   );
+}
+
+/**
+ * The mail list's and the mail actions' shortcuts: only while mail is
+ * shown, so the calendar's keys never act on a hidden selection.
+ */
+function MailCommands({
+  breakpoint,
+  actions,
+  undo,
+}: {
+  breakpoint: Breakpoint;
+  actions: MailActions;
+  undo: Undo;
+}) {
+  useListController(breakpoint);
+  useActionCommands(actions, undo);
+  return null;
+}
+
+/** `z` in the calendar: undoes the latest change (e.g. an answer). */
+function UndoCommand({ undo }: { undo: Undo }) {
+  const t = useT();
+  useCommands(
+    useMemo(
+      (): Command[] => [
+        {
+          id: "calendar.undo",
+          group: "general",
+          description: t.shortcuts.undo,
+          keys: ["z"],
+          run: () => {
+            undo.undo();
+          },
+        },
+      ],
+      [undo, t],
+    ),
+  );
+  return null;
 }

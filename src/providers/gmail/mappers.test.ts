@@ -134,3 +134,45 @@ describe("decodeHtmlEntities", () => {
     expect(decodeHtmlEntities("&unknown;")).toBe("&unknown;");
   });
 });
+
+describe("invitations", () => {
+  it("reads the invitation from the mail's calendar part", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      "UID:design@example.org",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const message = toMessage(
+      gmailMessage("m1", {
+        payload: multipart("mixed", [
+          multipart("alternative", [
+            leafPart("text/plain", utf8Base64Url("You're invited")),
+            leafPart("text/calendar", utf8Base64Url(ics), { partId: "0.1" }),
+          ]),
+          leafPart("application/ics", utf8Base64Url(ics), {
+            filename: "invite.ics",
+            attachmentId: "att-1",
+          }),
+        ]),
+      }),
+    );
+    expect(message.invitation).toEqual({
+      uid: "design@example.org",
+      method: "request",
+    });
+    expect(message.body.text).toBe("You're invited");
+  });
+
+  it("leaves other mail alone", () => {
+    expect(
+      toMessage(
+        gmailMessage("m1", {
+          payload: leafPart("text/plain", utf8Base64Url("Hi")),
+        }),
+      ).invitation,
+    ).toBeUndefined();
+  });
+});

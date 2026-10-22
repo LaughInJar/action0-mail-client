@@ -1,4 +1,5 @@
 import { accounts } from "./texts/accounts";
+import { calendar } from "./texts/calendar";
 import { actions } from "./texts/actions";
 import { common } from "./texts/common";
 import { composer } from "./texts/composer";
@@ -21,6 +22,7 @@ export const messages = {
   en: {
     accounts: accounts.en,
     actions: actions.en,
+    calendar: calendar.en,
     common: common.en,
     composer: composer.en,
     errors: errors.en,
@@ -37,6 +39,7 @@ export const messages = {
   de: {
     accounts: accounts.de,
     actions: actions.de,
+    calendar: calendar.de,
     common: common.de,
     composer: composer.de,
     errors: errors.de,

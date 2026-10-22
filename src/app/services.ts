@@ -2,7 +2,9 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
 import { AccountRegistry } from "../accounts/AccountRegistry";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
+import type { IcsFactory } from "../data/calendar";
 import { queryKeys } from "../data/keys";
+import { IcsCalendarProvider } from "../providers/ical/IcsCalendarProvider";
 import { createPersistOptions, createQueryClient } from "../data/queryClient";
 import { CommandRegistry } from "../keyboard/registry";
 import { createGmailModule } from "../providers/gmail/module";
@@ -28,6 +30,8 @@ export interface AppServices {
   readonly commands: CommandRegistry;
   /** Providers the user can configure at runtime (e.g. Google's client ID). */
   readonly setups: readonly ProviderSetup[];
+  /** Creates the calendar of an iCal subscription. */
+  readonly icsFactory: IcsFactory;
 }
 
 /** Inputs of {@link createAppServices}. */
@@ -43,6 +47,8 @@ export interface AppServicesOptions {
   readonly createSetups?: (
     registry: AccountRegistry,
   ) => readonly ProviderSetup[];
+  /** Creates iCal subscriptions' calendars (default: fetched from the browser). */
+  readonly icsFactory?: IcsFactory;
 }
 
 /** The composition root: wires the layers together. */
@@ -67,6 +73,9 @@ export function createAppServices(options: AppServicesOptions): AppServices {
     router: createHashRouter(options.window ?? window),
     commands: new CommandRegistry(),
     setups: options.createSetups?.(registry) ?? [],
+    icsFactory:
+      options.icsFactory ??
+      ((subscription) => new IcsCalendarProvider(subscription)),
   };
 }
 

@@ -122,3 +122,29 @@ describe("the German interface with an Outlook account", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("the German calendar", () => {
+  it("speaks German: switch, views, week number, answers", async () => {
+    const { user } = renderApp({ hash: "#/calendar/week/2026-10-15" });
+    expect(
+      await screen.findByRole("main", { name: "Kalender" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Woche", pressed: true }),
+    ).toBeInTheDocument();
+    // Austrian weeks start on Monday.
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: /12\.\s*–\s*18\. Okt\. 2026\s*KW 42/,
+      }),
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: /^Team meeting/ }),
+    );
+    const event = await screen.findByRole("article", { name: "Team meeting" });
+    const answers = within(event).getByRole("group", { name: "Teilnehmen?" });
+    await user.click(within(answers).getByRole("button", { name: "Nein" }));
+    expect(await toastText("„Team meeting“ abgesagt")).toBeInTheDocument();
+  });
+});

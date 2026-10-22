@@ -22,6 +22,8 @@ export const ACCOUNT_TYPE_CARDS: readonly AccountTypeCard[] = [
 export const GOOGLE_CLOUD_LINKS = {
   gmailApi:
     "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
+  calendarApi:
+    "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
   peopleApi:
     "https://console.cloud.google.com/apis/library/people.googleapis.com",
   authPlatform: "https://console.cloud.google.com/auth/overview",

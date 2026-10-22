@@ -86,6 +86,12 @@ export interface ConfirmState {
         readonly accountId: AccountId;
         readonly mailboxId: MailboxId;
         readonly name: string;
+      }
+    | {
+        /** Removes an iCal subscription from this browser. */
+        readonly kind: "remove-calendar";
+        readonly id: string;
+        readonly name: string;
       };
 }
 

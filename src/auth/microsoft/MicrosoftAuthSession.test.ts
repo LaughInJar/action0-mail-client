@@ -164,3 +164,42 @@ describe("MicrosoftAuthSession", () => {
     await failure(session.getAccessToken());
   });
 });
+
+describe("MicrosoftAuthSession extra scopes", () => {
+  const CALENDAR = ["Calendars.ReadWrite"];
+
+  it("reports missing consent without touching mail, and asks for it in a popup", async () => {
+    const max = account("max@contoso.com");
+    let consented = false;
+    const silent = vi.fn((request: { scopes: string[] }) =>
+      request.scopes.includes("Calendars.ReadWrite") && !consented
+        ? Promise.reject(
+            msalError(
+              "invalid_grant",
+              "AADSTS65001",
+              "InteractionRequiredAuthError",
+            ),
+          )
+        : Promise.resolve(result(max, "token-x")),
+    );
+    const { session } = setup({
+      getAllAccounts: () => [max],
+      acquireTokenSilent: silent,
+      acquireTokenPopup: vi.fn(() => {
+        consented = true;
+        return Promise.resolve(result(max));
+      }),
+    });
+    expect(session.hasScopes(CALENDAR)).toBe(true);
+    const error = await failure(session.tokenFor(CALENDAR));
+    expect(isMailError(error, "unavailable") && error.reason).toBe(
+      "calendarAccessNeeded",
+    );
+    expect(session.hasScopes(CALENDAR)).toBe(false);
+    expect(session.status).toBe("signed-in");
+
+    await session.requestScopes(CALENDAR);
+    expect(session.hasScopes(CALENDAR)).toBe(true);
+    expect(await session.tokenFor(CALENDAR)).toBe("token-x");
+  });
+});

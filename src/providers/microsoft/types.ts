@@ -36,6 +36,12 @@ export interface GraphHeader {
 
 export interface GraphMessage {
   readonly id: string;
+  /** Set for derived types, e.g. `#microsoft.graph.eventMessageRequest`. */
+  readonly "@odata.type"?: string;
+  /** Event messages: what the mail does with its event. */
+  readonly meetingMessageType?: string;
+  /** Event messages: the event, when expanded. */
+  readonly event?: { readonly iCalUId?: string };
   readonly conversationId?: string;
   readonly parentFolderId?: string;
   readonly from?: GraphRecipient;

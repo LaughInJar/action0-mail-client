@@ -7,6 +7,7 @@ import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { useComposeActions } from "../composer/useComposeActions";
+import { AppSwitch } from "../layout/AppSwitch";
 import { ThemeSwitch } from "../layout/ThemeSwitch";
 import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
@@ -37,6 +38,7 @@ export function Sidebar({ onNavigate }: MailboxTreeProps) {
           }}
         />
       </div>
+      <AppSwitch {...(onNavigate ? { onNavigate } : {})} />
       {compose.canCompose && (
         <div className="px-2 pt-1 pb-2">
           <button

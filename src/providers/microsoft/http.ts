@@ -37,6 +37,11 @@ export type BatchResult<T> =
 /** Options of {@link GraphHttp}. */
 export interface GraphHttpOptions {
   readonly auth: AuthSession;
+  /**
+   * Where tokens come from instead of `auth.getAccessToken()`, e.g. a token
+   * with calendar scopes.
+   */
+  readonly token?: () => Promise<string>;
   readonly fetch?: typeof fetch;
   /** Requests in flight at the same time (Outlook allows 4 per mailbox). */
   readonly maxConcurrent?: number;
@@ -65,6 +70,7 @@ interface BatchResponseItem {
  */
 export class GraphHttp {
   readonly #auth: AuthSession;
+  readonly #token: () => Promise<string>;
   readonly #fetch: typeof fetch;
   readonly #limit: Limiter;
   readonly #maxAttempts: number;
@@ -73,6 +79,7 @@ export class GraphHttp {
 
   constructor(options: GraphHttpOptions) {
     this.#auth = options.auth;
+    this.#token = options.token ?? (() => options.auth.getAccessToken());
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.#limit = createLimiter(options.maxConcurrent ?? 4);
     this.#maxAttempts = options.maxAttempts ?? 3;
@@ -314,7 +321,7 @@ export class GraphHttp {
   ): Promise<Response> {
     const maxAttempts = retry ? this.#maxAttempts : 1;
     for (let attempt = 1; ; attempt++) {
-      const token = await this.#auth.getAccessToken();
+      const token = await this.#token();
       let response: Response;
       try {
         response = await this.#fetch(url, {

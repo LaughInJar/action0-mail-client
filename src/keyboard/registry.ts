@@ -3,7 +3,14 @@ import { parseBinding, strokeFromEvent } from "./keys";
 
 /** Sections of the shortcut help. */
 export type CommandGroup =
-  "list" | "actions" | "reading" | "goTo" | "search" | "writing" | "general";
+  | "list"
+  | "actions"
+  | "reading"
+  | "goTo"
+  | "search"
+  | "writing"
+  | "calendar"
+  | "general";
 
 /** A keyboard command. */
 export interface Command {

@@ -4,6 +4,7 @@
  * the provider instead.
  */
 
+import type { IcsSubscription } from "../core/calendar";
 import type { LanguageSetting } from "../i18n/locale";
 
 /** Undo-send periods the settings offer, in seconds (0: send right away). */
@@ -29,6 +30,12 @@ export interface AppSettings {
   readonly conversations: boolean;
   /** Interface language; "auto" follows the browser. */
   readonly language: LanguageSetting;
+  /** iCal subscriptions (their URLs can be secret). */
+  readonly icsCalendars: readonly IcsSubscription[];
+  /** Calendars ticked or unticked by the user, by `<source>|<calendar>`. */
+  readonly calendarChoices: Readonly<Record<string, boolean>>;
+  /** The calendar view last used on larger screens. */
+  readonly calendarView: "week" | "month" | "agenda";
 }
 
 /** The settings of a browser that never changed any. */
@@ -42,6 +49,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifications: true,
   conversations: false,
   language: "auto",
+  icsCalendars: [],
+  calendarChoices: {},
+  calendarView: "week",
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -58,6 +68,30 @@ const isMarkRead = oneOf(["immediately", "delay", "manual"] as const);
 const isRemoteImages = oneOf(["ask", "always", "trusted"] as const);
 const isUndoSend = oneOf(UNDO_SEND_CHOICES);
 const isLanguage = oneOf(["auto", "en", "de"] as const);
+const isCalendarView = oneOf(["week", "month", "agenda"] as const);
+
+function parseSubscriptions(value: unknown): IcsSubscription[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown): IcsSubscription[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { id, url, name, color } = entry as Record<string, unknown>;
+    return typeof id === "string" &&
+      typeof url === "string" &&
+      typeof name === "string" &&
+      typeof color === "string"
+      ? [{ id, url, name, color }]
+      : [];
+  });
+}
+
+function parseChoices(value: unknown): Record<string, boolean> {
+  if (typeof value !== "object" || value === null) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+    ),
+  );
+}
 
 /** Settings read from storage: every invalid or missing field gets its default. */
 export function parseSettings(value: unknown): AppSettings {
@@ -93,6 +127,11 @@ export function parseSettings(value: unknown): AppSettings {
         ? raw.conversations
         : d.conversations,
     language: isLanguage(raw.language) ? raw.language : d.language,
+    icsCalendars: parseSubscriptions(raw.icsCalendars),
+    calendarChoices: parseChoices(raw.calendarChoices),
+    calendarView: isCalendarView(raw.calendarView)
+      ? raw.calendarView
+      : d.calendarView,
   };
 }
 

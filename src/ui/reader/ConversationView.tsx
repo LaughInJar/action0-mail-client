@@ -22,6 +22,7 @@ import {
 } from "../composer/useComposeActions";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import { AttachmentList } from "./AttachmentList";
+import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useUnsubscribe } from "./useUnsubscribe";
@@ -537,6 +538,7 @@ function OpenMessage({
             }
           : {})}
       />
+      <InvitationBar accountId={accountId} message={message} />
       <MessageBody accountId={accountId} message={message} />
       <AttachmentList accountId={accountId} message={message} />
       {compose.canCompose && (
