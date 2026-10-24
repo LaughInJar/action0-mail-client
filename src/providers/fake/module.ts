@@ -34,6 +34,8 @@ export interface DemoModuleOptions {
   readonly calendarAccess?: CalendarAccess;
   /** Whether guests hear about changes only when asked (Google-like, default) or always (tests). */
   readonly guestNotices?: "ask" | "always";
+  /** Reminders kept by the calendar, like Outlook's (tests). */
+  readonly syncedReminders?: boolean;
 }
 
 /** Provider module of the demo account: in-memory data, no sign-in. */
@@ -45,6 +47,7 @@ export function createDemoModule({
   calendar = () => createDemoCalendar(now?.() ?? Date.now()),
   calendarAccess = "granted",
   guestNotices = "ask",
+  syncedReminders = false,
 }: DemoModuleOptions = {}): ProviderModule {
   return {
     type: "demo",
@@ -57,6 +60,7 @@ export function createDemoModule({
         latencyMs,
         access: calendarAccess,
         guestNotices,
+        syncedReminders,
       }),
     createProvider: () =>
       new FakeMailProvider(data(), {

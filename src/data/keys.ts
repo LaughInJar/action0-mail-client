@@ -83,6 +83,14 @@ export const queryKeys = {
     ] as const,
   invitation: (accountId: AccountId, uid: string) =>
     ["acct", accountId, "invitation", uid] as const,
+  /** The provider's own reminder list (Outlook) for a range. */
+  reminders: (source: string, range: DateRange) =>
+    [
+      ...queryKeys.calendarSource(source),
+      "reminders",
+      range.from,
+      range.to,
+    ] as const,
   /** An event read fresh for the editor (not persisted). */
   eventForEdit: (source: string, eventId: string) =>
     [...queryKeys.calendarSource(source), "edit", eventId] as const,

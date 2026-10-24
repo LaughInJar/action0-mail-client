@@ -12,6 +12,7 @@ import {
   type EventChanges,
   type EventDraft,
   type EventTime,
+  type ReminderSync,
   type Repeat,
   type ResponseStatus,
   type Rsvp,
@@ -46,6 +47,8 @@ export interface FakeEventTemplate {
   /** You're invited: your starting answer. */
   readonly invited?: ResponseStatus;
   readonly uid?: string;
+  /** Reminders, minutes before the start. */
+  readonly reminders?: readonly number[];
 }
 
 /** In-memory content of a fake calendar source. */
@@ -59,7 +62,7 @@ export interface FakeCalendarData {
 
 /** A write the fake provider took, for tests. */
 export interface FakeCalendarWrite {
-  readonly kind: "create" | "update" | "delete" | "undo";
+  readonly kind: "create" | "update" | "delete" | "undo" | "dismiss" | "snooze";
   readonly scope?: SeriesScope;
   readonly notify: boolean;
 }
@@ -73,6 +76,7 @@ interface FakeFields {
   readonly description?: { readonly html?: string; readonly text?: string };
   readonly guests: readonly EmailAddress[];
   readonly videoCall: boolean;
+  readonly reminders: readonly number[];
 }
 
 /** An event or series as the fake calendar stores it. */
@@ -177,6 +181,13 @@ export class FakeCalendarProvider implements CalendarProvider {
   readonly canRespond = true;
   readonly canEdit = true;
   readonly guestNotices: "ask" | "always";
+  readonly maxReminders: number;
+  readonly reminderSync?: ReminderSync;
+  /** Dismissed or snoozed reminders (Outlook-like), by event id. */
+  readonly #reminderState = new Map<
+    string,
+    { readonly dismissed?: true; readonly snoozedUntil?: number }
+  >();
   readonly #data: FakeCalendarData;
   readonly #latencyMs: number;
   readonly #responses = new Map<string, Rsvp>();
@@ -195,12 +206,47 @@ export class FakeCalendarProvider implements CalendarProvider {
       latencyMs?: number;
       access?: CalendarAccess;
       guestNotices?: "ask" | "always";
+      /** Keeps reminders itself like Outlook (one per event, synced snoozes). */
+      syncedReminders?: boolean;
     } = {},
   ) {
     this.#data = data;
     this.#latencyMs = options.latencyMs ?? 0;
     this.#access = options.access ?? "granted";
     this.guestNotices = options.guestNotices ?? "ask";
+    this.maxReminders = options.syncedReminders ? 1 : 5;
+    if (options.syncedReminders)
+      this.reminderSync = {
+        list: async (range, signal) => {
+          const events = await this.listEvents(
+            this.#data.calendars.map((calendar) => calendar.id),
+            range,
+            signal,
+          );
+          return events.flatMap((event) => {
+            const [minutes] = event.reminders ?? [];
+            const state = this.#reminderState.get(event.id);
+            if (minutes === undefined || state?.dismissed) return [];
+            const fireAt =
+              state?.snoozedUntil ?? timeOf(event.start) - minutes * 60_000;
+            return [
+              { eventId: event.id, fireAt: new Date(fireAt).toISOString() },
+            ];
+          });
+        },
+        dismiss: async (eventId) => {
+          await this.#ready(undefined);
+          this.#checkWrites();
+          this.#reminderState.set(eventId, { dismissed: true });
+          this.writes.push({ kind: "dismiss", notify: false });
+        },
+        snooze: async (eventId, until) => {
+          await this.#ready(undefined);
+          this.#checkWrites();
+          this.#reminderState.set(eventId, { snoozedUntil: Date.parse(until) });
+          this.writes.push({ kind: "snooze", notify: false });
+        },
+      };
     for (const template of data.events) {
       const record = this.#fromTemplate(template);
       this.#records.set(record.id, record);
@@ -299,6 +345,7 @@ export class FakeCalendarProvider implements CalendarProvider {
           .map((a) => a.address),
         videoCall: this.#fields(record, day)?.videoCall ?? false,
         repeat: repeat?.kind === "custom" || !repeat ? repeat : { ...repeat },
+        reminders: event.reminders ?? [],
       },
       videoCallFixed: false,
       firstOccurrence: day === dayOfTime(record.start),
@@ -529,6 +576,7 @@ export class FakeCalendarProvider implements CalendarProvider {
       ...(template.organizer ? { organizer: template.organizer } : {}),
       guests: template.attendees ?? [],
       videoCall: template.meetingUrl !== undefined,
+      reminders: template.reminders ?? [],
       ...(template.invited ? { invited: template.invited } : {}),
       uid: template.uid ?? `${template.key}@demo.example`,
       repeat: !weekdays
@@ -592,6 +640,7 @@ export class FakeCalendarProvider implements CalendarProvider {
       recurring: record.repeat !== null,
       ...(record.repeat !== null ? { seriesId: record.id } : {}),
       organizedByMe: mine,
+      ...(fields.reminders.length > 0 ? { reminders: fields.reminders } : {}),
       uid: record.uid,
     };
     const answer = this.#responses.get(id);
@@ -628,6 +677,9 @@ function fieldsOf(changes: EventChanges): Partial<FakeFields> {
     ...(changes.guests !== undefined ? { guests: changes.guests } : {}),
     ...(changes.videoCall !== undefined
       ? { videoCall: changes.videoCall }
+      : {}),
+    ...(changes.reminders !== undefined
+      ? { reminders: changes.reminders }
       : {}),
   };
 }

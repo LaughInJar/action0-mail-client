@@ -61,6 +61,8 @@ export function newValues(
   from: string,
   to: string,
   calendar: string,
+  /** The calendar's default reminders (for timed events). */
+  reminders: readonly number[] = [],
 ): EventFormValues {
   const allDay = !from.includes("T");
   const [startDate = from, startTime = "09:00"] = from.split("T");
@@ -80,6 +82,7 @@ export function newValues(
     videoCall: false,
     repeat: "none",
     until: "",
+    reminders: allDay ? [] : reminders,
   };
 }
 
@@ -119,6 +122,7 @@ export function valuesOf(draft: EventDraft, calendar: string): EventFormValues {
     videoCall: draft.videoCall,
     repeat: repeat?.kind ?? "none",
     until: repeat && repeat.kind !== "custom" ? (repeat.until ?? "") : "",
+    reminders: draft.reminders,
   };
 }
 
@@ -156,6 +160,7 @@ export function draftOf(
     guests: values.guests,
     videoCall: values.videoCall,
     repeat: repeatOf(values),
+    reminders: [...new Set(values.reminders)].sort((a, b) => a - b),
   };
 }
 
@@ -167,6 +172,9 @@ const addressesOf = (guests: readonly EmailAddress[]) =>
     .map((guest) => guest.address.toLowerCase())
     .sort()
     .join("\n");
+
+const minutesOf = (reminders: readonly number[]) =>
+  [...new Set(reminders)].sort((a, b) => a - b).join();
 
 const sameRepeat = (a: Repeat | null, b: Repeat | null) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -190,6 +198,9 @@ export function changesOf(before: EventDraft, after: EventDraft): EventChanges {
       : {}),
     ...(!sameRepeat(after.repeat, before.repeat)
       ? { repeat: after.repeat }
+      : {}),
+    ...(minutesOf(after.reminders) !== minutesOf(before.reminders)
+      ? { reminders: after.reminders }
       : {}),
   };
 }

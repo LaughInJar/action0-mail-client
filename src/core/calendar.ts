@@ -41,6 +41,8 @@ export interface Calendar {
   readonly readOnly: boolean;
   /** The video call new events here can get, if any. */
   readonly videoCall?: VideoCall;
+  /** Reminders new timed events here start with (minutes before). */
+  readonly defaultReminders?: readonly number[];
 }
 
 /** A video call a provider adds to an event: Google Meet or a Teams meeting. */
@@ -87,6 +89,8 @@ export interface CalendarEvent {
   readonly seriesId?: string;
   /** You organize it, or nobody does: it's yours to change (where its calendar allows). */
   readonly organizedByMe: boolean;
+  /** Its reminders: minutes before it starts (on-screen ones; none if absent). */
+  readonly reminders?: readonly number[];
   /** The iCalendar UID, which links invitation mails to the event. */
   readonly uid?: string;
   /** The event in the provider's own calendar app. */
@@ -146,6 +150,8 @@ export interface EventDraft {
   readonly videoCall: boolean;
   /** `null`: it doesn't repeat. */
   readonly repeat: Repeat | null;
+  /** Minutes before it starts (at most the provider's `maxReminders`). */
+  readonly reminders: readonly number[];
 }
 
 /** The fields of an event that change; the calendar can't. */
@@ -174,6 +180,21 @@ export interface EditableEvent {
   readonly firstOccurrence: boolean;
 }
 
+/**
+ * Reminders a provider keeps itself, with their snooze and dismiss state
+ * (Outlook): what's dismissed or snoozed anywhere shows here too.
+ */
+export interface ReminderSync {
+  /** Due times (ISO) of reminders of events starting in `range`; dismissed ones are left out. */
+  list(
+    range: DateRange,
+    signal?: AbortSignal,
+  ): Promise<readonly { readonly eventId: EventId; readonly fireAt: string }[]>;
+  dismiss(eventId: EventId): Promise<void>;
+  /** Reminds again at `until` (ISO). */
+  snooze(eventId: EventId, until: string): Promise<void>;
+}
+
 /** A change that went through, and how to take it back. */
 export interface EventChange {
   /** Takes the change back (Undo); rejects with a `MailError`. */
@@ -197,6 +218,10 @@ export interface CalendarProvider {
    * or always (`always`: Microsoft sends updates whatever you do).
    */
   readonly guestNotices: "ask" | "always";
+  /** How many reminders an event can have (0: they can't be set). */
+  readonly maxReminders: number;
+  /** The provider keeps reminders (and their snoozes) itself. */
+  readonly reminderSync?: ReminderSync;
   /** Current access; changes are announced through {@link subscribe}. */
   readonly access: () => CalendarAccess;
   /** Asks the user for calendar access (a popup): call it from a click. */

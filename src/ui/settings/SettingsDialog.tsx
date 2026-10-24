@@ -206,6 +206,22 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               enabled={settings.notifications}
               onChange={set("notifications")}
             />
+            <label className="flex cursor-pointer items-start gap-2.5 px-2 pointer-coarse:min-h-11">
+              <input
+                type="checkbox"
+                checked={settings.eventReminders}
+                onChange={(event) => {
+                  update({ eventReminders: event.target.checked });
+                }}
+                className="mt-0.5 size-4 shrink-0 accent-blue-600"
+              />
+              <span className="text-sm">
+                {s.eventReminders}
+                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                  {s.eventRemindersHint}
+                </span>
+              </span>
+            </label>
           </SettingsSection>
           {desktop && <DesktopSettings id="settings-app" desktop={desktop} />}
         </div>

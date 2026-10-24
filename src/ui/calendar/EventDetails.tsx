@@ -1,4 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
+import { isAllDay } from "../../core/calendar";
 import type { PlacedEvent } from "../../data/calendar";
 import { useT } from "../../i18n/context";
 import { buildMailDocument } from "../../security/mailDocument";
@@ -7,6 +8,7 @@ import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { SafeHtmlFrame } from "../reader/SafeHtmlFrame";
 import { titleOf, whenText } from "./format";
+import { reminderLabel } from "./reminderLabels";
 import { RsvpButtons } from "./RsvpButtons";
 
 /**
@@ -92,6 +94,21 @@ export function EventDetails({
             )}
           </div>
         </div>
+
+        {(event.reminders?.length ?? 0) > 0 && (
+          <div className="flex gap-3">
+            <Icon
+              name="bell"
+              className="mt-0.5 size-4 shrink-0 text-zinc-500"
+            />
+            <p>
+              <span className="sr-only">{c.reminders.label}: </span>
+              {(event.reminders ?? [])
+                .map((minutes) => reminderLabel(minutes, isAllDay(event), t))
+                .join(", ")}
+            </p>
+          </div>
+        )}
 
         {event.location && (
           <div className="flex gap-3">

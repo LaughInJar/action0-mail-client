@@ -34,6 +34,8 @@ describe("uiStore persistence", () => {
       toggledNodes: ["account:x"],
       listOrder: "oldest",
       settings: DEFAULT_SETTINGS,
+      // Ids and times of dismissed or snoozed reminders, no content.
+      reminderMarks: {},
     });
     expect(storage.dump()).not.toMatch(
       /secret-message-id|selected-id|allowed-id|secret-filter/,

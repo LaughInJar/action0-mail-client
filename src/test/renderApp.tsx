@@ -11,8 +11,10 @@ import type { IcsFactory } from "../data/calendar";
 import type { Platform } from "../platform/types";
 import { createDemoCalendar } from "../providers/fake/demoCalendar";
 import { createDemoData } from "../providers/fake/demoData";
+import type { FakeCalendarData } from "../providers/fake/FakeCalendarProvider";
 import type { FakeMailData } from "../providers/fake/FakeMailProvider";
 import { createDemoModule, DEMO_ACCOUNT } from "../providers/fake/module";
+import { UI_STATE_KEY } from "../state/uiStore";
 import { mockViewport, type Viewport } from "./viewport";
 
 /** Fixed "now" for test data. */
@@ -37,6 +39,15 @@ export interface RenderAppOptions {
   readonly guestNotices?: "ask" | "always";
   /** The platform (default: the web app). */
   readonly platform?: Platform;
+  /** Replaces the demo calendar (default: events around TEST_NOW). */
+  readonly calendar?: () => FakeCalendarData;
+  /** The demo calendar keeps reminders like Outlook. */
+  readonly syncedReminders?: boolean;
+  /**
+   * Event reminders on (default: off, so the demo's repeating events can't
+   * remind in tests that don't expect it, whatever the time of day).
+   */
+  readonly reminders?: boolean;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -51,8 +62,12 @@ export function renderApp({
   icsFactory,
   guestNotices = "ask",
   platform,
+  calendar = () => createDemoCalendar(TEST_NOW),
+  syncedReminders = false,
+  reminders = false,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
+  if (!reminders) turnRemindersOff(window.localStorage);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
   if (signedIn) saveAccounts(window.localStorage, [DEMO_ACCOUNT]);
 
@@ -63,9 +78,10 @@ export function renderApp({
         data,
         arrivalEveryMs: false,
         // Events around TEST_NOW (week of Monday 2026-10-12).
-        calendar: () => createDemoCalendar(TEST_NOW),
+        calendar,
         calendarAccess,
         guestNotices,
+        syncedReminders,
       }),
     ],
     ...(setups ? { createSetups: setups } : {}),
@@ -89,4 +105,22 @@ export function renderApp({
 export function demoHash(mailboxId: string, messageId?: string): string {
   const account = encodeURIComponent(DEMO_ACCOUNT.id);
   return `#/${account}/${mailboxId}${messageId === undefined ? "" : `/${messageId}`}`;
+}
+
+/** Keeps any settings stored for the test, with event reminders off. */
+function turnRemindersOff(storage: Storage) {
+  const stored = JSON.parse(storage.getItem(UI_STATE_KEY) ?? "null") as {
+    state?: { settings?: object };
+  } | null;
+  storage.setItem(
+    UI_STATE_KEY,
+    JSON.stringify({
+      ...stored,
+      state: {
+        ...stored?.state,
+        settings: { ...stored?.state?.settings, eventReminders: false },
+      },
+      version: 1,
+    }),
+  );
 }
