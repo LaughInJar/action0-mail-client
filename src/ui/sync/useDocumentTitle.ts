@@ -4,6 +4,7 @@ import { useAccounts } from "../../accounts/context";
 import type { Mailbox } from "../../core/model";
 import { queryKeys } from "../../data/keys";
 import { useT } from "../../i18n/context";
+import { usePlatform } from "../../platform/context";
 
 /** The title without unread mail. */
 export const APP_TITLE = "action0";
@@ -11,12 +12,14 @@ export const APP_TITLE = "action0";
 /**
  * Keeps the tab title current: "(3) action0" with the unread count of all
  * inboxes, or "Reconnect – action0" while an account's session has expired
- * (then nothing updates until it's renewed).
+ * (then nothing updates until it's renewed). The desktop app also shows the
+ * count on its icons.
  */
 export function useDocumentTitle(): void {
   const queryClient = useQueryClient();
   const accounts = useAccounts();
   const t = useT();
+  const { setUnreadCount } = usePlatform();
 
   useEffect(() => {
     const update = () => {
@@ -35,6 +38,7 @@ export function useDocumentTitle(): void {
           ? `(${String(unread)}) ${APP_TITLE}`
           : APP_TITLE;
       if (document.title !== title) document.title = title;
+      setUnreadCount(unread, t.desktop.unread(unread));
     };
     update();
     const unsubscribers = [
@@ -44,5 +48,5 @@ export function useDocumentTitle(): void {
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [accounts, queryClient, t]);
+  }, [accounts, queryClient, t, setUnreadCount]);
 }

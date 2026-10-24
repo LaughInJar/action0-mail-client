@@ -4,6 +4,7 @@ import type {
   SettingSource,
   SetupProblem,
 } from "../accounts/types";
+import type { NativeSignIn } from "../auth/native/bridge";
 import { readJson, writeJson } from "../lib/storage";
 import { createMicrosoftModule } from "../providers/microsoft/module";
 
@@ -45,6 +46,11 @@ export interface MicrosoftSetupOptions {
   readonly settings: Storage | undefined;
   /** Where MSAL's account hints live: sessionStorage. */
   readonly sessionStorage: Storage | undefined;
+  /** Desktop app: native sign-in (without the client: it's set up here) and networking. */
+  readonly desktop?: {
+    readonly native: Omit<NativeSignIn, "client">;
+    readonly fetch: typeof fetch;
+  };
 }
 
 /** Lets the user enter the Entra client ID in the wizard instead of `.env.local`. */
@@ -52,6 +58,7 @@ export function createMicrosoftSetup({
   registry,
   buildClientId,
   settings,
+  desktop,
   sessionStorage,
 }: MicrosoftSetupOptions): ProviderSetup {
   return {
@@ -75,7 +82,17 @@ export function createMicrosoftSetup({
       if (buildClientId === undefined)
         writeJson(settings, MICROSOFT_CLIENT_ID_KEY, clientId);
       registry.registerModule(
-        createMicrosoftModule({ clientId, sessionStorage, settings }),
+        createMicrosoftModule({
+          clientId,
+          sessionStorage,
+          settings,
+          ...(desktop
+            ? {
+                native: { ...desktop.native, client: { id: clientId } },
+                fetch: desktop.fetch,
+              }
+            : {}),
+        }),
       );
     },
   };

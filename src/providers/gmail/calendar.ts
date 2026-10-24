@@ -1,4 +1,4 @@
-import type { GoogleAuthSession } from "../../auth/google/GoogleAuthSession";
+import type { ScopedSession } from "../../auth/types";
 import {
   asCalendarId,
   asEventId,
@@ -325,13 +325,13 @@ export class GoogleCalendarProvider implements CalendarProvider {
   readonly canEdit = true;
   readonly guestNotices = "ask";
   readonly #http: GmailHttp;
-  readonly #session: GoogleAuthSession;
+  readonly #session: ScopedSession;
 
   /**
    * @param http Client for {@link CALENDAR_API_BASE}.
    * @param session The account's session, for on-demand calendar scopes.
    */
-  constructor(http: GmailHttp, session: GoogleAuthSession) {
+  constructor(http: GmailHttp, session: ScopedSession) {
     this.#http = http;
     this.#session = session;
   }

@@ -1,4 +1,5 @@
 import type { Unsubscribe } from "./model";
+import { parseMailto } from "./mailto";
 
 /** `List-Unsubscribe-Post` value that marks one-click support (RFC 8058). */
 const ONE_CLICK = /^\s*List-Unsubscribe\s*=\s*One-Click\s*$/i;
@@ -22,7 +23,7 @@ export function parseListUnsubscribe(
   let mail: Unsubscribe["mail"];
   const pages: string[] = [];
   for (const url of urls) {
-    if (/^mailto:/i.test(url)) mail ??= parseMailto(url);
+    if (/^mailto:/i.test(url)) mail ??= unsubscribeMail(url);
     else {
       const page = webUrl(url);
       if (page) pages.push(page);
@@ -52,35 +53,16 @@ function webUrl(text: string): string | undefined {
   }
 }
 
-/** Address, subject and body of a `mailto:` URL (RFC 6068: `+` is a plus). */
-function parseMailto(url: string): Unsubscribe["mail"] {
-  const [path = "", query = ""] = url.slice("mailto:".length).split("?", 2);
-  const params = new Map<string, string>();
-  for (const pair of query.split("&")) {
-    const [key = "", value = ""] = pair.split("=", 2);
-    const name = decode(key)?.toLowerCase();
-    const decoded = decode(value);
-    if (name && decoded !== undefined && !params.has(name))
-      params.set(name, decoded);
-  }
-  const to = [decode(path), params.get("to")]
-    .flatMap((list) => list?.split(",") ?? [])
-    .map((address) => address.trim())
-    .find((address) => /^[^\s@]+@[^\s@]+$/.test(address));
-  if (to === undefined) return undefined;
-  const subject = params.get("subject");
-  const body = params.get("body");
+/** Address, subject and body of an unsubscribe `mailto:` URL. */
+function unsubscribeMail(url: string): Unsubscribe["mail"] {
+  const fields = parseMailto(url);
+  const to = fields?.to.find((address) =>
+    /^[^\s@]+@[^\s@]+$/.test(address.address),
+  )?.address;
+  if (fields === undefined || to === undefined) return undefined;
   return {
     to,
-    ...(subject ? { subject } : {}),
-    ...(body ? { body } : {}),
+    ...(fields.subject ? { subject: fields.subject } : {}),
+    ...(fields.body ? { body: fields.body } : {}),
   };
-}
-
-function decode(text: string): string | undefined {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return undefined;
-  }
 }

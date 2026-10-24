@@ -38,6 +38,10 @@ export interface AppSettings {
   readonly calendarView: "week" | "month" | "agenda";
   /** The calendar the last new event went into, as `<source>|<calendar>` ("" for none yet). */
   readonly lastEventCalendar: string;
+  /** The account the last mail went out from ("" for none yet): mailto: links write from it. */
+  readonly lastSendAccount: string;
+  /** Desktop app: closing the window keeps it running in the tray. */
+  readonly closeToTray: boolean;
 }
 
 /** The settings of a browser that never changed any. */
@@ -55,6 +59,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   calendarChoices: {},
   calendarView: "week",
   lastEventCalendar: "",
+  lastSendAccount: "",
+  closeToTray: true,
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -139,6 +145,12 @@ export function parseSettings(value: unknown): AppSettings {
       typeof raw.lastEventCalendar === "string"
         ? raw.lastEventCalendar
         : d.lastEventCalendar,
+    lastSendAccount:
+      typeof raw.lastSendAccount === "string"
+        ? raw.lastSendAccount
+        : d.lastSendAccount,
+    closeToTray:
+      typeof raw.closeToTray === "boolean" ? raw.closeToTray : d.closeToTray,
   };
 }
 

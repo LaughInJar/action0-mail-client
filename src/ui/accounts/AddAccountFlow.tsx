@@ -18,6 +18,7 @@ import {
 } from "./accountTypes";
 import { useT, type I18n } from "../../i18n/context";
 import { RichText, type TagRenderer } from "../common/RichText";
+import { usePlatform } from "../../platform/context";
 
 /** Providers that are set up (client ID) and authorized in the wizard. */
 type SignInType = Exclude<ProviderType, "demo">;
@@ -35,8 +36,14 @@ function microsoftRedirectUri(): string {
   ).href;
 }
 
+/** What Google's client secrets look like (an example, not text). */
+const SECRET_EXAMPLE = "GOCSPX-…";
+
+/** Where Microsoft's sign-in returns to in the desktop app (any port). */
+const DESKTOP_REDIRECT_URI = "http://localhost/desktop";
+
 /** A provider's wizard texts, and the links and values its texts refer to. */
-function setupCopy(type: SignInType, t: I18n) {
+function setupCopy(type: SignInType, t: I18n, desktop: boolean) {
   const external = (links: Readonly<Record<string, string>>) =>
     Object.fromEntries(
       Object.entries(links).map(([name, href]): [string, TagRenderer] => [
@@ -46,7 +53,7 @@ function setupCopy(type: SignInType, t: I18n) {
     );
   if (type === "gmail")
     return {
-      texts: t.accounts.google,
+      texts: desktop ? t.accounts.googleDesktop : t.accounts.google,
       tags: {
         ...external(GOOGLE_CLOUD_LINKS),
         origin: () => <CopyableValue value={window.location.origin} />,
@@ -54,10 +61,14 @@ function setupCopy(type: SignInType, t: I18n) {
       example: "1234567890-abc123.apps.googleusercontent.com",
     };
   return {
-    texts: t.accounts.microsoft,
+    texts: desktop ? t.accounts.microsoftDesktop : t.accounts.microsoft,
     tags: {
       ...external(ENTRA_LINKS),
-      redirect: () => <CopyableValue value={microsoftRedirectUri()} />,
+      redirect: () => (
+        <CopyableValue
+          value={desktop ? DESKTOP_REDIRECT_URI : microsoftRedirectUri()}
+        />
+      ),
     },
     example: "00000000-0000-0000-0000-000000000000",
   };
@@ -251,19 +262,28 @@ function SetupStep({
   const [value, setValue] = useState(
     current?.source === "browser" ? current.value : "",
   );
+  const [secret, setSecret] = useState(
+    current?.source === "browser" ? (current.secret ?? "") : "",
+  );
   const [error, setError] = useState<string>();
+  const [secretError, setSecretError] = useState<string>();
   const inputId = useId();
   const errorId = useId();
+  const secretId = useId();
+  const secretErrorId = useId();
   const t = useT();
   const a = t.accounts;
-  const { texts, tags, example } = setupCopy(type, t);
+  const desktop = usePlatform().kind === "desktop";
+  const { texts, tags, example } = setupCopy(type, t, desktop);
 
   const save = () => {
     if (!setup) return;
     const problem = setup.validate(value);
     setError(problem && texts.problems[problem]);
-    if (problem !== undefined) return;
-    setup.apply(value);
+    const secretProblem = setup.secret?.validate(secret);
+    setSecretError(secretProblem && a.secretProblems[secretProblem]);
+    if (problem !== undefined || secretProblem !== undefined) return;
+    setup.apply(value, setup.secret ? secret : undefined);
     onSaved();
   };
 
@@ -303,7 +323,34 @@ function SetupStep({
           className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
         />
         <ErrorNote id={errorId} message={error} />
-        <p className="text-xs text-zinc-500">{a.clientIdNote}</p>
+        {!setup?.secret && (
+          <p className="text-xs text-zinc-500">{a.clientIdNote}</p>
+        )}
+        {setup?.secret && (
+          <>
+            <label className="block text-sm font-medium" htmlFor={secretId}>
+              {a.clientSecret}
+            </label>
+            <input
+              id={secretId}
+              value={secret}
+              onChange={(event) => {
+                setSecret(event.target.value);
+                setSecretError(undefined);
+              }}
+              placeholder={SECRET_EXAMPLE}
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={secretError !== undefined}
+              aria-describedby={
+                secretError === undefined ? undefined : secretErrorId
+              }
+              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
+            />
+            <ErrorNote id={secretErrorId} message={secretError} />
+            <p className="text-xs text-zinc-500">{a.clientSecretNote}</p>
+          </>
+        )}
         <button type="submit" className={PRIMARY_BUTTON}>
           {a.saveAndContinue}
         </button>
@@ -335,7 +382,7 @@ function ConnectStep({
   const ready = module?.prepare === undefined || prepared;
   const t = useT();
   const a = t.accounts;
-  const { texts, tags } = setupCopy(type, t);
+  const { texts, tags } = setupCopy(type, t, usePlatform().kind === "desktop");
 
   // Load the sign-in library first, so the popup opens inside the click.
   useEffect(() => {

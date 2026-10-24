@@ -43,3 +43,16 @@ export interface AuthSession {
   /** Notifies about changes of {@link status} and {@link expiresAt}. */
   readonly subscribe: (listener: () => void) => () => void;
 }
+
+/**
+ * A session with permissions that are asked for when needed (calendar
+ * access), so mail works without them.
+ */
+export interface ScopedSession {
+  /** True if the account granted all of these scopes. */
+  hasScopes(scopes: readonly string[]): boolean;
+  /** Asks the user for these scopes (opens UI): call it from a click. */
+  requestScopes(scopes: readonly string[]): Promise<void>;
+  /** Notifies when granted scopes (or the status) change. */
+  readonly subscribe: (listener: () => void) => () => void;
+}

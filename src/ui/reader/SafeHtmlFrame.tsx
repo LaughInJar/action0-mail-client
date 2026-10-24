@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useCommandRegistry } from "../../keyboard/context";
+import { usePlatform } from "../../platform/context";
+import { followLinkClick } from "./links";
 
 /**
  * Sandbox flags of the mail iframe. Never add `allow-scripts`: together with
  * `allow-same-origin` it would give mail content full access to the app.
  * - `allow-same-origin` (without scripts) lets the app measure the content.
- * - `allow-popups*` lets links open in a new, normal tab.
+ * - `allow-popups*` lets links open in a new, normal tab (the desktop app
+ *   opens them in the default browser instead, see `Platform.followLink`).
  */
 export const MAIL_FRAME_SANDBOX =
   "allow-same-origin allow-popups allow-popups-to-escape-sandbox";
@@ -34,6 +37,7 @@ export function SafeHtmlFrame({
 }: SafeHtmlFrameProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const registry = useCommandRegistry();
+  const { followLink } = usePlatform();
   const [height, setHeight] = useState(160);
 
   useEffect(() => {
@@ -77,11 +81,17 @@ export function SafeHtmlFrame({
         if (shortcuts) registry.handleKeyDown(event);
       };
       doc.addEventListener("keydown", onKeyDown);
+      // Links: the platform may open them itself (the desktop app's browser).
+      const onClick = (event: MouseEvent) => {
+        followLinkClick(event, followLink);
+      };
+      doc.addEventListener("click", onClick);
       fit();
 
       detach = () => {
         observer?.disconnect();
         doc.removeEventListener("keydown", onKeyDown);
+        doc.removeEventListener("click", onClick);
       };
     };
 
@@ -90,7 +100,7 @@ export function SafeHtmlFrame({
       frame.removeEventListener("load", attach);
       detach?.();
     };
-  }, [registry, shortcuts]);
+  }, [registry, shortcuts, followLink]);
 
   return (
     <iframe

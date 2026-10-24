@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { usePlatform } from "../../platform/context";
 import { useAccountRegistry } from "../../accounts/context";
 import { textToHtml } from "../../compose/html";
 import type { AccountId } from "../../core/ids";
@@ -59,12 +60,11 @@ export function useUnsubscribe(): UnsubscribeActions {
   const registry = useAccountRegistry();
   const drafts = useDraftSync();
   const t = useT();
+  const { openExternal } = usePlatform();
 
   return useMemo((): UnsubscribeActions => {
     const u = t.unsubscribe;
-    const openPage = (url: string) => {
-      window.open(url, "_blank", "noopener,noreferrer");
-    };
+    const openPage = openExternal;
 
     return {
       request: (accountId, message) => {
@@ -159,5 +159,5 @@ export function useUnsubscribe(): UnsubscribeActions {
         });
       },
     };
-  }, [drafts, registry, store, t]);
+  }, [drafts, registry, store, t, openExternal]);
 }
