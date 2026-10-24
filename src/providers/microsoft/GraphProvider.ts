@@ -1513,7 +1513,7 @@ export class GraphProvider implements MailProvider {
       if (id !== undefined) uploaded.set(part.id, id);
     }
 
-    // Upload sessions don't say the new attachment's id: match by name and size.
+    // Upload sessions don't say the new attachment's id: match by name.
     const unmatched = missing.filter((part) => !uploaded.has(part.id));
     if (unmatched.length === 0) return;
     const known = new Set([...keep, ...uploaded.values()]);

@@ -20,7 +20,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 1. Gmail, read-only: Gmail REST API, `gmail.readonly` scope, Google Identity Services (GIS) token model.
 2. Gmail features added one at a time: archive, move/label, compose, reply, search, and so on.
 3. Exchange Online through Microsoft Graph: MSAL.js, SPA auth code flow with PKCE.
-4. Possibly IMAP/SMTP. Browsers can't open raw TCP connections, so this needs a small proxy. Don't build it yet, but keep the provider abstraction ready for a proxy-backed adapter that can be added without restructuring.
+4. IMAP/SMTP (and CalDAV). Browsers can't open raw TCP connections, so these come only to the desktop app, through its native side, with no proxy (see the desktop app decisions). Keep the provider abstraction ready for such an adapter so it can be added without restructuring.
 
 ## Architecture rules
 
@@ -51,6 +51,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 ## Quality rules
 
 - TSDoc for public interfaces. The README covers setup, including creating the Google Cloud OAuth client.
+- `docs/` is the developer documentation (architecture, domain model, providers, decisions, development, testing, building, releasing, desktop app, security). Keep it current when a change affects what it describes.
 - Tests use Vitest + React Testing Library. Provider APIs are always mocked; tests never hit real APIs.
 - ESLint (strict) and Prettier for deterministic formatting.
 - GitHub Actions CI requires tests, lint and format checks to pass on PRs.
@@ -64,8 +65,8 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 
 ## Code conventions
 
-- Module layout and import rules: see README "Architecture". ESLint enforces that `ui/`, `data/`, `state/` and `keyboard/` never import `providers/` or `auth/google/`, and that only `src/platform/desktop/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
-- Tests sit next to the code (`*.test.ts(x)`). Helpers live in `src/test/`. Gmail tests run in the Node environment against MSW (`onUnhandledFrame: "error"`); UI tests render the whole app with `renderApp()` and the in-memory provider.
+- Module layout and import rules: see `docs/architecture.md`. ESLint enforces that `ui/`, `data/`, `state/`, `keyboard/` and `compose/` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`), and that only `src/platform/desktop/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
+- Tests sit next to the code (`*.test.ts(x)`). Helpers live in `src/test/`. Gmail and Graph tests run in the Node environment against MSW (`onUnhandledFrame: "error"`); UI tests render the whole app with `renderApp()` and the in-memory provider.
 - Interfaces that get passed around as functions (subscribe, store actions, router) use function-typed properties, not method syntax (`@typescript-eslint/unbound-method`).
 
 ## Decisions log
@@ -216,3 +217,4 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Conversations show the categories of all their messages; applying one tags every message. Search inside a category searches the account and keeps matches with it. Changes made in Outlook show up with live updates.
   - Needs `MailboxSettings.ReadWrite` (the category list), so Microsoft accounts reconnect once. The work demo account gets categories.
 - **Reader toolbar decisions:** the message and conversation toolbars show as many buttons as fit (measured, follows resizing) and put the rest into a ⋯ More menu (icon, name, shortcut; ≥44px rows; keyboard). Back, Archive and Delete (in Trash/Spam: Restore / Not spam and Delete forever) always stay. The others move into ⋯ in this order: Forward, Reply all, Spam, Labels, Move, Reply, Star, Read/unread; on phones Reply, Reply all and Forward go first (the big buttons below the mail do the same). The list's selection bar keeps wrapping.
+- **Developer documentation decisions:** a `docs/` folder (index, architecture, domain model, providers, decisions, development, testing, building and deploying, releasing, desktop app, security), written from the code for new contributors, linked from the README. The README stays the entry point with features and setup; its Architecture section is a summary pointing to `docs/architecture.md`. This decisions log stays authoritative; `docs/decisions.md` explains the reasoning.

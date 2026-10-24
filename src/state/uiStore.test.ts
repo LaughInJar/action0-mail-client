@@ -6,7 +6,7 @@ import { MemoryStorage } from "../test/memoryStorage";
 import { COLUMN_LIMITS, createUiStore, UI_STATE_KEY } from "./uiStore";
 
 describe("uiStore persistence", () => {
-  it("persists only column widths, tree expansion and list order, never mail-related state", () => {
+  it("persists only layout, order, settings, reminder marks and account colours, never mail-related state", () => {
     const storage = new MemoryStorage();
     const store = createUiStore(storage);
     const {

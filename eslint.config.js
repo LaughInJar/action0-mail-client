@@ -12,7 +12,12 @@ import tseslint from "typescript-eslint";
  * implementations are wired up in `src/app` (the composition root).
  */
 const providerImplementations = {
-  group: ["**/providers/**", "**/auth/google/**"],
+  group: [
+    "**/providers/**",
+    "**/auth/google/**",
+    "**/auth/microsoft/**",
+    "**/auth/native/**",
+  ],
   message:
     "UI, data and state code must use the provider-agnostic contracts in src/core. Wire concrete providers in src/app.",
 };
@@ -135,7 +140,14 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ["react", "react-dom", "@tanstack/*", "zustand", "../*"],
+              group: [
+                "react",
+                "react-dom",
+                "@tanstack/*",
+                "zustand",
+                "@tauri-apps/*",
+                "../*",
+              ],
               message:
                 "src/core holds pure contracts and must not depend on anything.",
             },

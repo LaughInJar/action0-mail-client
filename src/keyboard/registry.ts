@@ -16,13 +16,12 @@ export type CommandGroup =
 export interface Command {
   /** Unique id, e.g. `list.next`. */
   readonly id: string;
-  /** Heading in the shortcut overlay. */
   /** Where the shortcut help lists it (translated there). */
   readonly group: CommandGroup;
   readonly description: string;
   /** Bindings in the notation of `keys.ts`, e.g. `["j", "ArrowDown"]` or `["g i"]`. */
   readonly keys: readonly string[];
-  /** The command only runs (and only shows in the overlay) while this returns true. */
+  /** The command only runs while this returns true (the help lists it either way). */
   readonly when?: () => boolean;
   readonly run: (event: KeyboardEvent) => void;
 }

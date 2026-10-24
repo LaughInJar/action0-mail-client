@@ -225,7 +225,7 @@ interface LabelChange {
   readonly removeLabelIds?: readonly string[];
 }
 
-/** {@link MailProvider} for Gmail, using the REST API (`gmail.modify` scope). */
+/** {@link MailProvider} for Gmail, using the REST API (full `https://mail.google.com/` scope, which deleting forever needs). */
 export class GmailProvider implements MailProvider {
   readonly capabilities: ProviderCapabilities;
   static readonly #CAPABILITIES: ProviderCapabilities = {

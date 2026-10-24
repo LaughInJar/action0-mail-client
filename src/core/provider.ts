@@ -24,11 +24,13 @@ import type {
 
 /**
  * What a provider supports. The UI checks capabilities instead of branching
- * on the provider type. Further write capabilities (move, add label, ...)
- * are added together with the features that need them.
+ * on the provider type.
  */
 export interface ProviderCapabilities {
-  /** Mailbox kinds this account uses. Gmail: `label` and `view`. Exchange: `folder`. */
+  /**
+   * Mailbox kinds this account uses. Gmail: `label` and `view`. Outlook:
+   * `folder`, `label` (its categories) and `view`.
+   */
   readonly mailboxKinds: readonly MailboxKind[];
   /** Supports {@link MailProvider.archive} and {@link MailProvider.unarchive}. */
   readonly archive: boolean;

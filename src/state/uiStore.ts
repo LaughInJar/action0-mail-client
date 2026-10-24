@@ -304,7 +304,6 @@ export interface UiActions {
     edit: boolean,
   ) => void;
   readonly markComposerSaving: (key: number) => void;
-  /** A save of `revision` finished (or failed, with `error`). */
   /**
    * Records how saving to `accountId` went. Ignored once the composer
    * moved to another account (From changed meanwhile).
@@ -400,9 +399,10 @@ function parseMarks(value: unknown): Record<string, ReminderMark> {
 
 /**
  * Creates the UI store. Only column widths, tree expansion, the list order,
- * the theme and the app settings are persisted (to `storage`, i.e.
- * localStorage); nothing that contains mail (trusted senders are addresses
- * the user chose to trust, kept like a setting).
+ * the app settings, reminder marks and account colours are persisted (to
+ * `storage`, i.e. localStorage; the theme is kept apart, see `theme.ts`);
+ * nothing that contains mail (trusted senders are addresses the user chose
+ * to trust, kept like a setting; reminder marks are ids and times).
  */
 export function createUiStore(storage: Storage | undefined): UiStore {
   return createStore<UiState & UiActions>()(
