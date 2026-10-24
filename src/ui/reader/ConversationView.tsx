@@ -15,7 +15,10 @@ import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import { useUi, useUiStore } from "../../state/context";
 import { markReadDelayMs } from "../../state/settings";
-import { MailActionButtons } from "../actions/MailActionButtons";
+import { mailActionItems } from "../actions/mailActionItems";
+import { OverflowToolbar } from "../common/OverflowToolbar";
+import { useBreakpoint } from "../layout/useBreakpoint";
+import { answerItems } from "./answerItems";
 import { useMailActions, type MailActions } from "../actions/useMailActions";
 import { errorMessage } from "../common/errorMessage";
 import { displayName, formatListDate } from "../common/format";
@@ -64,6 +67,7 @@ export function ConversationView({
 }: ConversationViewProps) {
   const { data: thread, error, refetch } = useThread(accountId, threadId);
   const t = useT();
+  const breakpoint = useBreakpoint();
   const { data: mailboxes } = useMailboxList(accountId);
   const actions = useMailActions();
   const compose = useComposeActions();
@@ -141,57 +145,48 @@ export function ConversationView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        role="group"
-        aria-label={t.reader.conversationActions}
-        className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800"
-      >
-        {onBack && (
-          <IconButton
-            label={t.reader.backToMessages}
-            icon="arrow-left"
-            onClick={onBack}
-          />
-        )}
-        <div className="flex-1" />
-        {summary && canWrite && (
-          <>
-            <IconButton
-              label={t.actions.replyButton}
-              icon="reply"
-              onClick={() => {
-                compose.reply(answering(), "reply");
-              }}
-            />
-            <IconButton
-              label={t.actions.replyAllButton}
-              icon="reply-all"
-              onClick={() => {
-                compose.reply(answering(), "reply-all");
-              }}
-            />
-            <IconButton
-              label={t.actions.forwardButton}
-              icon="forward"
-              onClick={() => {
-                compose.forward(answering());
-              }}
-            />
-            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-          </>
-        )}
-        {summary && (
-          <MailActionButtons
-            actions={actions}
-            message={summary}
-            accountId={accountId}
-            archivable={
-              inbox !== undefined &&
-              (messages ?? []).some((m) => m.mailboxIds.includes(inbox.id))
+      <OverflowToolbar
+        label={t.reader.conversationActions}
+        moreLabel={t.reader.moreActions}
+        {...(onBack
+          ? {
+              leading: (
+                <IconButton
+                  label={t.reader.backToMessages}
+                  icon="arrow-left"
+                  onClick={onBack}
+                />
+              ),
             }
-          />
-        )}
-      </div>
+          : {})}
+        items={
+          summary
+            ? [
+                ...(canWrite
+                  ? answerItems(
+                      compose,
+                      answering,
+                      { isDraft: false, phone: breakpoint === "narrow" },
+                      t,
+                    )
+                  : []),
+                ...mailActionItems(
+                  actions,
+                  {
+                    message: summary,
+                    accountId,
+                    archivable:
+                      inbox !== undefined &&
+                      (messages ?? []).some((m) =>
+                        m.mailboxIds.includes(inbox.id),
+                      ),
+                  },
+                  t.actions,
+                ),
+              ]
+            : []
+        }
+      />
       <div
         id={READER_SCROLL_ID}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
