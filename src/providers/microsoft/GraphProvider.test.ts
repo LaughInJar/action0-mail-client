@@ -557,6 +557,61 @@ describe("GraphProvider drafts", () => {
     expect(draft?.attachments?.map((a) => a.bytes)).toEqual(["plan"]);
   });
 
+  it("creates forwards as Outlook's forwards, reusing the original's attachments", async () => {
+    const { graph, provider } = setup();
+    graph.add({
+      id: "orig",
+      internetMessageId: "<orig@example.com>",
+      attachments: [
+        {
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          id: "att-9",
+          name: "plan.txt",
+          contentType: "text/plain",
+          size: 4,
+          bytes: "plan",
+        },
+      ],
+    });
+    const plan = {
+      id: "orig/att-9",
+      filename: "plan.txt",
+      mimeType: "text/plain",
+      size: 4,
+      source: { messageId: id("orig"), attachmentId: asAttachmentId("att-9") },
+    };
+    const threading = {
+      inReplyTo: "<orig@example.com>",
+      references: ["<orig@example.com>"],
+      forward: true as const,
+    };
+    const saved = await provider.saveDraft({
+      ...base,
+      subject: "Fwd: plan",
+      threading,
+      attachments: [plan],
+    });
+    expect(graph.requests("POST", /\/orig\/createForward$/)).toHaveLength(1);
+    expect(graph.requests("POST", /\/createReply$/)).toHaveLength(0);
+    // The copy Outlook made is kept; nothing is uploaded.
+    expect(graph.requests("POST", /\/attachments$/)).toHaveLength(0);
+    const draft = graph.messages.find((m) => m.id === saved.id);
+    expect(draft?.attachments?.map((a) => a.bytes)).toEqual(["plan"]);
+    expect(draft?.subject).toBe("Fwd: plan");
+
+    // Removing the file in the composer removes the copy.
+    await provider.saveDraft({
+      ...base,
+      id: asDraftId(saved.id),
+      subject: "Fwd: plan",
+      threading,
+      attachments: [],
+    });
+    expect(
+      graph.messages.find((m) => m.id === saved.id)?.attachments ?? [],
+    ).toEqual([]);
+  });
+
   it("deletes drafts", async () => {
     const { graph, provider } = setup();
     const saved = await provider.saveDraft(base);

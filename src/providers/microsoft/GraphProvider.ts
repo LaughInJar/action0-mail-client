@@ -1436,17 +1436,55 @@ export class GraphProvider implements MailProvider {
       );
       return created.id;
     }
-    const reply = await this.#http.post<GraphMessage>(
-      `me/messages/${enc(original)}/createReply`,
+    // Forwards start as Outlook's forwards, so the original shows
+    // "Forwarded" once sent (and they carry its attachments already).
+    const forward = draft.threading?.forward === true;
+    const created = await this.#http.post<GraphMessage>(
+      `me/messages/${enc(original)}/${forward ? "createForward" : "createReply"}`,
       undefined,
       options,
     );
     await this.#http.patch(
-      `me/messages/${enc(reply.id)}`,
+      `me/messages/${enc(created.id)}`,
       draftFields(draft),
       signal,
     );
-    return reply.id;
+    if (forward)
+      await this.#reuseCopies(created.id, original, draft.attachments, signal);
+    return created.id;
+  }
+
+  /**
+   * Outlook copies the original's attachments into a forward: the parts of
+   * the original that are still wanted use those copies (by name and size)
+   * instead of being uploaded again.
+   */
+  async #reuseCopies(
+    draftId: string,
+    original: string,
+    wanted: readonly OutgoingAttachment[],
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const copies = await this.#all<GraphAttachment>(
+      `me/messages/${enc(draftId)}/attachments`,
+      { $select: "id,name,size" },
+      signal,
+    );
+    const uploaded = this.#uploaded.get(draftId) ?? new Map<string, string>();
+    this.#uploaded.set(draftId, uploaded);
+    const taken = new Set<string>();
+    for (const part of wanted) {
+      if (part.source?.messageId !== original) continue;
+      const copy = copies.find(
+        (attachment) =>
+          !taken.has(attachment.id) &&
+          attachment.name === part.filename &&
+          attachment.size === part.size,
+      );
+      if (!copy) continue;
+      taken.add(copy.id);
+      uploaded.set(part.id, copy.id);
+    }
   }
 
   async #findByMessageId(
