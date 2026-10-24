@@ -8,6 +8,12 @@ import {
   type Cursor,
   type MailboxId,
 } from "../../core/ids";
+import {
+  authResults,
+  headerValue,
+  parseHeaders,
+  splitMessage,
+} from "../../core/rawMessage";
 import { createFolderData, FOLDER } from "../../test/folderData";
 import { createDemoArrival, createDemoData, DEMO_MAILBOX } from "./demoData";
 import { FakeMailProvider } from "./FakeMailProvider";
@@ -509,6 +515,41 @@ describe("FakeMailProvider threads", () => {
       threading: { threadId: asThreadId("t-trip"), references: [] },
     });
     expect((await ids())[0]).toBe("t-trip");
+  });
+});
+
+describe("FakeMailProvider.getRawMessage", () => {
+  const headersOf = async (fake: FakeMailProvider, id: string) =>
+    parseHeaders(
+      splitMessage(
+        new TextDecoder().decode(await fake.getRawMessage(asMessageId(id))),
+      ).head,
+    );
+
+  it("builds a source with the headers a receiving server adds", async () => {
+    const fake = provider();
+    const headers = await headersOf(fake, "invoice");
+    expect(headerValue(headers, "Subject")).toBe("Your invoice 2026-1043");
+    expect(headers.filter((h) => h.name === "Received")).toHaveLength(2);
+    expect(authResults(headers).map((check) => check.result)).toEqual([
+      "pass",
+      "pass",
+      "pass",
+    ]);
+    const raw = new TextDecoder().decode(
+      await fake.getRawMessage(asMessageId("invoice")),
+    );
+    // The attachment is in it.
+    expect(raw).toContain("invoice-2026-1043.pdf");
+  });
+
+  it("fails the checks for mail in Spam", async () => {
+    const headers = await headersOf(provider(), "spam-1");
+    expect(authResults(headers)).toContainEqual({
+      method: "dkim",
+      result: "fail",
+      domain: "spam.example",
+    });
   });
 });
 

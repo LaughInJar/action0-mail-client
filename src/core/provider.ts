@@ -71,6 +71,8 @@ export interface ProviderCapabilities {
   readonly threads: boolean;
   /** Supports {@link MailProvider.listSenders}. */
   readonly senders: boolean;
+  /** Supports {@link MailProvider.getRawMessage} (a message's headers and source). */
+  readonly rawSource: boolean;
   /**
    * Where {@link MailProvider.updateSignature} keeps signatures: with the
    * provider (Gmail), or only in this browser (Graph can't read Outlook's).
@@ -211,6 +213,13 @@ export interface MailProvider {
     attachmentId: AttachmentId,
     signal?: AbortSignal,
   ): Promise<Blob>;
+
+  /**
+   * The message exactly as stored: RFC 5322 bytes with every header and
+   * MIME part (only if {@link ProviderCapabilities.rawSource}). For
+   * "Show original"; callers don't keep it.
+   */
+  getRawMessage(id: MessageId, signal?: AbortSignal): Promise<Uint8Array>;
 
   /**
    * Takes messages out of the inbox. Gmail removes the `INBOX` label;

@@ -12,6 +12,7 @@ import { useMailboxList } from "../common/mailboxNames";
 import { entriesOf, grouped } from "../common/menuEntries";
 import { useComposeActions } from "../composer/useComposeActions";
 import { answerItems } from "./answerItems";
+import { originalItems, useOriginalActions } from "../original/originalActions";
 
 /** Props of {@link MessageMenu}. */
 export interface MessageMenuProps {
@@ -38,6 +39,7 @@ export function MessageMenu({
   const compose = useComposeActions();
   const store = useUiStore();
   const router = useRouter();
+  const original = useOriginalActions();
   const t = useT();
   const m = t.menus;
   if (!message) return null;
@@ -105,7 +107,12 @@ export function MessageMenu({
       label={title}
       title={title}
       at={at}
-      entries={grouped(answering, acting, sender)}
+      entries={grouped(
+        answering,
+        acting,
+        sender,
+        entriesOf(originalItems(original, ref, t)),
+      )}
       onClose={onClose}
     />
   );

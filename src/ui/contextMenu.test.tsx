@@ -103,7 +103,7 @@ describe("the menu of list rows", () => {
     const opened = await menu("Welcome to the demo");
     expect(entry(opened, "Open")).toHaveFocus();
     await user.keyboard("{End}");
-    expect(entry(opened, "Copy sender address")).toHaveFocus();
+    expect(entry(opened, "Show original (Ctrl+U)")).toHaveFocus();
     // The app's shortcuts wait while the menu is open.
     await user.keyboard("a");
     expect(screen.queryByText(/^Archived/)).not.toBeInTheDocument();

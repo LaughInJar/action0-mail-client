@@ -244,6 +244,7 @@ export class GraphProvider implements MailProvider {
       },
       threads: true,
       senders: true,
+      rawSource: true,
       signatureStore: "browser",
     };
   }
@@ -508,6 +509,18 @@ export class GraphProvider implements MailProvider {
       `me/messages/${enc(messageId)}/attachments/${enc(attachmentId)}/$value`,
       signal,
     );
+  }
+
+  /** `$value`: the message's MIME content, as Exchange keeps it. */
+  async getRawMessage(
+    id: MessageId,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    const blob = await this.#http.getBlob(
+      `me/messages/${enc(id)}/$value`,
+      signal,
+    );
+    return new Uint8Array(await blob.arrayBuffer());
   }
 
   archive(

@@ -62,6 +62,7 @@ const labels: ProviderCapabilities = {
   },
   threads: true,
   senders: true,
+  rawSource: true,
   signatureStore: "provider",
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };

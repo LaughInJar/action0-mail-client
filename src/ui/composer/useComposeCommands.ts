@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { messageRef, type MessageRef } from "../../core/ids";
+import type { MessageRef } from "../../core/ids";
 import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import { useRouter, useUiStore } from "../../state/context";
+import { currentMessage } from "../actions/currentMessage";
 import type { ComposeActions } from "./useComposeActions";
 import { useT } from "../../i18n/context";
 
@@ -13,20 +14,7 @@ export function useComposeCommands(actions: ComposeActions): void {
   const t = useT();
   const commands = useMemo((): Command[] => {
     const group = "writing";
-    /**
-     * The message to answer: the one at the open conversation's cursor, else
-     * the one shown in the reader (or under the cursor), of its account.
-     */
-    const current = (): MessageRef | undefined => {
-      const { readerCursor, focusedId } = store.getState();
-      const route = router.getRoute();
-      const focused = focusedId === null ? undefined : messageRef(focusedId);
-      const accountId = focused?.accountId ?? route?.accountId;
-      const messageId = readerCursor ?? focused?.messageId ?? route?.messageId;
-      return accountId === undefined || messageId === undefined
-        ? undefined
-        : { accountId, messageId };
-    };
+    const current = () => currentMessage(store, router);
     const withMessage = (run: (message: MessageRef) => void) => () => {
       const message = current();
       if (message !== undefined) run(message);

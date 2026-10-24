@@ -13,6 +13,8 @@ export const UPLOAD_BASE = "https://upload.outlook.test/session/";
 /** A message of the fake mailbox, with its attachments and their bytes. */
 export interface FakeGraphMessage extends GraphMessage {
   attachments?: (GraphAttachment & { bytes?: string })[];
+  /** The MIME source `$value` returns (else a short one is made up). */
+  mime?: string;
 }
 
 /** One request the fake answered (batched ones too), for assertions. */
@@ -419,6 +421,18 @@ export class FakeGraph {
         },
       });
       return { status: 201, body: { uploadUrl: `${UPLOAD_BASE}${session}` } };
+    }
+    if ((match = /^me\/messages\/([^/]+)\/\$value$/.exec(path))) {
+      const message = this.#message(match[1] ?? "");
+      return message
+        ? {
+            status: 200,
+            blob: new Blob([
+              message.mime ??
+                `Subject: ${message.subject ?? ""}\r\n\r\n${message.id}\r\n`,
+            ]),
+          }
+        : notFound;
     }
     if (
       (match = /^me\/messages\/([^/]+)\/attachments\/([^/]+)\/\$value$/.exec(

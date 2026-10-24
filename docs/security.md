@@ -72,7 +72,7 @@ The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include t
 
 The query cache (`src/data/queryClient.ts`) persists only queries marked `meta: { persist: true }` that succeeded: mailbox lists, message and conversation list pages (not search results), calendar lists and events (`src/data/hooks.ts`, `src/data/calendar.ts`). List pages hold message summaries (sender, recipients, subject, a short snippet, date, flags), not bodies. Restored entries older than `PERSIST_MAX_AGE_MS` (10 minutes) are discarded, and so is everything when the app version (the `buster`) changes; writes are throttled to one per second, and when storage is full the oldest query is dropped (`removeOldestQuery`). Complete messages and conversations are memory only.
 
-**Memory only:** message bodies, inline images, attachments, the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values.
+**Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values.
 
 **Desktop app, on disk:** the encrypted vault (`accounts.vault`), PDFs opened with another app (emptied at every start), the window-state plugin's window geometry, and the web view's own localStorage and sessionStorage with the keys above. See [Desktop specifics](#desktop-specifics).
 
@@ -141,6 +141,10 @@ Attachments are never rendered as pages in the app's origin (`attachmentKind()` 
 - Images (PNG, JPEG, GIF, WebP, AVIF, BMP, SVG) open in the in-app viewer as `<img>`, where SVG can't run scripts.
 - PDFs open in a new tab from a blob whose type is forced to `application/pdf`, with the opener cut (`openFileLater` in `src/platform/web.ts`); the desktop app opens them with the system's viewer.
 - Everything else (HTML, XML, …) is only downloaded, as `application/octet-stream`, so the browser never renders it (`downloadBlob()` in `src/platform/web.ts`).
+
+### Show original
+
+A message's source is untrusted text. The view (`src/ui/original/`) only ever renders it as text nodes (React escapes it), never as HTML. The summary's SPF, DKIM and DMARC badges come only from the topmost `Authentication-Results` header, which the account's own provider added on arrival; lower ones may have been written by anyone, sender included (`authResults` in `src/core/rawMessage.ts`). None of it changes what the app trusts (remote images, links): it's information for the user.
 
 ## App CSP
 

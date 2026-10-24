@@ -26,7 +26,7 @@ How requests flow from a click to a provider is described in [architecture.md](a
 | Group              | Methods                                                                                                                                              |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                                    |
-| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`                                                           |
+| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`, `getRawMessage`                                          |
 | Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox`, `markAllRead` |
 | Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                   |
 | Live updates       | `changesSince`                                                                                                                                       |
@@ -219,6 +219,8 @@ Gmail only lists newest first. For **oldest first**, `#listOldest` lists every m
 - Gmail moves large text bodies (and calendar parts) out of the message; `#hydrateLargeTextParts` fetches them back in.
 - Small parts that Gmail inlined have no attachment id; they get `part:<partId>`, which `getAttachment` resolves from the full message.
 
+`getRawMessage` ("Show original") fetches `format=raw` and decodes the base64url bytes.
+
 `toMessage` also reads `List-Unsubscribe` (`src/core/unsubscribe.ts`), the invitation in a `text/calendar` part (`parseInvitation`), and `Message-ID` and `References`. In list rows, `hasAttachments` is a guess (a top-level `multipart/mixed`), because the metadata format has no parts; snippets have their HTML entities decoded, and `receivedAt` comes from `internalDate`.
 
 ### Changing mail
@@ -299,6 +301,8 @@ The provider resolves Outlook's well-known folder names once, in one batch (`#we
 - Categories (`me/outlook/masterCategories`) become labels `view:category:<name>` under a `view:categories` group, sorted by name and coloured from Outlook's 25 presets (`preset0` … `preset24`). Their unread counts come from one `$count` query per category (with `ConsistencyLevel: eventual`); their total is reported as 0. While the account lacks the permission for the category list (403), there are none.
 
 `toMessageSummary` (`src/providers/microsoft/mappers.ts`) puts the message's `parentFolderId` first in `mailboxIds`, then its categories as `view:category:<name>`.
+
+`getRawMessage` ("Show original") reads `me/messages/{id}/$value`, the MIME content as Exchange keeps it (in the desktop app through the native side, like every request).
 
 ### Lists, views and search
 

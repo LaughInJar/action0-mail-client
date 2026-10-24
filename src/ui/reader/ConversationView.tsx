@@ -18,6 +18,7 @@ import { markReadDelayMs } from "../../state/settings";
 import { mailActionItems } from "../actions/mailActionItems";
 import { OverflowToolbar } from "../common/OverflowToolbar";
 import { useBreakpoint } from "../layout/useBreakpoint";
+import { originalItems, useOriginalActions } from "../original/originalActions";
 import { answerItems } from "./answerItems";
 import { useMailActions, type MailActions } from "../actions/useMailActions";
 import { errorMessage } from "../common/errorMessage";
@@ -72,6 +73,7 @@ export function ConversationView({
   const { data: mailboxes } = useMailboxList(accountId);
   const actions = useMailActions();
   const compose = useComposeActions();
+  const original = useOriginalActions();
   const messages = useMemo(() => {
     if (!thread) return undefined;
     if (!mailbox) return thread.messages;
@@ -184,6 +186,7 @@ export function ConversationView({
                   },
                   t.actions,
                 ),
+                ...originalItems(original, answering, t),
               ]
             : []
         }

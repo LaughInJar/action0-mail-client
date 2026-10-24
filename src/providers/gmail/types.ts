@@ -52,6 +52,8 @@ export interface GmailMessage {
   internalDate?: string;
   sizeEstimate?: number;
   payload?: GmailMessagePart;
+  /** The whole message, base64url (only with `format=raw`). */
+  raw?: string;
 }
 
 export interface GmailListMessagesResponse {

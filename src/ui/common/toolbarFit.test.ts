@@ -42,4 +42,16 @@ describe("which toolbar buttons fit", () => {
   it("never moves items without `keep`", () => {
     expect(shown(10)).toEqual(["archive", "trash"]);
   });
+
+  it("never shows menu-only items as buttons, and keeps room for ⋯", () => {
+    const withOriginal = [
+      ...items,
+      { ...item("original", "mail"), menuOnly: true },
+    ];
+    const fit = (width: number) => [...fittingItems(withOriginal, width, 36)];
+    // All six buttons plus ⋯: 7 × 36 + 6 × 4 + 13 = 289.
+    expect(fit(289)).toEqual(items.map((i) => i.id));
+    // One pixel less: forward goes into ⋯ too.
+    expect(fit(288)).toEqual(["reply", "archive", "trash", "star", "read"]);
+  });
 });

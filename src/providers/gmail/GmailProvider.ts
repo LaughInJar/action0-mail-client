@@ -251,6 +251,7 @@ export class GmailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
+    rawSource: true,
     signatureStore: "provider",
   };
   readonly #http: GmailHttp;
@@ -974,6 +975,19 @@ export class GmailProvider implements MailProvider {
       signal,
     );
     return new Blob([decodeBase64Url(attachment.data)]);
+  }
+
+  /** `format=raw`: the message as Gmail stores it, base64url. */
+  async getRawMessage(
+    id: MessageId,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    const message = await this.#http.get<GmailMessage>(
+      `messages/${encodeURIComponent(id)}`,
+      { format: "raw" },
+      signal,
+    );
+    return decodeBase64Url(message.raw ?? "");
   }
 
   /** Gmail archives by removing the `INBOX` label. */

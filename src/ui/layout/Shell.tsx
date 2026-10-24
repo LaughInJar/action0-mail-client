@@ -36,6 +36,9 @@ import { AddAccountDialog } from "../accounts/AddAccountDialog";
 import { ConfirmHost } from "../common/ConfirmDialog";
 import { QuestionHost } from "../common/QuestionDialog";
 import { SettingsHost } from "../settings/SettingsHost";
+import { OriginalHost } from "../original/OriginalHost";
+import { useOriginalActions } from "../original/originalActions";
+import { useOriginalCommand } from "../original/useOriginalCommand";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { ContextMenuHost } from "../common/ContextMenuHost";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
@@ -81,6 +84,7 @@ function MailApp() {
   const compose = useComposeActions();
   useComposerEffects(breakpoint, compose);
   useComposeCommands(compose);
+  useOriginalCommand(useOriginalActions());
   const fileDrop = useFileDrop(compose);
   const router = useRouter();
   const store = useUiStore();
@@ -187,6 +191,7 @@ function MailApp() {
       <ManageLabelsHost />
       <LabelDialogHost />
       <SettingsHost />
+      <OriginalHost />
       <ConfirmHost />
       <QuestionHost />
       <AddAccountDialog />

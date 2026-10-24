@@ -17,6 +17,7 @@ import { useComposeActions } from "../composer/useComposeActions";
 import { useBreakpoint, useCoarsePointer } from "../layout/useBreakpoint";
 import { answerItems } from "../reader/answerItems";
 import { routeOfRow, useCurrentList } from "./useCurrentList";
+import { originalItems, useOriginalActions } from "../original/originalActions";
 
 /** Props of {@link RowMenu}. */
 export interface RowMenuProps {
@@ -55,6 +56,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const store = useUiStore();
   const router = useRouter();
   const selectedIds = useUi((state) => state.selectedIds);
+  const original = useOriginalActions();
   const chosen = (rows ?? []).filter((row) => keys.includes(row.key));
   if (!route || chosen.length === 0) return null;
   const [single] = chosen.length === 1 ? chosen : [];
@@ -167,6 +169,16 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
       t.actions,
     ),
   );
+  // A conversation row stands for its newest message shown here.
+  const showing = single
+    ? entriesOf(
+        originalItems(
+          original,
+          { accountId: single.accountId, messageId: single.summary.id },
+          t,
+        ),
+      )
+    : [];
   const conversations = chosen.some((row) => row.thread !== undefined);
   const title = single
     ? single.summary.subject || t.common.noSubject
@@ -178,7 +190,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
       label={title}
       title={title}
       at={at}
-      entries={grouped(opening, answering, acting, sender)}
+      entries={grouped(opening, answering, acting, sender, showing)}
       onClose={onClose}
     />
   );
