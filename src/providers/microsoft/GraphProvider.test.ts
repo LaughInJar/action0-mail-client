@@ -15,8 +15,17 @@ import {
 } from "../../core/ids";
 import { MemoryStorage } from "../../test/memoryStorage";
 import { FakeGraph } from "../../test/graphServer";
-import { ALL_VIEW_ID, FLAGGED_VIEW_ID } from "./folders";
-import { GraphProvider, UPLOAD_CHUNK_BYTES } from "./GraphProvider";
+import {
+  ALL_VIEW_ID,
+  CATEGORIES_GROUP_ID,
+  categoryId,
+  FLAGGED_VIEW_ID,
+} from "./folders";
+import {
+  GraphProvider,
+  MAX_PAGE_SIZE,
+  UPLOAD_CHUNK_BYTES,
+} from "./GraphProvider";
 import { GRAPH_BASE, GraphHttp } from "./http";
 
 const server = setupServer();
@@ -391,6 +400,87 @@ describe("GraphProvider messages", () => {
     expect(graph.messages).toEqual([]);
     const error = await failure(provider.emptyMailbox(box("inbox-id")));
     expect(isMailError(error) && error.reason).toBe("onlyTrashSpam");
+  });
+});
+
+describe("GraphProvider.markAllRead", () => {
+  const unread = (graph: FakeGraph) =>
+    graph.messages
+      .filter((message) => message.isRead === false)
+      .map((message) => message.id)
+      .sort();
+
+  it("marks the unread mail of a folder read, batched, and returns its ids", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "a" });
+    graph.add({ id: "b", isRead: true });
+    graph.add({ id: "c" });
+    graph.add({ id: "p" }, "projects-id");
+    const ids = await provider.markAllRead(box("inbox-id"));
+    expect([...ids].sort()).toEqual(["a", "c"]);
+    expect(unread(graph)).toEqual(["p"]);
+    const [list] = graph.requests(
+      "GET",
+      /^me\/mailFolders\/inbox-id\/messages$/,
+    );
+    expect(list?.query.get("$filter")).toBe("isRead eq false");
+    const patches = graph.requests("PATCH", /^me\/messages\//);
+    expect(patches.map((request) => request.body)).toEqual([
+      { isRead: true },
+      { isRead: true },
+    ]);
+    expect(patches.every((request) => request.batched)).toBe(true);
+  });
+
+  it("lists every page before changing anything", async () => {
+    const { graph, provider } = setup();
+    for (let n = 0; n <= MAX_PAGE_SIZE; n++) graph.add({ id: `m${String(n)}` });
+    const ids = await provider.markAllRead(box("inbox-id"));
+    expect(ids).toHaveLength(MAX_PAGE_SIZE + 1);
+    expect(unread(graph)).toEqual([]);
+    expect(
+      graph.requests("GET", /^me\/mailFolders\/inbox-id\/messages$/),
+    ).toHaveLength(2);
+  });
+
+  it("leaves out Deleted Items, Junk and Outlook's own folders in views", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "inbox" });
+    graph.add({ id: "projects" }, "projects-id");
+    graph.add({ id: "trash" }, "deleteditems");
+    graph.add({ id: "junk" }, "junkemail");
+    graph.add({ id: "history" }, "conversationhistory");
+    const ids = await provider.markAllRead(ALL_VIEW_ID);
+    expect([...ids].sort()).toEqual(["inbox", "projects"]);
+    expect(unread(graph)).toEqual(["history", "junk", "trash"]);
+  });
+
+  it("marks only what the Flagged view or a category lists", async () => {
+    const { graph, provider } = setup();
+    const flagged = { flag: { flagStatus: "flagged" } } as const;
+    graph.add({ id: "flagged", ...flagged }, "archive");
+    graph.add({ id: "flagged-trash", ...flagged }, "deleteditems");
+    graph.add({ id: "team", categories: ["Team"] }, "projects-id");
+    graph.add({ id: "team-junk", categories: ["Team"] }, "junkemail");
+    graph.add({ id: "plain" });
+
+    expect(await provider.markAllRead(FLAGGED_VIEW_ID)).toEqual(["flagged"]);
+    expect(
+      graph
+        .requests("GET", /^me\/messages$/)
+        .at(-1)
+        ?.query.get("$filter"),
+    ).toBe("isRead eq false and flag/flagStatus eq 'flagged'");
+    expect(await provider.markAllRead(categoryId("Team"))).toEqual(["team"]);
+    expect(unread(graph)).toEqual(["flagged-trash", "plain", "team-junk"]);
+  });
+
+  it("refuses the categories' group", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "a" });
+    const error = await failure(provider.markAllRead(CATEGORIES_GROUP_ID));
+    expect(isMailError(error) && error.reason).toBe("notAFolder");
+    expect(unread(graph)).toEqual(["a"]);
   });
 });
 
@@ -794,6 +884,23 @@ describe("GraphProvider categories", () => {
       limit: 10,
     });
     expect(searched.items.map((m) => m.id)).toEqual([]);
+  });
+
+  it("lists a category's conversations oldest first", async () => {
+    const { graph, provider } = withCategories();
+    // Outlook gives every message a conversation.
+    for (const message of graph.messages)
+      graph.change(message.id, { conversationId: `conv-${message.id}` });
+    const team = (await provider.listMailboxes()).find(
+      (m) => m.name === "Team",
+    );
+    if (!team) throw new Error("no category");
+    const { items } = await provider.listThreads({
+      mailboxId: team.id,
+      order: "oldest",
+      limit: 10,
+    });
+    expect(items.length).toBeGreaterThan(0);
   });
 
   it("adds and removes categories, keeping the others", async () => {

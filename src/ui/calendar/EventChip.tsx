@@ -1,12 +1,23 @@
+import { useRef } from "react";
 import { isAllDay } from "../../core/calendar";
 import type { PlacedEvent } from "../../data/calendar";
 import { useT } from "../../i18n/context";
+import {
+  atPointer,
+  belowElement,
+  isMenuKey,
+  wantsAppMenu,
+} from "../common/menuPosition";
+import { useLongPress } from "../messages/useLongPress";
 import { eventColor, eventKey, shortTime, titleOf } from "./format";
+import { useOpenEventMenu } from "./useEventMenu";
 
 /**
  * An event in a view, in its calendar's colour: a bar (`compact`), a block
  * that fills its place in the time grid (`fill`), or a line in a list.
  * Unanswered invitations are outlined, declined ones struck through.
+ * Right-click, the Menu key or a long press opens its menu (a draggable
+ * one's long press lifts it: the grid opens the menu when it isn't moved).
  */
 export function EventChip({
   placed,
@@ -39,6 +50,11 @@ export function EventChip({
   const time = shortTime(event, t, day);
   const answer = event.myResponse;
   const solid = isAllDay(event) || compact || fill;
+  const openMenu = useOpenEventMenu();
+  const pointerType = useRef("mouse");
+  const longPress = useLongPress((_target, at) => {
+    openMenu(placed, atPointer(at));
+  });
   const tone =
     answer === "needsAction"
       ? "border border-dashed border-[var(--event-color)] bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
@@ -49,14 +65,36 @@ export function EventChip({
     <button
       type="button"
       onClick={() => {
+        if (longPress.consumeClick()) return;
         onOpen(placed);
       }}
+      onPointerDown={(down) => {
+        pointerType.current = down.pointerType;
+        if (!draggable) longPress.onPointerDown(down);
+      }}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
+      onContextMenu={(menu) => {
+        // Touch: the long press (or the grid) opens it.
+        if (pointerType.current !== "mouse") longPress.onContextMenu(menu);
+        else if (wantsAppMenu(menu)) {
+          menu.preventDefault();
+          openMenu(placed, atPointer(menu));
+        }
+      }}
+      onKeyDown={(key) => {
+        if (!isMenuKey(key)) return;
+        key.preventDefault();
+        openMenu(placed, belowElement(key.currentTarget));
+      }}
+      aria-keyshortcuts="Shift+F10"
       style={eventColor(placed)}
       aria-label={`${title}, ${time}`}
       data-event-key={eventKey(placed)}
       className={`@container relative flex w-full min-w-0 overflow-hidden rounded text-left text-xs leading-tight hover:brightness-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${tone} ${
         answer === "declined" ? "line-through opacity-60" : ""
-      } ${dragging ? "opacity-40" : ""} ${draggable ? "touch-manipulation [-webkit-touch-callout:none]" : ""} ${fill && !short ? "h-full flex-col items-start px-1 py-0.5" : fill ? "h-full items-start gap-1 px-1 py-px text-[0.65rem]" : "items-center gap-1 px-1 py-0.5"}`}
+      } ${dragging ? "opacity-40" : ""} touch-manipulation select-none [-webkit-touch-callout:none] ${fill && !short ? "h-full flex-col items-start px-1 py-0.5" : fill ? "h-full items-start gap-1 px-1 py-px text-[0.65rem]" : "items-center gap-1 px-1 py-0.5"}`}
     >
       {!solid && (
         <span

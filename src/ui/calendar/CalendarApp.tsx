@@ -30,6 +30,7 @@ import {
 } from "./dates";
 import { EventDetails } from "./EventDetails";
 import { EventEditor } from "./EventEditor";
+import { EventMenu } from "./EventMenu";
 import { eventKey, findEvent, viewTitle } from "./format";
 import {
   newValues,
@@ -88,6 +89,7 @@ function Calendar({
   const actions = useEventActions();
   const ask = useAsk();
   const form = useUi((state) => state.eventForm);
+  const contextMenu = useUi((state) => state.contextMenu);
   const editorKey = route.create
     ? "new"
     : route.edit && route.event !== undefined
@@ -463,6 +465,25 @@ function Calendar({
     )
   );
 
+  // An event's context menu (right-click, long press, the Menu key).
+  const menuEvent =
+    contextMenu?.kind === "event"
+      ? findEvent(events, contextMenu.eventKey)
+      : undefined;
+  const menu = contextMenu && menuEvent && (
+    <EventMenu
+      key={JSON.stringify(contextMenu)}
+      placed={menuEvent}
+      at={contextMenu.at}
+      onOpen={openEvent}
+      onEdit={editEvent}
+      onDelete={removeEvent}
+      onClose={() => {
+        store.getState().setContextMenu(null);
+      }}
+    />
+  );
+
   // Phones: the open event (or the editor) is a screen of its own.
   if (breakpoint === "narrow" && panel)
     return <div className="min-h-0 min-w-0 flex-1">{panel}</div>;
@@ -516,6 +537,7 @@ function Calendar({
           <Icon name="plus" className="size-6" />
         </button>
       )}
+      {menu}
     </>
   );
 }

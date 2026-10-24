@@ -445,3 +445,103 @@ export function useEmptyMailbox() {
       ]),
   });
 }
+
+/** Variables of {@link useMarkAllRead}. */
+export type MarkAllReadVariables = EmptyMailboxVariables;
+
+const markRead = (summary: MessageSummary): MessageSummary =>
+  summary.flags.seen
+    ? summary
+    : { ...summary, flags: { ...summary.flags, seen: true } };
+
+/**
+ * Marks everything in a mailbox read. Its lists turn read right away and
+ * its unread count drops to 0; the provider answers with the ids it
+ * changed, which undo marks unread again. Rolls back if the provider
+ * refuses.
+ */
+export function useMarkAllRead() {
+  const queryClient = useQueryClient();
+  const registry = useAccountRegistry();
+
+  return useMutation({
+    mutationFn: ({ accountId, mailboxId }: MarkAllReadVariables) => {
+      const handle = registry.get(accountId);
+      if (!handle) {
+        return Promise.reject(
+          new MailError(
+            "auth-required",
+            "This account is no longer connected.",
+            { reason: "notConnected" },
+          ),
+        );
+      }
+      return handle.provider.markAllRead(mailboxId);
+    },
+    onMutate: async ({ accountId, mailboxId }) => {
+      const lists = queryKeys.messages(accountId, mailboxId);
+      const threadLists = queryKeys.threads(accountId, mailboxId);
+      await queryClient.cancelQueries({ queryKey: lists });
+      await queryClient.cancelQueries({ queryKey: threadLists });
+      const snapshot = queryClient.getQueriesData({
+        queryKey: queryKeys.account(accountId),
+      });
+      queryClient.setQueriesData<MessageListData>(
+        { queryKey: lists },
+        (data) =>
+          data
+            ? {
+                ...data,
+                pages: data.pages.map((page) => ({
+                  ...page,
+                  items: page.items.map(markRead),
+                })),
+              }
+            : data,
+      );
+      queryClient.setQueriesData<ThreadListData>(
+        { queryKey: threadLists },
+        (data) =>
+          data
+            ? {
+                ...data,
+                pages: data.pages.map((page) => ({
+                  ...page,
+                  items: page.items.map((thread) => ({
+                    ...thread,
+                    messages: thread.messages.map(markRead),
+                  })),
+                })),
+              }
+            : data,
+      );
+      queryClient.setQueryData<readonly Mailbox[]>(
+        queryKeys.mailboxes(accountId),
+        (mailboxes) =>
+          mailboxes?.map((mailbox) =>
+            mailbox.id === mailboxId && mailbox.counts
+              ? { ...mailbox, counts: { ...mailbox.counts, unread: 0 } }
+              : mailbox,
+          ),
+      );
+      return { snapshot };
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.snapshot ?? [])
+        queryClient.setQueryData(key, data);
+    },
+    // Other lists and counts with the same messages catch up from the server.
+    onSettled: (_data, _error, { accountId }) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.mailboxes(accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["acct", accountId, "messages"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["acct", accountId, "threads"],
+        }),
+      ]),
+  });
+}

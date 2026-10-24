@@ -19,14 +19,14 @@ import {
   multipart,
   utf8Base64Url,
 } from "../../test/gmailFixtures";
-import { GmailProvider } from "./GmailProvider";
+import { BATCH_MODIFY_LIMIT, GmailProvider } from "./GmailProvider";
 import {
   GMAIL_API_BASE,
   GMAIL_UPLOAD_BASE,
   GmailHttp,
   PEOPLE_API_BASE,
 } from "./http";
-import { ALL_MAIL_ID, GMAIL_LABEL_COLORS } from "./labels";
+import { ALL_MAIL_ID, CATEGORIES_ID, GMAIL_LABEL_COLORS } from "./labels";
 import type { GmailLabel } from "./types";
 
 const server = setupServer();
@@ -461,6 +461,98 @@ describe("GmailProvider trash, spam and deletion", () => {
     ).rejects.toMatchObject({
       code: "provider",
     });
+  });
+});
+
+describe("GmailProvider.markAllRead", () => {
+  /** Lists `pages` of unread ids (each a page of `messages.list`), recording the queries. */
+  function serveUnread(pages: readonly (readonly string[])[]) {
+    const queries: URLSearchParams[] = [];
+    const modified: { ids: string[]; removeLabelIds?: string[] }[] = [];
+    server.use(
+      http.get(url("messages"), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        queries.push(query);
+        const index = Number(query.get("pageToken") ?? 0);
+        return HttpResponse.json({
+          messages: (pages[index] ?? []).map((id) => ({ id, threadId: id })),
+          ...(index + 1 < pages.length
+            ? { nextPageToken: String(index + 1) }
+            : {}),
+        });
+      }),
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        modified.push((await request.json()) as (typeof modified)[number]);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return { queries, modified };
+  }
+
+  it("marks the unread messages of a label read, from every page, and returns their ids", async () => {
+    const { queries, modified } = serveUnread([["a", "b"], ["c"]]);
+    await expect(
+      provider().markAllRead(asMailboxId("Label_1")),
+    ).resolves.toEqual(["a", "b", "c"]);
+    expect(queries).toHaveLength(2);
+    for (const query of queries) {
+      expect(query.getAll("labelIds")).toEqual(["Label_1"]);
+      expect(query.get("q")).toBe("is:unread");
+      expect(query.has("includeSpamTrash")).toBe(false);
+    }
+    expect(modified).toEqual([
+      { ids: ["a", "b", "c"], removeLabelIds: ["UNREAD"] },
+    ]);
+  });
+
+  it("lists views like their listing: All Mail and Starred without Spam and Trash", async () => {
+    const { queries, modified } = serveUnread([]);
+    const gmail = provider();
+    await expect(gmail.markAllRead(asMailboxId(ALL_MAIL_ID))).resolves.toEqual(
+      [],
+    );
+    await gmail.markAllRead(asMailboxId("STARRED"));
+    await gmail.markAllRead(asMailboxId("SPAM"));
+    expect(
+      queries.map((query) => [
+        query.getAll("labelIds"),
+        query.get("includeSpamTrash"),
+        query.get("q"),
+      ]),
+    ).toEqual([
+      [[], null, "is:unread"],
+      [["STARRED"], null, "is:unread"],
+      [["SPAM"], "true", "is:unread"],
+    ]);
+    // Nothing unread: nothing to change.
+    expect(modified).toEqual([]);
+  });
+
+  it("changes at most 1000 messages per batchModify", async () => {
+    const ids = Array.from({ length: 1500 }, (_, i) => `m${String(i)}`);
+    const { modified } = serveUnread([
+      ids.slice(0, 500),
+      ids.slice(500, 1000),
+      ids.slice(1000),
+    ]);
+    expect(await provider().markAllRead(asMailboxId("INBOX"))).toHaveLength(
+      1500,
+    );
+    expect(modified.map((body) => body.ids.length)).toEqual([
+      BATCH_MODIFY_LIMIT,
+      500,
+    ]);
+    expect(modified.flatMap((body) => body.ids)).toEqual(ids);
+  });
+
+  it("rejects mailbox ids that only exist in our tree", async () => {
+    const gmail = provider();
+    await expect(
+      gmail.markAllRead(asMailboxId(CATEGORIES_ID)),
+    ).rejects.toMatchObject({ reason: "notALabel" });
+    await expect(
+      gmail.markAllRead(asMailboxId("synthetic:Work")),
+    ).rejects.toMatchObject({ reason: "notALabel" });
   });
 });
 

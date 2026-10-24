@@ -382,6 +382,21 @@ describe("creating and editing events", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens an event's menu when it's lifted and let go in place", async () => {
+    layOutWeek();
+    renderApp({ hash: WEEK });
+    const lunch = await chip(/^Lunch with Sophie/);
+    pointer("Down", lunch, at(3, 13), "touch");
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    pointer("Up", window, at(3, 13), "touch");
+    // The lifting finger's click doesn't open the event.
+    fireEvent.click(lunch, { detail: 1 });
+    const menu = await screen.findByRole("menu", { name: "Lunch with Sophie" });
+    expect(within(menu).getByRole("menuitem", { name: "Open" })).toHaveFocus();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Moved/)).not.toBeInTheDocument();
+  });
+
   it("edits a repeating meeting: which events, and whether the guests hear about it (again on undo)", async () => {
     const { user, services } = renderApp({ hash: WEEK });
     const [standup] = await screen.findAllByRole("button", {

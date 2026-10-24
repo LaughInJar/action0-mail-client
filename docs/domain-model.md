@@ -148,6 +148,8 @@ export interface ListRow {
 
 A conversation row is keyed and routed by its _oldest_ message, which stays the same while replies come in. Its `summary` is the newest message that is visible in the current mailbox. `threadIdOf` (`src/data/optimistic.ts`) treats a message without a `threadId` as a conversation of its own.
 
+Actions on a conversation row cover its messages. Actions with `exact` (the context menu of one message inside an open conversation) cover only the messages named, and their toasts count messages, not conversations.
+
 ### Trash and Spam isolate
 
 Like Gmail, messages in Trash or Spam show up only there, even if they still carry other labels. `isolatingMailboxes` (`src/data/optimistic.ts`) returns the mailboxes with role `trash` or `junk`, and every membership test respects them:
@@ -257,7 +259,7 @@ export interface MailboxEditing {
 | Graph `folder`             | yes      | none                                             | yes    | no     |
 | Graph `label` (categories) | no       | Outlook's 25 presets (`OUTLOOK_CATEGORY_COLORS`) | no     | no     |
 
-The label menu, the label dialog and Manage labels read these rules (`src/ui/labels/`). `NewMailbox.kind` chooses what `createMailbox` creates when an account has several editable kinds; it defaults to the account's own kind (an Outlook folder, not a category). `MailboxChange` leaves out what doesn't change and uses `null` to remove the parent or the colour.
+The mailbox context menu (`src/ui/mailboxes/mailboxMenuItems.ts`), the label dialog and Manage labels read these rules (`src/ui/labels/`). `NewMailbox.kind` chooses what `createMailbox` creates when an account has several editable kinds; it defaults to the account's own kind (an Outlook folder, not a category). `MailboxChange` leaves out what doesn't change and uses `null` to remove the parent or the colour.
 
 Actions on a selection from several accounts (All inboxes) are offered when any of the accounts can do them, and each account only gets the intents it supports (`anyCan` in `src/ui/actions/useMailActions.ts`).
 

@@ -122,8 +122,12 @@ const MAX_THREAD_MESSAGES = 100;
 /** Messages read at most to list conversations oldest first. */
 const MAX_OLDEST_SCAN = 20_000;
 
+/** Most messages Graph returns per page (`$top`). */
+export const MAX_PAGE_SIZE = 1000;
+
 /** `$select` for ordering conversations: just enough to group and filter. */
-const ORDER_SELECT = "id,conversationId,receivedDateTime,parentFolderId,flag";
+const ORDER_SELECT =
+  "id,conversationId,receivedDateTime,parentFolderId,flag,categories";
 
 /** Options of {@link GraphProvider}. */
 export interface GraphProviderOptions {
@@ -542,6 +546,43 @@ export class GraphProvider implements MailProvider {
       ),
     );
     return {};
+  }
+
+  /**
+   * Lists the folder's unread mail, every page (for a view: all mail with the
+   * view's filter, keeping only what the view shows), then marks it read,
+   * batched. Listing finishes first: changing `isRead` while paging through
+   * `isRead eq false` would shift the pages.
+   */
+  async markAllRead(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<readonly MessageId[]> {
+    // The group node isn't a view of its own; listing it would read all mail.
+    if (mailboxId === CATEGORIES_GROUP.id) throw notAFolder(mailboxId);
+    const keep = await this.#viewFilter(mailboxId);
+    const filter = viewFilterOf(mailboxId);
+    const unread = await this.#all<GraphMessage>(
+      isViewId(mailboxId)
+        ? "me/messages"
+        : `me/mailFolders/${enc(mailboxId)}/messages`,
+      {
+        $filter:
+          filter === undefined
+            ? "isRead eq false"
+            : `isRead eq false and ${filter}`,
+        // What the view's filter looks at.
+        $select: "id,parentFolderId,flag,categories",
+        $top: MAX_PAGE_SIZE,
+      },
+      signal,
+    );
+    const ids = unread
+      .map(toMessageSummary)
+      .filter(keep)
+      .map((message) => message.id);
+    await this.setFlags(ids, { seen: true }, signal);
+    return ids;
   }
 
   move(
@@ -1219,7 +1260,7 @@ export class GraphProvider implements MailProvider {
       ? await this.#matches(mailboxId, text, keep, signal)
       : (
           await this.#all<GraphMessage>(
-            this.#listUrl(mailboxId, "oldest", ORDER_SELECT, 1000),
+            this.#listUrl(mailboxId, "oldest", ORDER_SELECT, MAX_PAGE_SIZE),
             {},
             signal,
             MAX_OLDEST_SCAN,

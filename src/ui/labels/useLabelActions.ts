@@ -238,7 +238,7 @@ export function useLabelActions(): LabelActions {
         const l = textsOf(accountId, kindOf(accountId, mailboxId));
         const state = store.getState();
         state.setConfirm(null);
-        state.setLabelMenu(null);
+        state.setContextMenu(null);
         const dialog = state.labelDialog;
         if (dialog?.mode === "edit" && dialog.mailboxId === mailboxId)
           state.setLabelDialog(null);

@@ -65,6 +65,8 @@ export interface PickerState {
   readonly ids: readonly MessageId[];
   /** The rows are conversations. */
   readonly conversations?: boolean;
+  /** The ids are messages to act on as they are (a message in the reader). */
+  readonly exact?: boolean;
 }
 
 /** A destructive action waiting for the user's confirmation. */
@@ -115,17 +117,41 @@ export type MailConfirmAction = Extract<
   { readonly kind: "delete-forever" | "empty" }
 >;
 
-/** The open label menu (in the folder tree) and where it shows. */
-export interface LabelMenuState {
-  readonly accountId: AccountId;
-  readonly mailboxId: MailboxId;
-  /** Viewport position of the menu's left edge. */
+/** Where a context menu shows (viewport coordinates). */
+export interface MenuPosition {
+  /** The menu's left edge. */
   readonly x: number;
   /** Where its top goes, when it fits below that. */
   readonly y: number;
   /** Where its bottom goes otherwise (above what it belongs to). */
   readonly flipY: number;
 }
+
+/** The open context menu: what it's about, and where it shows. */
+export type ContextMenuState = { readonly at: MenuPosition } & (
+  | {
+      /** Rows of the message list: the selection, or one row. */
+      readonly kind: "rows";
+      readonly keys: readonly MessageKey[];
+    }
+  | {
+      /** A mailbox in the folder tree. */
+      readonly kind: "mailbox";
+      readonly accountId: AccountId;
+      readonly mailboxId: MailboxId;
+    }
+  | {
+      /** One message in the reader (also inside a conversation). */
+      readonly kind: "message";
+      readonly accountId: AccountId;
+      readonly messageId: MessageId;
+    }
+  | {
+      /** A calendar event (see `eventKey`). */
+      readonly kind: "event";
+      readonly eventKey: string;
+    }
+);
 
 /** The open label dialog: a new label, or changes to one. */
 export type LabelDialogState =
@@ -223,7 +249,7 @@ export interface UiState extends selection.SelectionState {
   readonly pendingSends: readonly PendingSend[];
   /** Messages whose list the user left in this session. Session only. */
   readonly unsubscribed: ReadonlySet<MessageId>;
-  readonly labelMenu: LabelMenuState | null;
+  readonly contextMenu: ContextMenuState | null;
   readonly labelDialog: LabelDialogState | null;
   /** The account whose labels "Manage labels" shows. */
   readonly manageLabels: AccountId | null;
@@ -320,7 +346,7 @@ export interface UiActions {
   /** Removes a pending send (sent, failed or undone) and returns it. */
   readonly takePendingSend: (id: number) => PendingSend | undefined;
   readonly markUnsubscribed: (id: MessageId) => void;
-  readonly setLabelMenu: (menu: LabelMenuState | null) => void;
+  readonly setContextMenu: (menu: ContextMenuState | null) => void;
   readonly setLabelDialog: (dialog: LabelDialogState | null) => void;
   readonly setManageLabels: (accountId: AccountId | null) => void;
   readonly setQuestion: (question: QuestionState | null) => void;
@@ -435,7 +461,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           composer: null,
           pendingSends: [],
           unsubscribed: new Set(),
-          labelMenu: null,
+          contextMenu: null,
           labelDialog: null,
           manageLabels: null,
           question: null,
@@ -651,8 +677,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           markUnsubscribed: (id) => {
             set((s) => ({ unsubscribed: new Set(s.unsubscribed).add(id) }));
           },
-          setLabelMenu: (labelMenu) => {
-            set({ labelMenu });
+          setContextMenu: (contextMenu) => {
+            set({ contextMenu });
           },
           setLabelDialog: (labelDialog) => {
             set({ labelDialog });

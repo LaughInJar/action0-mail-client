@@ -365,6 +365,18 @@ export class FakeMailProvider implements MailProvider {
     }));
   }
 
+  /** Marks what {@link listMessages} lists for the mailbox read, if unread. */
+  async markAllRead(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<readonly MessageId[]> {
+    const ids = this.#messagesIn(mailboxId)
+      .filter((message) => !message.flags.seen)
+      .map((message) => message.id);
+    await this.setFlags(ids, { seen: true }, signal);
+    return ids;
+  }
+
   /** Label semantics, like Gmail: add `to`, leave `from` unless it is a view. */
   move(
     ids: readonly MessageId[],

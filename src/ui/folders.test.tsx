@@ -121,7 +121,14 @@ describe("an account with folders (Outlook)", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Rename…", "Move into…", "Add subfolder…", "Delete…"]);
+    ).toEqual([
+      "Open in a new tab",
+      "Mark all as read",
+      "Rename…",
+      "Move into…",
+      "Add subfolder…",
+      "Delete…",
+    ]);
 
     await user.click(within(menu).getByRole("menuitem", { name: "Delete…" }));
     const confirm = await screen.findByRole("alertdialog", {
