@@ -1,7 +1,7 @@
 import { isAllDay } from "../../core/calendar";
 import type { PlacedEvent } from "../../data/calendar";
 import { useT } from "../../i18n/context";
-import { eventColor, shortTime, titleOf } from "./format";
+import { eventColor, eventKey, shortTime, titleOf } from "./format";
 
 /**
  * An event in a view, in its calendar's colour: a bar (`compact`), a block
@@ -15,6 +15,9 @@ export function EventChip({
   fill = false,
   short = false,
   day,
+  dragging = false,
+  draggable = false,
+  resizable = false,
 }: {
   placed: PlacedEvent;
   onOpen: (placed: PlacedEvent) => void;
@@ -24,6 +27,11 @@ export function EventChip({
   short?: boolean;
   /** The day it's listed under (month view), for multi-day events. */
   day?: Date;
+  /** It's being dragged elsewhere (shown faded). */
+  dragging?: boolean;
+  /** It can be dragged; `resizable` adds a handle on its bottom edge. */
+  draggable?: boolean;
+  resizable?: boolean;
 }) {
   const t = useT();
   const { event } = placed;
@@ -45,9 +53,10 @@ export function EventChip({
       }}
       style={eventColor(placed)}
       aria-label={`${title}, ${time}`}
-      className={`@container flex w-full min-w-0 overflow-hidden rounded text-left text-xs leading-tight hover:brightness-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${tone} ${
+      data-event-key={eventKey(placed)}
+      className={`@container relative flex w-full min-w-0 overflow-hidden rounded text-left text-xs leading-tight hover:brightness-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${tone} ${
         answer === "declined" ? "line-through opacity-60" : ""
-      } ${fill && !short ? "h-full flex-col items-start px-1 py-0.5" : fill ? "h-full items-start gap-1 px-1 py-px text-[0.65rem]" : "items-center gap-1 px-1 py-0.5"}`}
+      } ${dragging ? "opacity-40" : ""} ${draggable ? "touch-manipulation [-webkit-touch-callout:none]" : ""} ${fill && !short ? "h-full flex-col items-start px-1 py-0.5" : fill ? "h-full items-start gap-1 px-1 py-px text-[0.65rem]" : "items-center gap-1 px-1 py-0.5"}`}
     >
       {!solid && (
         <span
@@ -66,6 +75,15 @@ export function EventChip({
           className={`truncate opacity-80 ${short ? "hidden shrink-0 @min-[7rem]:inline" : "text-[0.65rem]"}`}
         >
           {short ? time.split(/[–-]/)[0]?.trim() : time}
+        </span>
+      )}
+      {resizable && (
+        <span
+          aria-hidden="true"
+          data-resize=""
+          className="absolute inset-x-0 bottom-0 flex h-1.5 cursor-ns-resize justify-center pointer-coarse:h-3"
+        >
+          <span className="mt-auto mb-0.5 hidden h-0.5 w-6 rounded-full bg-current opacity-50 pointer-coarse:block" />
         </span>
       )}
     </button>

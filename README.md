@@ -2,7 +2,7 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations.
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several accounts side by side, Gmail and Microsoft mixed.
@@ -21,7 +21,8 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
 - Conversation view (Settings → Reading, off by default): one row per conversation ("Anna, me 3"), and the reader shows the whole conversation, oldest first, with older read messages folded to one line. Your replies and drafts show in place. Archive, labels, delete and the other actions apply to the whole conversation (in Microsoft accounts: to its messages in the folder you're in, like Outlook, so your sent replies stay in Sent Items); <kbd>n</kbd>/<kbd>p</kbd> move between its messages, <kbd>Enter</kbd> opens or closes one, and <kbd>r</kbd>/<kbd>f</kbd> answer the one at the cursor.
-- A calendar (the **Mail | Calendar** switch at the top left, or <kbd>g</kbd> <kbd>c</kbd>): the calendars of every Google and Microsoft account, and calendars added by their iCal address, in one week, month or agenda view (day and agenda on phones). Tick or untick each calendar; overlapping events sit side by side. Invitations get **Yes / Maybe / No**, in the event and right inside the invitation mail, which also says what else is planned at that time. Changing an answer can be undone (<kbd>z</kbd>). Creating and editing events comes next.
+- A calendar (the **Mail | Calendar** switch at the top left, or <kbd>g</kbd> <kbd>c</kbd>): the calendars of every Google and Microsoft account, and calendars added by their iCal address, in one week, month or agenda view (day and agenda on phones). Tick or untick each calendar; overlapping events sit side by side. Invitations get **Yes / Maybe / No**, in the event and right inside the invitation mail, which also says what else is planned at that time. Changing an answer can be undone (<kbd>z</kbd>).
+- Creating and editing events: **New event** (or <kbd>c</kbd>), a click or a drag across empty time (a day in month view makes an all-day event) opens the editor: title, time, repeats (daily, weekdays, weekly, monthly, yearly; until a date), calendar, Google Meet or Teams video call, location, guests (with the same address suggestions as mail) and description. Drag events to move them, or their bottom edge to change their length; on touch screens a long press lifts an event first. Repeating events ask whether a change is for this event, this and the following ones, or all. On Google calendars, changes to events with guests ask whether to tell them; Microsoft always tells them. Every change can be undone (<kbd>z</kbd>), except deleting a Microsoft meeting with guests (it asks first). Invitations from others and read-only calendars can't be changed.
 - English and German: the interface follows the browser's language, and Settings → General can choose English or Deutsch instead. Dates and numbers follow the browser's regional format (Austrian German writes "Jänner"); German replies quote with "Am 16.10.2026 um 20:59 schrieb …:".
 - Settings (⚙ next to the theme switch): language, list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
 - Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
@@ -178,6 +179,9 @@ Google and Microsoft sign-in do not: both only allow plain `http://` for `localh
 | In the calendar: <kbd>t</kbd>                                               | Today                                                     |
 | In the calendar: <kbd>←</kbd> / <kbd>→</kbd>, <kbd>k</kbd> / <kbd>j</kbd>   | Previous / next day, week or month                        |
 | In the calendar: <kbd>d</kbd> / <kbd>w</kbd> / <kbd>m</kbd> / <kbd>a</kbd>  | Day / week / month / agenda                               |
+| In the calendar: <kbd>c</kbd>                                               | New event                                                 |
+| In the calendar: <kbd>e</kbd> / <kbd>Delete</kbd>                           | Edit / delete the open event                              |
+| In the event editor: <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>        | Save                                                      |
 | <kbd>?</kbd>                                                                | Show all shortcuts                                        |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press starts selecting.
@@ -198,12 +202,13 @@ src/
     microsoft/ Microsoft Graph adapter: HTTP client ($batch, throttling, immutable
                ids), folder mapping, mappers, drafts and upload sessions, delta sync
     ical/      iCal subscriptions: fetched from the browser, parsed with ical.js
-    */calendar Calendar adapters: Google Calendar API, Graph calendars
+    */calendar Calendar adapters: Google Calendar API, Graph calendars (Windows time
+               zone names from CLDR's windowsZones.xml, Unicode License)
     mime/      Builds outgoing MIME messages (shared by raw-message adapters)
     fake/      In-memory provider: tests and the demo account
   accounts/    Account registry: one auth session + provider per account
   data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy;
-               draft saving and sending; calendar sources, events and answers
+               draft saving and sending; calendar sources, events, answers and changes
   compose/     Outgoing mail HTML: quoting, plain-text version, composer content
   state/       UI state (Zustand): focus, selection, layout; hash router
   i18n/        Interface texts in English and German (texts/), language choice, useT()

@@ -36,6 +36,8 @@ export interface AppSettings {
   readonly calendarChoices: Readonly<Record<string, boolean>>;
   /** The calendar view last used on larger screens. */
   readonly calendarView: "week" | "month" | "agenda";
+  /** The calendar the last new event went into, as `<source>|<calendar>` ("" for none yet). */
+  readonly lastEventCalendar: string;
 }
 
 /** The settings of a browser that never changed any. */
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   icsCalendars: [],
   calendarChoices: {},
   calendarView: "week",
+  lastEventCalendar: "",
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -132,6 +135,10 @@ export function parseSettings(value: unknown): AppSettings {
     calendarView: isCalendarView(raw.calendarView)
       ? raw.calendarView
       : d.calendarView,
+    lastEventCalendar:
+      typeof raw.lastEventCalendar === "string"
+        ? raw.lastEventCalendar
+        : d.lastEventCalendar,
   };
 }
 

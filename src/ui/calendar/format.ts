@@ -31,6 +31,14 @@ export function clock(time: number, locale: string): string {
   }).format(time);
 }
 
+/** "09:30 – 10:00" in the interface's locale. */
+export function clockRange(start: number, end: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).formatRange(start, end);
+}
+
 /** The last day an all-day event covers (its end is exclusive). */
 function lastDay(event: CalendarEvent): Date {
   const end =
@@ -47,10 +55,7 @@ export function shortTime(event: CalendarEvent, t: I18n, day?: Date): string {
   // Days in the middle of a multi-day event.
   if (day && start < day.getTime() && end > addDays(day, 1).getTime())
     return t.calendar.allDay;
-  return new Intl.DateTimeFormat(t.locale, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).formatRange(start, end);
+  return clockRange(start, end, t.locale);
 }
 
 /** When an event takes place, in full: "Thursday, 22 October 2026, 11:00–12:00". */

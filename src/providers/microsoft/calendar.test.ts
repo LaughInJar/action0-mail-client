@@ -5,12 +5,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MicrosoftAuthSession } from "../../auth/microsoft/MicrosoftAuthSession";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asCalendarId } from "../../core/calendar";
-import { GraphCalendarProvider } from "./calendar";
+import {
+  GraphCalendarProvider,
+  toCalendarEvent,
+  type GraphEvent,
+} from "./calendar";
 import { GRAPH_BASE, GraphHttp } from "./http";
+import { loadZones } from "./zones";
 
 const server = setupServer();
-beforeAll(() => {
+beforeAll(async () => {
   server.listen({ onUnhandledFrame: "error" });
+  // Tests map events themselves too.
+  await loadZones();
 });
 afterEach(() => {
   server.resetHandlers();
@@ -152,7 +159,8 @@ describe("GraphCalendarProvider", () => {
       title: "Quarterly planning",
       start: {
         dateTime: "2026-10-19T08:00:00.000Z",
-        timeZone: "W. Europe Standard Time",
+        // Outlook's Windows zone, as the IANA zone it stands for.
+        timeZone: "Europe/Berlin",
       },
       location: "Board room",
       meetingUrl: "https://teams.microsoft.com/l/meetup-join/1",
@@ -199,5 +207,369 @@ describe("GraphCalendarProvider", () => {
       { action: "accept", body: { sendResponse: true } },
       { action: "decline", body: { sendResponse: true } },
     ]);
+  });
+});
+
+describe("GraphCalendarProvider changes", () => {
+  const teamsText =
+    '<div style="width:100%"><span style="white-space:nowrap">________________________________________________________________________________</span></div><div class="me-email-text">Microsoft Teams meeting <a href="https://teams.microsoft.com/l/meetup-join/9">Join</a></div>';
+  const master: GraphEvent = {
+    id: "S",
+    subject: "Jour fixe",
+    start: { dateTime: "2026-10-22T08:00:00.0000000", timeZone: "UTC" },
+    end: { dateTime: "2026-10-22T09:00:00.0000000", timeZone: "UTC" },
+    originalStartTimeZone: "W. Europe Standard Time",
+    isAllDay: false,
+    isOrganizer: true,
+    type: "seriesMaster",
+    isOnlineMeeting: true,
+    body: {
+      contentType: "html",
+      content: `<html><head></head><body><p>Agenda first</p>${teamsText}</body></html>`,
+    },
+    organizer: { emailAddress: { name: "Max", address: "max@contoso.com" } },
+    attendees: [
+      {
+        type: "required",
+        status: { response: "accepted" },
+        emailAddress: { name: "Anna", address: "anna@contoso.com" },
+      },
+    ],
+    recurrence: {
+      pattern: {
+        type: "weekly",
+        interval: 1,
+        daysOfWeek: ["thursday"],
+        firstDayOfWeek: "monday",
+      },
+      range: {
+        type: "numbered",
+        startDate: "2026-10-22",
+        numberOfOccurrences: 10,
+        recurrenceTimeZone: "W. Europe Standard Time",
+      },
+    },
+  };
+  /** The second occurrence (29 October, winter time). */
+  const second: GraphEvent = {
+    ...master,
+    id: "O2",
+    type: "occurrence",
+    seriesMasterId: "S",
+    recurrence: null,
+    originalStart: "2026-10-29T09:00:00Z",
+    start: { dateTime: "2026-10-29T09:00:00.0000000", timeZone: "UTC" },
+    end: { dateTime: "2026-10-29T10:00:00.0000000", timeZone: "UTC" },
+  };
+
+  interface Call {
+    readonly method: string;
+    readonly path: string;
+    readonly prefer: string | null;
+    readonly body: Record<string, unknown> | undefined;
+  }
+
+  /** Graph's events in memory; every write is recorded. */
+  function serve(events: GraphEvent[]) {
+    const store = new Map<string, object>(events.map((e) => [e.id, e]));
+    const calls: Call[] = [];
+    let created = 0;
+    const record = async (request: Request) => {
+      const text = await request.text();
+      const body = text
+        ? (JSON.parse(text) as Record<string, unknown>)
+        : undefined;
+      calls.push({
+        method: request.method,
+        path: new URL(request.url).pathname.replace("/v1.0/", ""),
+        prefer: request.headers.get("Prefer"),
+        body,
+      });
+      return body ?? {};
+    };
+    server.use(
+      http.get(url("me/events/:id/instances"), () =>
+        HttpResponse.json({ value: [{ id: "O1" }] }),
+      ),
+      http.get(url("me/events/:id"), ({ params }) => {
+        const found = store.get(String(params.id));
+        return found
+          ? HttpResponse.json(found)
+          : HttpResponse.json(
+              { error: { code: "ErrorItemNotFound" } },
+              { status: 404 },
+            );
+      }),
+      http.post(url("me/calendars/:cal/events"), async ({ request }) => {
+        const body = await record(request);
+        created += 1;
+        const event = {
+          ...body,
+          id: `new-${String(created)}`,
+          start: { dateTime: "2026-10-22T13:00:00.0000000", timeZone: "UTC" },
+          end: { dateTime: "2026-10-22T14:00:00.0000000", timeZone: "UTC" },
+          isOrganizer: true,
+        };
+        store.set(event.id, event);
+        return HttpResponse.json(event);
+      }),
+      http.patch(url("me/events/:id"), async ({ request, params }) => {
+        const body = await record(request);
+        const id = String(params.id);
+        const event = { ...store.get(id), ...body };
+        store.set(id, event);
+        return HttpResponse.json(event);
+      }),
+      http.delete(url("me/events/:id"), async ({ request, params }) => {
+        await record(request);
+        store.delete(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return { calls };
+  }
+
+  const cal = asCalendarId("cal");
+
+  it("offers Teams where the calendar allows it", async () => {
+    server.use(
+      http.get(url("me/calendars"), () =>
+        HttpResponse.json({
+          value: [
+            {
+              id: "cal",
+              name: "Calendar",
+              isDefaultCalendar: true,
+              canEdit: true,
+              allowedOnlineMeetingProviders: ["teamsForBusiness"],
+            },
+          ],
+        }),
+      ),
+    );
+    const [calendar] = await setup().provider.listCalendars();
+    expect(calendar?.videoCall).toBe("teams");
+  });
+
+  it("creates an event in its zone (as Windows names it), with Teams and a repeat; undo deletes it", async () => {
+    const { calls } = serve([]);
+    const { provider } = setup();
+    const { event, undo } = await provider.createEvent(
+      {
+        calendarId: cal,
+        title: "Planning",
+        start: {
+          dateTime: "2026-10-22T13:00:00.000Z",
+          timeZone: "Europe/Vienna",
+        },
+        end: {
+          dateTime: "2026-10-22T14:00:00.000Z",
+          timeZone: "Europe/Vienna",
+        },
+        location: "Room 3",
+        descriptionHtml: "<p>Bring numbers</p>",
+        guests: [{ name: "Anna", address: "anna@contoso.com" }],
+        videoCall: true,
+        repeat: { kind: "weekly", until: "2026-12-31" },
+      },
+      { notify: false },
+    );
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      path: "me/calendars/cal/events",
+      body: {
+        transactionId: expect.any(String) as unknown,
+        subject: "Planning",
+        start: {
+          dateTime: "2026-10-22T15:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+        end: {
+          dateTime: "2026-10-22T16:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+        isAllDay: false,
+        location: { displayName: "Room 3" },
+        body: { contentType: "html", content: "<p>Bring numbers</p>" },
+        attendees: [
+          {
+            emailAddress: { address: "anna@contoso.com", name: "Anna" },
+            type: "required",
+          },
+        ],
+        recurrence: {
+          pattern: { type: "weekly", interval: 1, daysOfWeek: ["thursday"] },
+          range: {
+            type: "endDate",
+            startDate: "2026-10-22",
+            endDate: "2026-12-31",
+            recurrenceTimeZone: "W. Europe Standard Time",
+          },
+        },
+        isOnlineMeeting: true,
+        onlineMeetingProvider: "teamsForBusiness",
+      },
+    });
+    expect(calls[0]?.prefer).toContain('outlook.timezone="UTC"');
+    expect(event).toMatchObject({ title: "Planning", organizedByMe: true });
+
+    await undo({ notify: false });
+    expect(calls[1]).toMatchObject({
+      method: "DELETE",
+      path: "me/events/new-1",
+    });
+  });
+
+  it("moves a whole series like its occurrence moved, and undoes it", async () => {
+    const { calls } = serve([master, second]);
+    const { provider } = setup();
+    const occurrence = toCalendarEvent("cal", second);
+    expect(occurrence).toMatchObject({ seriesId: "S", organizedByMe: true });
+    const change = await provider.updateEvent(
+      occurrence,
+      {
+        start: {
+          dateTime: "2026-10-29T10:00:00.000Z",
+          timeZone: "Europe/Berlin",
+        },
+        end: {
+          dateTime: "2026-10-29T11:00:00.000Z",
+          timeZone: "Europe/Berlin",
+        },
+      },
+      "all",
+      { notify: true },
+    );
+    expect(calls[0]).toMatchObject({
+      method: "PATCH",
+      path: "me/events/S",
+      body: {
+        start: {
+          dateTime: "2026-10-22T11:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+        end: {
+          dateTime: "2026-10-22T12:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+      },
+    });
+    expect(calls[0]?.body).not.toHaveProperty("recurrence");
+
+    await change.undo({ notify: true });
+    expect(calls[1]).toMatchObject({
+      method: "PATCH",
+      path: "me/events/S",
+      body: {
+        start: {
+          dateTime: "2026-10-22T10:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+      },
+    });
+  });
+
+  it("keeps a Teams meeting's join text out of the editor, and in the event", async () => {
+    const { calls } = serve([master]);
+    const { provider } = setup();
+    const event = toCalendarEvent("cal", master);
+    const editable = await provider.loadForEdit(event);
+    expect(editable.draft.descriptionHtml).toBe("<p>Agenda first</p>");
+    expect(editable.videoCallFixed).toBe(true);
+    expect(editable.draft.repeat).toEqual({ kind: "custom" });
+    expect(editable.firstOccurrence).toBe(true);
+    expect(editable.draft.guests).toEqual([
+      { name: "Anna", address: "anna@contoso.com" },
+    ]);
+
+    await provider.updateEvent(
+      event,
+      { descriptionHtml: "<p>New agenda</p>", videoCall: false },
+      "all",
+      { notify: true },
+    );
+    expect(calls[0]?.body).toEqual({
+      body: { contentType: "html", content: `<p>New agenda</p>${teamsText}` },
+    });
+  });
+
+  it("splits a series for 'this and following', counting what took place", async () => {
+    const { calls } = serve([master, second]);
+    const { provider } = setup();
+    const change = await provider.updateEvent(
+      toCalendarEvent("cal", second),
+      { title: "New jour fixe" },
+      "following",
+      { notify: true },
+    );
+    expect(calls[0]).toMatchObject({
+      method: "PATCH",
+      path: "me/events/S",
+      body: {
+        recurrence: {
+          range: {
+            type: "endDate",
+            startDate: "2026-10-22",
+            endDate: "2026-10-28",
+          },
+        },
+      },
+    });
+    expect(calls[0]?.body?.recurrence).not.toHaveProperty(
+      "range.numberOfOccurrences",
+    );
+    expect(calls[1]).toMatchObject({
+      method: "POST",
+      body: {
+        subject: "New jour fixe",
+        start: {
+          dateTime: "2026-10-29T10:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+        recurrence: {
+          range: {
+            type: "numbered",
+            startDate: "2026-10-29",
+            numberOfOccurrences: 9,
+          },
+        },
+        isOnlineMeeting: true,
+      },
+    });
+
+    await change.undo({ notify: true });
+    expect(calls[2]).toMatchObject({
+      method: "DELETE",
+      path: "me/events/new-1",
+    });
+    expect(calls[3]).toMatchObject({
+      method: "PATCH",
+      path: "me/events/S",
+      body: { recurrence: master.recurrence },
+    });
+  });
+
+  it("deletes an occurrence, and brings it back as an event of its own", async () => {
+    const { calls } = serve([master, second]);
+    const { provider } = setup();
+    const change = await provider.deleteEvent(
+      toCalendarEvent("cal", second),
+      "this",
+      { notify: true },
+    );
+    expect(calls[0]).toMatchObject({ method: "DELETE", path: "me/events/O2" });
+    await change.undo({ notify: true });
+    expect(calls[1]).toMatchObject({
+      method: "POST",
+      path: "me/calendars/cal/events",
+      body: {
+        subject: "Jour fixe",
+        start: {
+          dateTime: "2026-10-29T10:00:00",
+          timeZone: "W. Europe Standard Time",
+        },
+        recurrence: null,
+      },
+    });
   });
 });

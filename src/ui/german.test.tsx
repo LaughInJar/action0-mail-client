@@ -147,4 +147,28 @@ describe("the German calendar", () => {
     await user.click(within(answers).getByRole("button", { name: "Nein" }));
     expect(await toastText("„Team meeting“ abgesagt")).toBeInTheDocument();
   });
+
+  it("writes new events in German", async () => {
+    const { user } = renderApp({ hash: "#/calendar/week/2026-10-15" });
+    await user.click(
+      await screen.findByRole("button", { name: /^Neuer Termin/ }),
+    );
+    const form = await screen.findByRole("region", { name: "Neuer Termin" });
+    expect(within(form).getByLabelText("Anfangsdatum")).toHaveValue(
+      "2026-10-15",
+    );
+    expect(within(form).getByLabelText("Wiederholen")).toHaveDisplayValue(
+      "Keine Wiederholung",
+    );
+    expect(
+      within(form).getByRole("option", { name: "Wöchentlich am Donnerstag" }),
+    ).toBeInTheDocument();
+    expect(
+      within(form).getByRole("checkbox", {
+        name: "Google-Meet-Videokonferenz hinzufügen",
+      }),
+    ).toBeInTheDocument();
+    await user.keyboard("Zahnarzt{Control>}{Enter}{/Control}");
+    expect(await toastText("„Zahnarzt“ erstellt")).toBeInTheDocument();
+  });
 });

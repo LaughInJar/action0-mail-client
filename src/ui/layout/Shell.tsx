@@ -31,6 +31,7 @@ import { ReconnectBar } from "./ReconnectBar";
 import { ResizableColumns } from "./ResizableColumns";
 import { AddAccountDialog } from "../accounts/AddAccountDialog";
 import { ConfirmHost } from "../common/ConfirmDialog";
+import { QuestionHost } from "../common/QuestionDialog";
 import { SettingsHost } from "../settings/SettingsHost";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelMenuHost } from "../labels/LabelMenu";
@@ -180,6 +181,7 @@ function MailApp() {
       <LabelDialogHost />
       <SettingsHost />
       <ConfirmHost />
+      <QuestionHost />
       <AddAccountDialog />
       <ComposerHost breakpoint={breakpoint} actions={compose} />
       <SendQueueBar actions={compose} />

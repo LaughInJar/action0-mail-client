@@ -7,9 +7,12 @@ import {
   type CalendarId,
   type CalendarProvider,
   type DateRange,
+  type EditableEvent,
+  type EventChange,
   type EventTime,
   type IcsSubscription,
   type ResponseStatus,
+  readOnlyError,
 } from "../../core/calendar";
 import type IcalModule from "ical.js";
 import { MailError } from "../../core/errors";
@@ -112,6 +115,8 @@ function partstat(value: unknown): ResponseStatus {
  */
 export class IcsCalendarProvider implements CalendarProvider {
   readonly canRespond = false;
+  readonly canEdit = false;
+  readonly guestNotices = "always";
   readonly #subscription: IcsSubscription;
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
@@ -218,6 +223,22 @@ export class IcsCalendarProvider implements CalendarProvider {
     return Promise.resolve(undefined);
   }
 
+  loadForEdit(): Promise<EditableEvent> {
+    return Promise.reject(readOnlyError());
+  }
+
+  createEvent(): Promise<EventChange & { readonly event: CalendarEvent }> {
+    return Promise.reject(readOnlyError());
+  }
+
+  updateEvent(): Promise<EventChange> {
+    return Promise.reject(readOnlyError());
+  }
+
+  deleteEvent(): Promise<EventChange> {
+    return Promise.reject(readOnlyError());
+  }
+
   /** The calendar file, downloaded at most once a minute. */
   #text(signal: AbortSignal | undefined): Promise<string> {
     const now = this.#now();
@@ -315,6 +336,7 @@ export class IcsCalendarProvider implements CalendarProvider {
             ? "tentative"
             : "confirmed",
       recurring,
+      organizedByMe: false,
       ...(event.uid ? { uid: event.uid } : {}),
       ...(typeof url === "string" && /^https?:/i.test(url)
         ? { webLink: url }
