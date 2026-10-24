@@ -8,6 +8,7 @@ import {
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
 import { IcsFactoryContext } from "../data/calendar";
 import { I18nProvider } from "../i18n/I18nProvider";
+import { PlatformContext } from "../platform/context";
 import { CommandRegistryContext } from "../keyboard/context";
 import { RouterContext, UiStoreContext } from "../state/context";
 import { COARSE_POINTER_QUERY } from "../ui/layout/useBreakpoint";
@@ -55,7 +56,9 @@ export function AppProviders({
           <CommandRegistryContext value={commands}>
             <ProviderSetupContext value={services.setups}>
               <IcsFactoryContext value={services.icsFactory}>
-                <I18nProvider>{children}</I18nProvider>
+                <PlatformContext value={services.platform}>
+                  <I18nProvider>{children}</I18nProvider>
+                </PlatformContext>
               </IcsFactoryContext>
             </ProviderSetupContext>
           </CommandRegistryContext>

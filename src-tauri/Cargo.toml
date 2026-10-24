@@ -1,0 +1,47 @@
+[package]
+name = "action0"
+version = "0.1.0"
+description = "action0 mail client"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[lib]
+name = "action0_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = { version = "2.5", features = ["deep-link"] }
+tauri-plugin-deep-link = "2.6"
+tauri-plugin-opener = "2.7"
+tauri-plugin-dialog = "2.8"
+tauri-plugin-fs = "2.7"
+tauri-plugin-notification = "2.7"
+tauri-plugin-autostart = "2.7"
+tauri-plugin-updater = "2.14"
+tauri-plugin-process = "2.4"
+tauri-plugin-window-state = "2.5"
+# The same reqwest and rustls (with ring) as the updater, so there's one TLS stack.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "charset", "json", "form", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["net", "io-util", "time", "sync", "macros", "rt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = "4"
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+rand = "0.9"
+base64 = "0.22"
+url = "2"
+percent-encoding = "2"
+thiserror = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

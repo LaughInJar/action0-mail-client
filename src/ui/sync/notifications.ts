@@ -1,26 +1,8 @@
 import type { MessageId } from "../../core/ids";
 import type { Arrivals } from "../../data/sync";
+import type { NotificationsPort } from "../../platform/types";
 import type { HashRouter } from "../../state/router";
-import { COARSE_POINTER_QUERY } from "../layout/useBreakpoint";
 import type { I18n } from "../../i18n/context";
-
-/**
- * Desktop notifications can be offered. Phones only show notifications from
- * installed apps (service worker), so they aren't offered on touch devices.
- */
-export function notificationsSupported(): boolean {
-  return (
-    typeof Notification !== "undefined" &&
-    !window.matchMedia(COARSE_POINTER_QUERY).matches
-  );
-}
-
-/** Desktop notifications exist and may be shown. */
-export function notificationsAllowed(): boolean {
-  return (
-    typeof Notification !== "undefined" && Notification.permission === "granted"
-  );
-}
 
 /** The app is visible and focused: new mail shows up in it anyway. */
 const appInFront = () => !document.hidden && document.hasFocus();
@@ -34,54 +16,36 @@ export function notifyArrivals(
   arrivals: Arrivals,
   router: HashRouter,
   t: I18n,
+  notifications: NotificationsPort,
 ): void {
-  if (!notificationsAllowed() || appInFront()) return;
-  try {
-    show(arrivals, router, t);
-  } catch {
-    // Some browsers (Chrome on Android) only notify through a service worker.
-  }
-}
-
-function show(arrivals: Arrivals, router: HashRouter, t: I18n): void {
+  if (!notifications.allowed() || appInFront()) return;
   const { accountId, inboxId, messages } = arrivals;
-  const open = (notification: Notification, messageId?: MessageId) => {
-    notification.onclick = () => {
-      window.focus();
-      router.navigate({
-        accountId,
-        mailboxId: inboxId,
-        ...(messageId === undefined ? {} : { messageId }),
-      });
-      notification.close();
-    };
+  const open = (messageId?: MessageId) => () => {
+    router.navigate({
+      accountId,
+      mailboxId: inboxId,
+      ...(messageId === undefined ? {} : { messageId }),
+    });
   };
 
   if (messages.length > 3) {
     const senders = [
       ...new Set(messages.map((m) => m.from?.name ?? m.from?.address ?? "")),
     ].filter(Boolean);
-    const notification = new Notification(
-      t.layout.notifyMany(messages.length),
-      {
-        body: senders.join(", "),
-        tag: `a0-${accountId}`,
-        icon: "/favicon.svg",
-      },
-    );
-    open(notification);
+    notifications.show({
+      title: t.layout.notifyMany(messages.length),
+      body: senders.join(", "),
+      tag: `a0-${accountId}`,
+      onClick: open(),
+    });
     return;
   }
-  for (const message of messages) {
-    const notification = new Notification(
-      message.from?.name ?? message.from?.address ?? t.layout.notifyOne,
-      {
-        body: [message.subject, message.snippet].filter(Boolean).join("\n"),
-        // The same mail never notifies twice.
-        tag: `a0-${message.id}`,
-        icon: "/favicon.svg",
-      },
-    );
-    open(notification, message.id);
-  }
+  for (const message of messages)
+    notifications.show({
+      title: message.from?.name ?? message.from?.address ?? t.layout.notifyOne,
+      body: [message.subject, message.snippet].filter(Boolean).join("\n"),
+      // The same mail never notifies twice.
+      tag: `a0-${message.id}`,
+      onClick: open(message.id),
+    });
 }

@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { readJson, writeJson } from "../../lib/storage";
+import { usePlatform } from "../../platform/context";
+import type { NotificationsPort } from "../../platform/types";
 import { useUi } from "../../state/context";
-import { notificationsSupported } from "./notifications";
 import { useT } from "../../i18n/context";
 
 /** localStorage setting: the bar was answered and isn't shown again. */
 const ASKED_KEY = "a0.settings.notificationsAsked";
 
-const askable = () =>
-  notificationsSupported() &&
+/** Only the browser needs asking (the desktop app may notify anyway). */
+const askable = (notifications: NotificationsPort) =>
+  notifications.mustAsk &&
+  notifications.supported() &&
+  !notifications.allowed() &&
   Notification.permission === "default" &&
   readJson(window.localStorage, ASKED_KEY) !== true;
 
@@ -18,7 +22,8 @@ const askable = () =>
  * only comes after "Turn on".
  */
 export function NotificationsBar() {
-  const [visible, setVisible] = useState(askable);
+  const { notifications } = usePlatform();
+  const [visible, setVisible] = useState(() => askable(notifications));
   // Turned off in Settings: never ask.
   const enabled = useUi((state) => state.settings.notifications);
   const t = useT();
@@ -37,7 +42,7 @@ export function NotificationsBar() {
         type="button"
         onClick={() => {
           done();
-          void Notification.requestPermission();
+          void notifications.request();
         }}
         className="rounded-md bg-blue-600 px-3 py-1 font-medium text-white hover:bg-blue-700 pointer-coarse:min-h-11"
       >

@@ -4,7 +4,8 @@ import type { AttachmentInfo, Message } from "../../core/model";
 import { referencedInlineImages, useFetchAttachment } from "../../data/hooks";
 import { useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
-import { attachmentKind, downloadBlob } from "../common/files";
+import { attachmentKind } from "../common/files";
+import { usePlatform } from "../../platform/context";
 import { formatBytes } from "../common/format";
 import { Icon, type IconName } from "../common/Icon";
 import { ImageViewer } from "./ImageViewer";
@@ -32,6 +33,7 @@ export function AttachmentList({
 }) {
   const fetchFile = useFetchAttachment();
   const t = useT();
+  const platform = usePlatform();
   const store = useUiStore();
   const [viewing, setViewing] = useState<number | null>(null);
   const inline = new Set(
@@ -56,27 +58,18 @@ export function AttachmentList({
   };
   const download = (attachment: AttachmentInfo) => {
     load(attachment).then((blob) => {
-      downloadBlob(blob, attachment.filename);
+      platform.saveFile(blob, attachment.filename).catch(failed(attachment));
     }, failed(attachment));
   };
   const openPdf = (attachment: AttachmentInfo) => {
-    // Open the tab inside the click (popup blockers), fill it once loaded.
-    const tab = window.open("", "_blank");
-    if (tab) tab.opener = null;
+    // Started inside the click (popup blockers), handed the file once loaded.
+    const show = platform.openFileLater();
     load(attachment).then(
       (blob) => {
-        // The type is forced: whatever the file really is, it shows as PDF.
-        const url = URL.createObjectURL(
-          new Blob([blob], { type: "application/pdf" }),
-        );
-        if (tab) tab.location.href = url;
-        else downloadBlob(blob, attachment.filename);
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 60_000);
+        show({ blob, name: attachment.filename, type: "application/pdf" });
       },
       (error: unknown) => {
-        tab?.close();
+        show(null);
         failed(attachment)(error);
       },
     );

@@ -21,6 +21,7 @@ import {
   type ReplyMode,
 } from "../../core/compose";
 import type { Draft } from "../../core/compose";
+import { parseMailto } from "../../core/mailto";
 import type { AccountId, DraftId, MessageId } from "../../core/ids";
 import type { Message, Sender } from "../../core/model";
 import { referencedInlineImages } from "../../data/hooks";
@@ -40,6 +41,12 @@ export interface ComposeActions {
   readonly canCompose: boolean;
   /** A new mail from the current account (or focuses the open composer). */
   readonly compose: () => void;
+  /**
+   * A new mail filled in from a `mailto:` link (from the system, the tray
+   * or a mail), from the account the last mail went out from; "" is an
+   * empty one (like {@link compose}).
+   */
+  readonly composeFrom: (mailto: string) => void;
   readonly reply: (messageId: MessageId, mode: ReplyMode) => void;
   readonly forward: (messageId: MessageId) => void;
   /** Continues a draft (a message in the drafts mailbox). */
@@ -239,34 +246,63 @@ export function useComposeActions(): ComposeActions {
       });
     };
 
+    /**
+     * A new mail from `accountId` (or focuses the open composer, if there's
+     * no content to fill in), with its default address and signature.
+     */
+    const startNew = (
+      accountId: AccountId | undefined,
+      content?: Partial<ComposerInit>,
+    ) => {
+      const current = store.getState().composer;
+      if (current && !content) {
+        store
+          .getState()
+          .updateComposer(
+            current.key,
+            { window: "docked", focus: "to" },
+            false,
+          );
+        return;
+      }
+      if (!canComposeIn(accountId) || accountId === undefined) return;
+      const session = open({ focus: "to", ...content, accountId, kind: "new" });
+      // The default address and its signature, once known.
+      void sendersOf(accountId).then((senders) => {
+        const composer = store.getState().composer;
+        if (composer?.key !== session.key || composer.signature !== undefined)
+          return;
+        store
+          .getState()
+          .updateComposer(
+            session.key,
+            sendingAs(defaultSender(senders)),
+            false,
+          );
+      });
+    };
+
     return {
       compose: () => {
-        const current = store.getState().composer;
-        if (current) {
-          store
-            .getState()
-            .updateComposer(
-              current.key,
-              { window: "docked", focus: "to" },
-              false,
-            );
+        startNew(currentAccount());
+      },
+
+      composeFrom: (mailto) => {
+        const fields = parseMailto(mailto);
+        const last = store.getState().settings.lastSendAccount as AccountId;
+        const accountId = canComposeIn(last) ? last : currentAccount();
+        if (!fields) {
+          startNew(accountId);
           return;
         }
-        const accountId = currentAccount();
-        if (!canComposeIn(accountId) || accountId === undefined) return;
-        const session = open({ accountId, kind: "new", focus: "to" });
-        // The default address and its signature, once known.
-        void sendersOf(accountId).then((senders) => {
-          const composer = store.getState().composer;
-          if (composer?.key !== session.key || composer.signature !== undefined)
-            return;
-          store
-            .getState()
-            .updateComposer(
-              session.key,
-              sendingAs(defaultSender(senders)),
-              false,
-            );
+        startNew(accountId, {
+          to: fields.to,
+          cc: fields.cc,
+          bcc: fields.bcc,
+          showCcBcc: fields.cc.length + fields.bcc.length > 0,
+          subject: fields.subject,
+          ...(fields.body ? { body: textToHtml(fields.body) } : {}),
+          focus: fields.to.length > 0 ? "body" : "to",
         });
       },
 
@@ -385,8 +421,11 @@ export function useComposeActions(): ComposeActions {
           void sync
             .save(current.key, current.accountId, current, current.draftId)
             .catch(() => undefined);
-        const { settings, queueSend } = store.getState();
+        const { settings, queueSend, updateSettings } = store.getState();
         queueSend(current.key, settings.undoSendSeconds * 1000);
+        // mailto: links write from the account used last.
+        if (settings.lastSendAccount !== current.accountId)
+          updateSettings({ lastSendAccount: current.accountId });
       },
 
       undoSend: (id) => {

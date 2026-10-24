@@ -11,8 +11,16 @@ import { createGmailModule } from "../providers/gmail/module";
 import { createDemoModule } from "../providers/fake/module";
 import { createHashRouter, type HashRouter } from "../state/router";
 import { createUiStore, type UiStore } from "../state/uiStore";
+import type { NativeSignIn } from "../auth/native/bridge";
+import type { Platform } from "../platform/types";
+import { webPlatform } from "../platform/web";
 import type { AppConfig } from "./config";
-import { createGoogleSetup, storedGoogleClientId } from "./googleSetup";
+import {
+  createGoogleDesktopSetup,
+  createGoogleSetup,
+  storedGoogleClientId,
+  storedGoogleDesktopClient,
+} from "./googleSetup";
 import {
   createMicrosoftSetup,
   storedMicrosoftClientId,
@@ -32,6 +40,16 @@ export interface AppServices {
   readonly setups: readonly ProviderSetup[];
   /** Creates the calendar of an iCal subscription. */
   readonly icsFactory: IcsFactory;
+  /** The web app or the desktop app. */
+  readonly platform: Platform;
+}
+
+/** What the desktop app adds to the composition: native sign-in and networking. */
+export interface DesktopServices {
+  /** Native sign-in, without a client (each provider has its own). */
+  readonly native: Omit<NativeSignIn, "client">;
+  /** Network requests through the native side (no CORS). */
+  readonly fetch: typeof fetch;
 }
 
 /** Inputs of {@link createAppServices}. */
@@ -49,6 +67,8 @@ export interface AppServicesOptions {
   ) => readonly ProviderSetup[];
   /** Creates iCal subscriptions' calendars (default: fetched from the browser). */
   readonly icsFactory?: IcsFactory;
+  /** The web app (default) or the desktop app. */
+  readonly platform?: Platform;
 }
 
 /** The composition root: wires the layers together. */
@@ -76,57 +96,95 @@ export function createAppServices(options: AppServicesOptions): AppServices {
     icsFactory:
       options.icsFactory ??
       ((subscription) => new IcsCalendarProvider(subscription)),
+    platform: options.platform ?? webPlatform,
   };
 }
 
 /**
  * Provider modules available at startup: Gmail and Microsoft, each if its
- * client ID is known (from the build or, failing that, from this browser),
- * and the demo account.
+ * client is known (from the build or, failing that, from this browser or
+ * app), and the demo account. The desktop app signs in natively.
  */
 export function createDefaultModules(
   config: AppConfig,
   sessionStorage: Storage | undefined,
   localStorage: Storage | undefined,
+  desktop?: DesktopServices,
 ): ProviderModule[] {
-  const clientId = config.googleClientId ?? storedGoogleClientId(localStorage);
   const microsoftId =
     config.microsoftClientId ?? storedMicrosoftClientId(localStorage);
-  return [
-    ...(clientId === undefined
-      ? []
-      : [createGmailModule({ clientId, tokenStorage: sessionStorage })]),
-    ...(microsoftId === undefined
+  const microsoft =
+    microsoftId === undefined
       ? []
       : [
           createMicrosoftModule({
             clientId: microsoftId,
             sessionStorage,
             settings: localStorage,
+            ...(desktop
+              ? {
+                  native: { ...desktop.native, client: { id: microsoftId } },
+                  fetch: desktop.fetch,
+                }
+              : {}),
           }),
-        ]),
+        ];
+  if (desktop) {
+    const client =
+      config.googleDesktopClient ?? storedGoogleDesktopClient(localStorage);
+    return [
+      ...(client === undefined
+        ? []
+        : [
+            createGmailModule({
+              clientId: client.id,
+              tokenStorage: undefined,
+              native: { ...desktop.native, client },
+              fetch: desktop.fetch,
+            }),
+          ]),
+      ...microsoft,
+      createDemoModule(),
+    ];
+  }
+  const clientId = config.googleClientId ?? storedGoogleClientId(localStorage);
+  return [
+    ...(clientId === undefined
+      ? []
+      : [createGmailModule({ clientId, tokenStorage: sessionStorage })]),
+    ...microsoft,
     createDemoModule(),
   ];
 }
 
-/** Runtime setups: Google's and Microsoft's client IDs can be entered in the Add account wizard. */
+/** Runtime setups: Google's and Microsoft's clients can be entered in the Add account wizard. */
 export function createDefaultSetups(
   config: AppConfig,
   sessionStorage: Storage | undefined,
   localStorage: Storage | undefined,
+  desktop?: DesktopServices,
 ): (registry: AccountRegistry) => readonly ProviderSetup[] {
   return (registry) => [
-    createGoogleSetup({
-      registry,
-      buildClientId: config.googleClientId,
-      settings: localStorage,
-      tokenStorage: sessionStorage,
-    }),
+    desktop
+      ? createGoogleDesktopSetup({
+          registry,
+          buildClient: config.googleDesktopClient,
+          settings: localStorage,
+          native: desktop.native,
+          fetch: desktop.fetch,
+        })
+      : createGoogleSetup({
+          registry,
+          buildClientId: config.googleClientId,
+          settings: localStorage,
+          tokenStorage: sessionStorage,
+        }),
     createMicrosoftSetup({
       registry,
       buildClientId: config.microsoftClientId,
       settings: localStorage,
       sessionStorage,
+      ...(desktop ? { desktop } : {}),
     }),
   ];
 }
