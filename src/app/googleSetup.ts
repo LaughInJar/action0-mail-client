@@ -167,3 +167,16 @@ export function createGoogleDesktopSetup({
     },
   };
 }
+
+/**
+ * Google in the Android app: nothing to enter. Play services knows the app
+ * by its package and signing key, registered once in Google Cloud.
+ */
+export function createGoogleAndroidSetup(): ProviderSetup {
+  return {
+    type: "gmail",
+    current: () => ({ value: "play-services", source: "build" }),
+    validate: () => undefined,
+    apply: () => undefined,
+  };
+}

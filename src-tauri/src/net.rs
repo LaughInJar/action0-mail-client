@@ -56,11 +56,26 @@ impl Requests {
 /// redirects only to http(s), a connect timeout but none for the body
 /// (large uploads take as long as they take).
 pub fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
-        .user_agent(concat!("action0/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .expect("the HTTP client builds")
+        .user_agent(concat!("action0/", env!("CARGO_PKG_VERSION")));
+    #[cfg(target_os = "android")]
+    let builder = builder.tls_backend_preconfigured(android_tls());
+    builder.build().expect("the HTTP client builds")
+}
+
+/// Android: TLS with Mozilla's root certificates, built in (the platform
+/// verifier would need its own Java side wired up).
+#[cfg(target_os = "android")]
+fn android_tls() -> rustls::ClientConfig {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    let mut config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    config
 }
 
 /// Reads the metadata header.

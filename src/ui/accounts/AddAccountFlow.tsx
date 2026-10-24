@@ -19,6 +19,8 @@ import {
 import { useT, type I18n } from "../../i18n/context";
 import { RichText, type TagRenderer } from "../common/RichText";
 import { usePlatform } from "../../platform/context";
+import type { Platform } from "../../platform/types";
+import { sha1Hex } from "./fingerprint";
 
 /** Providers that are set up (client ID) and authorized in the wizard. */
 type SignInType = Exclude<ProviderType, "demo">;
@@ -43,7 +45,17 @@ const SECRET_EXAMPLE = "GOCSPX-…";
 const DESKTOP_REDIRECT_URI = "http://localhost/desktop";
 
 /** A provider's wizard texts, and the links and values its texts refer to. */
-function setupCopy(type: SignInType, t: I18n, desktop: boolean) {
+/** Texts and live values of a provider's setup, for where the app runs. */
+function setupCopy(type: SignInType, t: I18n, platform: Platform) {
+  const desktop = platform.kind === "desktop";
+  const { mobile } = platform;
+  // The Android app's package and signing key, as the providers ask for them.
+  const android: Readonly<Record<string, TagRenderer>> = mobile
+    ? {
+        package: () => <CopyableValue value={mobile.package} />,
+        sha1: () => <CopyableValue value={sha1Hex(mobile.signatureHash)} />,
+      }
+    : {};
   const external = (links: Readonly<Record<string, string>>) =>
     Object.fromEntries(
       Object.entries(links).map(([name, href]): [string, TagRenderer] => [
@@ -53,20 +65,42 @@ function setupCopy(type: SignInType, t: I18n, desktop: boolean) {
     );
   if (type === "gmail")
     return {
-      texts: desktop ? t.accounts.googleDesktop : t.accounts.google,
+      texts: mobile
+        ? t.accounts.googleAndroid
+        : desktop
+          ? t.accounts.googleDesktop
+          : t.accounts.google,
       tags: {
         ...external(GOOGLE_CLOUD_LINKS),
+        ...android,
         origin: () => <CopyableValue value={window.location.origin} />,
       },
       example: "1234567890-abc123.apps.googleusercontent.com",
     };
   return {
-    texts: desktop ? t.accounts.microsoftDesktop : t.accounts.microsoft,
+    texts: mobile
+      ? t.accounts.microsoftAndroid
+      : desktop
+        ? t.accounts.microsoftDesktop
+        : t.accounts.microsoft,
     tags: {
       ...external(ENTRA_LINKS),
+      ...(mobile
+        ? {
+            ...android,
+            // Entra asks for the signature hash as base64.
+            sha1: () => <CopyableValue value={mobile.signatureHash} />,
+          }
+        : {}),
       redirect: () => (
         <CopyableValue
-          value={desktop ? DESKTOP_REDIRECT_URI : microsoftRedirectUri()}
+          value={
+            mobile
+              ? mobile.microsoftRedirect
+              : desktop
+                ? DESKTOP_REDIRECT_URI
+                : microsoftRedirectUri()
+          }
         />
       ),
     },
@@ -279,8 +313,7 @@ function SetupStep({
   const secretErrorId = useId();
   const t = useT();
   const a = t.accounts;
-  const desktop = usePlatform().kind === "desktop";
-  const { texts, tags, example } = setupCopy(type, t, desktop);
+  const { texts, tags, example } = setupCopy(type, t, usePlatform());
 
   const save = () => {
     if (!setup) return;
@@ -388,7 +421,7 @@ function ConnectStep({
   const ready = module?.prepare === undefined || prepared;
   const t = useT();
   const a = t.accounts;
-  const { texts, tags } = setupCopy(type, t, usePlatform().kind === "desktop");
+  const { texts, tags } = setupCopy(type, t, usePlatform());
 
   // Load the sign-in library first, so the popup opens inside the click.
   useEffect(() => {

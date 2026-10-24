@@ -1,0 +1,25 @@
+name: Android build setup
+description: >-
+  JDK 21, the Android SDK (platform 36, build tools, NDK) and Rust with the
+  Android targets, as scripts/android-setup.sh installs them locally.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "21"
+    - uses: android-actions/setup-android@v3
+      with:
+        packages: platform-tools platforms;android-36 build-tools;36.1.0 ndk;29.0.14206865
+    - name: NDK location
+      shell: bash
+      run: echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+        components: clippy
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        key: android

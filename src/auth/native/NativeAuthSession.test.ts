@@ -128,6 +128,24 @@ describe("NativeAuthSession", () => {
     expect(isMailError(denied, "auth-required") && denied.reason).toBe(
       "signInClosed",
     );
+    const noPlay = await connectNative(
+      {
+        ...setup().bridge,
+        connect: () =>
+          Promise.reject(new NativeAuthError("noPlayServices", "missing")),
+      },
+      {
+        provider: "google",
+        client: { id: "play-services" },
+        scopes: [],
+        required: [],
+        prompt: "select_account",
+      },
+      "Google",
+    ).catch((e: unknown) => e);
+    expect(isMailError(noPlay, "unavailable") && noPlay.reason).toBe(
+      "noPlayServices",
+    );
   });
 
   it("signs out natively", async () => {

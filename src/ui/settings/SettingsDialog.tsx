@@ -5,6 +5,7 @@ import type { ThemeMode } from "../../state/theme";
 import { IconButton } from "../common/IconButton";
 import { Sheet } from "../common/Sheet";
 import { usePlatform } from "../../platform/context";
+import { AndroidSettings } from "./AndroidSettings";
 import { DesktopSettings } from "./DesktopSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
@@ -37,10 +38,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const setTheme = useUi((state) => state.setTheme);
   const t = useT();
   const s = t.settings;
-  const { desktop } = usePlatform();
+  const { desktop, mobile } = usePlatform();
   const sections: (readonly [string, string])[] = [
     ...SECTIONS.map(([id, key]) => [id, s[key]] as const),
-    ...(desktop ? [["settings-app", t.desktop.section] as const] : []),
+    ...(desktop || mobile
+      ? [["settings-app", t.desktop.section] as const]
+      : []),
   ];
   const set =
     <K extends keyof AppSettings>(key: K) =>
@@ -224,6 +227,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </label>
           </SettingsSection>
           {desktop && <DesktopSettings id="settings-app" desktop={desktop} />}
+          {mobile && <AndroidSettings id="settings-app" mobile={mobile} />}
         </div>
       </div>
     </Sheet>
@@ -314,22 +318,24 @@ function Notifications({
   enabled: boolean;
   onChange: (enabled: boolean) => void;
 }) {
-  const { notifications } = usePlatform();
+  const { notifications, mobile } = usePlatform();
   const supported = notifications.supported();
   const [permission, setPermission] = useState<NotificationPermission>(() =>
     !supported
       ? "denied"
       : notifications.allowed()
         ? "granted"
-        : notifications.mustAsk
+        : notifications.mustAsk && typeof Notification !== "undefined"
           ? Notification.permission
           : "default",
   );
   const blocked = supported && permission === "denied";
-  const s = useT().settings;
+  const t = useT();
+  const s = t.settings;
   let note: string | undefined;
   if (!supported) note = s.phonesOnly;
-  else if (blocked) note = s.notificationsBlocked;
+  else if (blocked)
+    note = mobile ? t.android.notificationsBlocked : s.notificationsBlocked;
   else if (enabled && permission === "default") note = s.notAskedYet;
 
   return (
@@ -348,9 +354,9 @@ function Notifications({
           className="mt-0.5 size-4 shrink-0 accent-blue-600"
         />
         <span className="text-sm">
-          {s.desktopNotifications}
+          {mobile ? t.android.notifications : s.desktopNotifications}
           <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-            {s.desktopNotificationsHint}
+            {mobile ? t.android.notificationsHint : s.desktopNotificationsHint}
           </span>
         </span>
       </label>

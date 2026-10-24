@@ -232,5 +232,11 @@ export function nativeAuthError(
         error.message,
         options("signInFailed", { provider, detail: error.message }),
       );
+    case "noPlayServices":
+      return new MailError(
+        "unavailable",
+        error.message,
+        options("noPlayServices"),
+      );
   }
 }

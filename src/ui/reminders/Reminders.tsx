@@ -137,7 +137,7 @@ function ActiveReminders() {
     <section
       aria-label={r.panel}
       // Phones: full width, above the new mail / new event button.
-      className="fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-3 z-40 flex max-h-[50dvh] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl max-sm:right-3 max-sm:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] max-sm:w-auto dark:border-zinc-700 dark:bg-zinc-900"
+      className="fixed bottom-[calc(0.75rem+var(--safe-bottom))] left-3 z-40 flex max-h-[50dvh] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl max-sm:right-3 max-sm:bottom-[calc(5.75rem+var(--safe-bottom))] max-sm:w-auto dark:border-zinc-700 dark:bg-zinc-900"
     >
       <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         <Icon name="bell" className="size-4 text-zinc-500" />

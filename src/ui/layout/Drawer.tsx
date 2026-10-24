@@ -35,7 +35,7 @@ export function Drawer({ open, onClose, label, children }: DrawerProps) {
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-xl transition-transform focus:outline-none ${open ? "translate-x-0" : "-translate-x-full"} bg-zinc-50 dark:bg-zinc-900`}
+        className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] pt-[env(safe-area-inset-top)] pb-[var(--safe-bottom)] pl-[env(safe-area-inset-left)] shadow-xl transition-transform focus:outline-none ${open ? "translate-x-0" : "-translate-x-full"} bg-zinc-50 dark:bg-zinc-900`}
       >
         {children}
       </div>

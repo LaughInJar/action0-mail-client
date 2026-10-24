@@ -1,8 +1,8 @@
 //! Where refresh tokens are kept: encrypted (XChaCha20-Poly1305) in a file
-//! of the app's data folder, with the key in the OS keychain. Keychains
-//! limit an entry's size (Windows: 2560 bytes), so only the key goes there.
-//! Without a keychain, nothing is written: accounts stay signed in until
-//! the app quits.
+//! of the app's data folder, with the key in the OS keychain (on Android:
+//! wrapped by the Android Keystore). Keychains limit an entry's size
+//! (Windows: 2560 bytes), so only the key goes there. Without a keychain,
+//! nothing is written: accounts stay signed in until the app quits.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -36,11 +36,27 @@ pub trait KeyStore: Send + Sync {
     fn save(&self, key: &[u8]) -> Result<(), String>;
 }
 
+/// A key that's already known (the background check gets it from Kotlin).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub struct FixedKey(pub Vec<u8>);
+
+impl KeyStore for FixedKey {
+    fn load(&self) -> Result<Option<Vec<u8>>, String> {
+        Ok(Some(self.0.clone()))
+    }
+
+    fn save(&self, _key: &[u8]) -> Result<(), String> {
+        Err("The key is fixed.".into())
+    }
+}
+
 /// The OS keychain (Secret Service, Keychain, Credential Manager).
+#[cfg(desktop)]
 pub struct OsKeyStore {
     pub service: String,
 }
 
+#[cfg(desktop)]
 impl KeyStore for OsKeyStore {
     fn load(&self) -> Result<Option<Vec<u8>>, String> {
         let entry = keyring::Entry::new(&self.service, "vault-key").map_err(|e| e.to_string())?;
@@ -68,6 +84,31 @@ pub struct Vault {
     /// `None` without a keychain: nothing is written.
     key: Option<Vec<u8>>,
     accounts: Mutex<Accounts>,
+}
+
+/// A vault opened on first use: on Android its key comes from the Kotlin
+/// side, which can only be asked once the app runs.
+pub struct LazyVault {
+    path: PathBuf,
+    keys: Box<dyn KeyStore>,
+    vault: std::sync::OnceLock<Vault>,
+}
+
+impl LazyVault {
+    pub fn new(path: PathBuf, keys: Box<dyn KeyStore>) -> Self {
+        Self {
+            path,
+            keys,
+            vault: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// The vault, opened now if it isn't yet. (On Android: not from the
+    /// main thread, which the Kotlin side answers on.)
+    pub fn get(&self) -> &Vault {
+        self.vault
+            .get_or_init(|| Vault::open(self.path.clone(), self.keys.as_ref()))
+    }
 }
 
 impl Vault {

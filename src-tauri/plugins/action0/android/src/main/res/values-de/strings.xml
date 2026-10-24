@@ -1,0 +1,4 @@
+<resources>
+    <string name="action0_channel_mail">Neue E-Mails</string>
+    <string name="action0_channel_mail_description">Neue Nachrichten in deinen Posteingängen</string>
+</resources>

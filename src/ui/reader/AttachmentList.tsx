@@ -56,6 +56,16 @@ export function AttachmentList({
       tone: "error",
     });
   };
+  const { mobile } = platform;
+  const share = (attachment: AttachmentInfo) => {
+    load(attachment).then((blob) => {
+      mobile?.share(blob, attachment.filename).catch(() => {
+        store
+          .getState()
+          .showToast({ message: t.android.couldntShare, tone: "error" });
+      });
+    }, failed(attachment));
+  };
   const download = (attachment: AttachmentInfo) => {
     load(attachment).then((blob) => {
       platform.saveFile(blob, attachment.filename).catch(failed(attachment));
@@ -126,6 +136,19 @@ export function AttachmentList({
                   {formatBytes(attachment.size, t.locale)}
                 </span>
               </button>
+              {mobile && (
+                <button
+                  type="button"
+                  aria-label={t.android.shareFile(attachment.filename)}
+                  title={t.android.share}
+                  onClick={() => {
+                    share(attachment);
+                  }}
+                  className={`grid size-9 shrink-0 place-items-center border-l border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:size-11 ${kind === "download" ? "rounded-r-lg" : ""}`}
+                >
+                  <Icon name="share" className="size-4" />
+                </button>
+              )}
               {kind !== "download" && (
                 <button
                   type="button"

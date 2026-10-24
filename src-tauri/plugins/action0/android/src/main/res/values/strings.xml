@@ -1,0 +1,4 @@
+<resources>
+    <string name="action0_channel_mail">New mail</string>
+    <string name="action0_channel_mail_description">New messages in your inboxes</string>
+</resources>

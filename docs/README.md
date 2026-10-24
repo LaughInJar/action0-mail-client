@@ -15,6 +15,7 @@ These documents explain how action0 works inside: its architecture, the reasonin
 | Build the web app or the desktop app, and host it           | [building-and-deploying.md](building-and-deploying.md) |
 | Ship a release                                              | [releasing.md](releasing.md)                           |
 | Work on the Tauri desktop app                               | [desktop-app.md](desktop-app.md)                       |
+| Work on the Android app                                     | [android.md](android.md)                               |
 | Understand tokens, storage and HTML mail safety             | [security.md](security.md)                             |
 
 The approved decisions, including small UX choices, are listed in the decisions log in [`CLAUDE.md`](../CLAUDE.md#decisions-log), which also describes the mandatory way of working.
@@ -34,6 +35,6 @@ The approved decisions, including small UX choices, are listed in the decisions 
 | All inboxes     | Every account's Inbox merged by date into one list                                                                                        |
 | Context account | In All inboxes, the account of the open message; the route carries it so the reader and shortcuts know which account they act on          |
 | Source          | One account's part of a list (its mailbox, conversations or not); or, in the calendar, one account or iCal subscription                   |
-| Platform        | The interface that hides what differs between the web app and the desktop app                                                             |
-| Native side     | The desktop app's Rust code in `src-tauri/`                                                                                               |
+| Platform        | The interface that hides what differs between the web app, the desktop app and the Android app                                            |
+| Native side     | The desktop and Android apps' Rust code in `src-tauri/` (and, on Android, the Kotlin plugin in `src-tauri/plugins/action0`)               |
 | Demo accounts   | Two in-memory accounts (Gmail-like and Outlook-like) opened with `/?demo`                                                                 |

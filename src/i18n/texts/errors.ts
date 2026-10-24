@@ -11,6 +11,8 @@ const enReasons: Reasons = {
   signInAgain: (p) => `Please sign in to ${provider(p)} again.`,
   signInUnavailable: (p) => `Could not load ${provider(p)} sign-in.`,
   signInFailed: (p) => `${provider(p)} sign-in failed: ${p.detail ?? ""}`,
+  noPlayServices: () =>
+    "Google accounts need Google Play services, which this phone doesn't have. Microsoft accounts work without them.",
   signInClosed: (p) => `The ${provider(p)} sign-in window was closed.`,
   signInBlocked: (p) =>
     `The ${provider(p)} sign-in window was blocked. Please allow popups for this site.`,
@@ -79,6 +81,8 @@ const deReasons: Reasons = {
     `Die ${provider(p)}-Anmeldung konnte nicht geladen werden.`,
   signInFailed: (p) =>
     `Die ${provider(p)}-Anmeldung ist fehlgeschlagen: ${p.detail ?? ""}`,
+  noPlayServices: () =>
+    "Google-Konten brauchen die Google-Play-Dienste, die dieses Handy nicht hat. Microsoft-Konten gehen auch ohne.",
   signInClosed: (p) =>
     `Das Fenster der ${provider(p)}-Anmeldung wurde geschlossen.`,
   signInBlocked: (p) =>

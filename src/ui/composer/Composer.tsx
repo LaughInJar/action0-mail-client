@@ -272,7 +272,7 @@ function ComposerWindow({
         : "";
 
   const frame = fullScreen
-    ? "fixed inset-0 z-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+    ? "fixed inset-0 z-50 pt-[env(safe-area-inset-top)] pb-[var(--safe-bottom)]"
     : session.window === "expanded"
       ? "fixed inset-x-[6vw] inset-y-[5vh] z-40 rounded-lg border shadow-2xl"
       : minimized

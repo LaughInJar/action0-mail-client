@@ -1,5 +1,5 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeCalendarProvider } from "../providers/fake/FakeCalendarProvider";
 import type { FakeEventTemplate } from "../providers/fake/FakeCalendarProvider";
 import {
@@ -11,6 +11,16 @@ import { fakeDesktopPlatform } from "../test/desktopPlatform";
 import { renderApp } from "../test/renderApp";
 
 vi.setConfig({ testTimeout: 20_000 });
+
+/**
+ * The tests place events around "now": run them on a Wednesday morning,
+ * whatever the clock says, so no event crosses midnight or the week's end.
+ * Only `Date` is replaced, and it keeps running from there.
+ */
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(2026, 9, 21, 9, 0, 0));
+});
 
 afterEach(() => {
   vi.useRealTimers();

@@ -106,6 +106,14 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 
 **Trade-offs.** Rendering differs slightly between WebKitGTK (Linux), WebKit (macOS) and WebView2 (Windows). Sign-in needs separate "desktop app" OAuth clients, since Google blocks embedded web views; the system browser and a loopback redirect are used instead. See [desktop-app.md](desktop-app.md).
 
+## Android from the same Tauri project, without a server
+
+**Context.** Phones are the main place people read mail, and the desktop app's Rust side (networking without CORS, the vault, later IMAP and CalDAV) is worth having there too. There's still no server.
+
+**Decision.** The Android app is the Tauri project with an Android target and a small Kotlin plugin. Google accounts use Google Play services (Google's supported way on Android; it hands out access tokens, so no Google refresh token lives on the phone). Microsoft accounts use a Custom Tab with PKCE and an `msauth://` redirect, like other mail apps without Microsoft's SDK. New mail is found by a WorkManager job every 15 minutes or so, which calls a small Rust check, because Android doesn't run the web view in the background. The APK ships in the GitHub Release; Google Play later.
+
+**Trade-offs.** No push without a server, so background notifications can be late. Phones without Play services can't add Google accounts. Company tenants that require managed devices need Microsoft's broker, which this doesn't use. Kotlin code has no automated tests and is tried on the emulator. iOS follows as its own feature (it needs an Apple Developer account). See [android.md](android.md).
+
 ## All inboxes: per-account lists, merged; a context account
 
 **Context.** All inboxes shows every account's Inbox as one list, while everything else (reader, replies, shortcuts like `g i`) was built around one account per route.

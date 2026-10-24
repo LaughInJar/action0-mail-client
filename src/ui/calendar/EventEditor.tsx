@@ -760,7 +760,7 @@ function Form({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:border-zinc-800">
+      <div className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[calc(0.75rem+var(--safe-bottom))] dark:border-zinc-800">
         {placed && (
           <button
             type="button"

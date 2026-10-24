@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files action0 hands to other apps (open with, share) live in its cache only. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="files" path="." />
+</paths>

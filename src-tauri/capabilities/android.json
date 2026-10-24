@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android",
+  "description": "What the Android app's web view may use: links, and action0's own plugin (shares and links that opened the app). Everything else goes through the app's commands.",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default", "action0:default"]
+}

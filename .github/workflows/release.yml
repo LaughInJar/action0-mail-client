@@ -2,9 +2,10 @@ name: Release
 
 # Pushing a tag like v0.2.0 builds the desktop app for Linux, Windows and
 # macOS into a draft GitHub Release, with the signed `latest.json` the app's
-# updater reads once the release is published. First it checks that the tag
-# matches the versions (package.json, Cargo.toml, Cargo.lock), that the
-# commit is on main, and everything CI checks.
+# updater reads once the release is published, and the signed Android APK.
+# First it checks that the tag matches the versions (package.json,
+# Cargo.toml, Cargo.lock), that the commit is on main, and everything CI
+# checks.
 on:
   push:
     tags: ["v*"]
@@ -88,3 +89,46 @@ jobs:
           prerelease: false
           # Signed update files (local builds skip them: they need the key).
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+
+  # The Android app: a signed APK (and an AAB for Google Play later), added
+  # to the draft release the desktop jobs made.
+  android:
+    needs: [desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: ./.github/actions/android-setup
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+      - name: Build
+        env:
+          # Optional: the Microsoft client built into the app (otherwise entered in the app).
+          VITE_MICROSOFT_CLIENT_ID: ${{ vars.VITE_MICROSOFT_CLIENT_ID }}
+        run: npm run tauri android build -- --apk --aab
+      - name: Add to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          outputs=src-tauri/gen/android/app/build/outputs
+          cp "$outputs/apk/universal/release/app-universal-release.apk" "action0_${version}_android.apk"
+          cp "$outputs/bundle/universalRelease/app-universal-release.aab" "action0_${version}_android.aab"
+          gh release upload "$GITHUB_REF_NAME" "action0_${version}_android.apk" "action0_${version}_android.aab" --clobber
