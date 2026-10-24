@@ -209,6 +209,7 @@ export async function startDesktop(
     desktop: {
       version: info.version,
       os: info.os,
+      keychain: kept.persistent,
       configure: ({ closeToTray, texts }) => {
         void invoke("shell_configure", { closeToTray, texts }).catch(
           () => undefined,

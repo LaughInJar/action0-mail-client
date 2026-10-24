@@ -94,6 +94,7 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
   const router = useRouter();
   const fetchMailboxes = useFetchMailboxes();
   const a = useT().accounts;
+  const platform = usePlatform();
 
   /** Connects (must run inside the click), then opens the new Inbox. */
   const connect = (type: ProviderType): Promise<void> => {
@@ -101,7 +102,12 @@ export function AddAccountFlow({ titleId, onConnected }: AddAccountFlowProps) {
     return registry.add(type).then(async (handle: AccountHandle) => {
       const { id, email } = handle.account;
       store.getState().showToast({
-        message: known.has(id) ? a.reconnected(email) : a.connected(email),
+        message: known.has(id)
+          ? a.reconnected(email)
+          : // Without a keychain the desktop app forgets accounts on quitting.
+            platform.desktop?.keychain === false
+            ? a.connectedUntilQuit(email)
+            : a.connected(email),
         tone: "info",
       });
       onConnected?.();

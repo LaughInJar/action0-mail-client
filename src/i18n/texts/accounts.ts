@@ -33,6 +33,7 @@ const en = {
 
   // Add account: choosing the type.
   connected: (email: string) => `Connected ${email}`,
+  connectedUntilQuit: (email: string) => `Connected ${email} (until you quit)`,
   reconnected: (email: string) => `Reconnected ${email}`,
   whichKind: "Which kind of account?",
   comingLater: "Coming later",
@@ -280,6 +281,7 @@ const de: typeof en = {
     "Kein Server: Deine Mails kommen direkt von deinem Anbieter in diesen Browser, und die App speichert sie nicht.",
 
   connected: (email) => `${email} verbunden`,
+  connectedUntilQuit: (email) => `${email} verbunden (bis du die App beendest)`,
   reconnected: (email) => `${email} neu verbunden`,
   whichKind: "Welche Art von Konto?",
   comingLater: "Kommt später",

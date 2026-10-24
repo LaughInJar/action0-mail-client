@@ -6,7 +6,9 @@ import type { Platform } from "../platform/types";
  * native side's events (a poll from the tray, a `mailto:` link, closing
  * into the tray) can be fired by hand.
  */
-export function fakeDesktopPlatform() {
+export function fakeDesktopPlatform({
+  keychain = true,
+}: { readonly keychain?: boolean } = {}) {
   const polls = new Set<() => void>();
   const composes = new Set<(mailto: string) => void>();
   const closings = new Set<() => void>();
@@ -43,6 +45,7 @@ export function fakeDesktopPlatform() {
     desktop: {
       version: "0.1.0",
       os: "linux",
+      keychain,
       configure: vi.fn(),
       onClosedToTray: subscribe(closings),
       autostart: {

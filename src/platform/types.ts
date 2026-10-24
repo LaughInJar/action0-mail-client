@@ -57,6 +57,11 @@ export interface DesktopControls {
   readonly version: string;
   /** "linux", "windows", "macos". */
   readonly os: string;
+  /**
+   * Accounts stay signed in across restarts: the OS keychain keeps the
+   * vault's key. Without one, they stay signed in only until quitting.
+   */
+  readonly keychain: boolean;
   /** Closing the window keeps the app in the tray; the tray menu's texts. */
   readonly configure: (options: {
     readonly closeToTray: boolean;

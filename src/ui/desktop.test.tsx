@@ -126,6 +126,54 @@ describe("the desktop app", () => {
     ).toBeInTheDocument();
   });
 
+  it("says when accounts stay signed in only until quitting (no keychain)", async () => {
+    const desktop = fakeDesktopPlatform({ keychain: false });
+    const { user } = renderApp({ platform: desktop.platform, signedIn: false });
+    await user.click(
+      await screen.findByRole("button", { name: /^Demo account/ }),
+    );
+    expect(
+      await screen.findByText("Connected demo@example.com (until you quit)", {
+        selector: "div[aria-live] span",
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Settings" },
+      { timeout: 5000 },
+    );
+    const app = within(dialog).getByRole("region", { name: "App" });
+    expect(within(app).getByRole("note")).toHaveTextContent(
+      /No system keychain was found/,
+    );
+  });
+
+  it("says nothing about the keychain when there is one", async () => {
+    const desktop = fakeDesktopPlatform();
+    const { user } = renderApp({ platform: desktop.platform, signedIn: false });
+    await user.click(
+      await screen.findByRole("button", { name: /^Demo account/ }),
+    );
+    expect(
+      await screen.findByText("Connected demo@example.com", {
+        selector: "div[aria-live] span",
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Settings" },
+      { timeout: 5000 },
+    );
+    expect(
+      within(within(dialog).getByRole("region", { name: "App" })).queryByRole(
+        "note",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers a newer version and installs it on request", async () => {
     const desktop = fakeDesktopPlatform();
     const install = vi.fn(() => Promise.resolve());

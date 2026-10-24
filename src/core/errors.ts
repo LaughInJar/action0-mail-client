@@ -61,6 +61,7 @@ export type MailErrorReason =
   | "folderExists"
   | "folderInsideItself"
   | "attachmentUploadBlocked"
+  | "attachmentUploadInterrupted"
   | "wrongAccount"
   | "peopleUnavailable"
   | "calendarAccessNeeded"

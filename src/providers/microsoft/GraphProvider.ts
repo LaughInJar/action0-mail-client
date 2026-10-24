@@ -1583,18 +1583,23 @@ export class GraphProvider implements MailProvider {
           signal,
         );
       } catch (error) {
-        // The browser may not be allowed to reach Outlook's upload server.
-        if (isMailError(error, "network"))
-          throw new MailError(
-            "provider",
-            `“${part.filename}” couldn’t be uploaded from the browser.`,
-            {
-              cause: error,
-              reason: "attachmentUploadBlocked",
-              params: { name: part.filename },
-            },
-          );
-        throw error;
+        if (!isMailError(error, "network")) throw error;
+        // At the first chunk the browser may not be allowed to reach
+        // Outlook's upload server at all; later, the connection dropped.
+        throw new MailError(
+          "provider",
+          start === 0
+            ? `“${part.filename}” couldn’t be uploaded: Outlook’s upload server didn’t answer.`
+            : `The connection dropped while uploading “${part.filename}”.`,
+          {
+            cause: error,
+            reason:
+              start === 0
+                ? "attachmentUploadBlocked"
+                : "attachmentUploadInterrupted",
+            params: { name: part.filename },
+          },
+        );
       }
     }
     return undefined;

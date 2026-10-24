@@ -46,6 +46,8 @@ export class FakeGraph {
     mail: "max@contoso.com",
     userPrincipalName: "max@contoso.com",
   };
+  /** Upload chunks starting at this byte fail like a lost connection. */
+  failUploadAt: number | undefined;
   /** Answer the next requests to these paths (method + path) with this status. */
   readonly failures = new Map<string, number>();
   #version = 0;
@@ -230,8 +232,10 @@ export class FakeGraph {
         const range = /bytes (\d+)-(\d+)\/(\d+)/.exec(
           request.headers.get("Content-Range") ?? "",
         );
+        const start = Number(range?.[1] ?? -1);
         const end = Number(range?.[2] ?? -1);
         const total = Number(range?.[3] ?? 0);
+        if (start === this.failUploadAt) return HttpResponse.error();
         upload.received = end + 1;
         await request.arrayBuffer();
         if (upload.received < total)
