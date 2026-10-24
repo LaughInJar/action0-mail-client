@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
 use tauri::image::Image;
-use tauri::ipc::{InvokeBody, Request};
+use tauri::ipc::Request;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Window, WindowEvent, Wry};
@@ -328,63 +328,15 @@ pub fn shell_default_mail_app(app: AppHandle) -> Result<DefaultMailApp, String> 
     }
 }
 
-/// Folder for files opened with other apps (PDFs); emptied at every start
-/// so mail content doesn't pile up on disk.
-fn open_folder(app: &AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_cache_dir().ok().map(|dir| dir.join("open"))
-}
-
-pub fn clear_open_folder(app: &AppHandle) {
-    if let Some(folder) = open_folder(app) {
-        let _ = std::fs::remove_dir_all(folder);
-    }
-}
-
 /// Opens a file (raw body; its name in `x-a0-name`) with the system's app
 /// for it, e.g. a PDF viewer.
 #[tauri::command]
 pub fn shell_open_file(app: AppHandle, request: Request<'_>) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let InvokeBody::Raw(bytes) = request.body() else {
-        return Err("No file came.".into());
-    };
-    let name = request
-        .headers()
-        .get("x-a0-name")
-        .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            percent_encoding::percent_decode_str(value)
-                .decode_utf8_lossy()
-                .into_owned()
-        })
-        .unwrap_or_else(|| "file".into());
-    let folder = open_folder(&app)
-        .ok_or_else(|| "No folder for files.".to_string())?
-        .join(crate::oauth::pkce::random_token(6));
-    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-    let path = folder.join(safe_name(&name));
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    let file = crate::files::write(&app, &request)?;
     app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
+        .open_path(file.path.to_string_lossy(), None::<&str>)
         .map_err(|e| e.to_string())
-}
-
-/// A file name without folders or characters file systems refuse.
-pub fn safe_name(name: &str) -> String {
-    let cleaned: String = name
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect();
-    let trimmed = cleaned.trim_matches(|c: char| c == '.' || c.is_whitespace());
-    if trimmed.is_empty() {
-        "file".into()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 #[cfg(test)]
@@ -402,12 +354,5 @@ mod tests {
             mailto_args(&args),
             vec!["MAILTO:anna@example.org?subject=Hi"]
         );
-    }
-
-    #[test]
-    fn keeps_file_names_inside_their_folder() {
-        assert_eq!(safe_name("../../etc/passwd"), "_.._etc_passwd");
-        assert_eq!(safe_name("Report Q3.pdf"), "Report Q3.pdf");
-        assert_eq!(safe_name(".."), "file");
     }
 }

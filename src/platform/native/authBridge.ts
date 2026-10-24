@@ -21,6 +21,7 @@ const KINDS = new Set<NativeAuthErrorKind>([
   "wrongAccount",
   "network",
   "provider",
+  "noPlayServices",
 ]);
 
 /** A native refusal (`{kind, message}`) as a {@link NativeAuthError}. */

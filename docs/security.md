@@ -132,7 +132,7 @@ Blocking remote images by default also blocks read-tracking pixels.
 
 ### Links
 
-The sanitizer makes every link open in a new tab without opener or referrer. On click, `followLinkClick()` (`src/ui/reader/links.ts`) asks the platform first: the web app lets the link open as it does; the desktop app opens `http(s):` in the default browser, `mailto:` in a new mail, and follows nothing else (`followLink` in `src/platform/desktop/index.ts`).
+The sanitizer makes every link open in a new tab without opener or referrer. On click, `followLinkClick()` (`src/ui/reader/links.ts`) asks the platform first: the web app lets the link open as it does; the desktop app opens `http(s):` in the default browser, `mailto:` in a new mail, and follows nothing else (`followLink` in `src/platform/native/desktop.ts`).
 
 ### Attachments
 
@@ -205,12 +205,25 @@ Defined in `src/auth/microsoft/msal.ts`:
 - **Vault.** Refresh tokens are encrypted with XChaCha20-Poly1305; the 256-bit key is in the OS keychain (`app.action0.mail` / `vault-key`), the file in the app's data folder with mode `0600` on Unix. Without a keychain nothing is written and accounts last until the app quits ([desktop-app.md](desktop-app.md#vault-and-keychain)).
 - **Sign-in.** The loopback listener binds only to `127.0.0.1` and `::1`, on a random port, for one callback, for at most 10 minutes; `state` and PKCE (S256) tie the answer to the request; the page it shows has no scripts. Reconnecting refuses a different account.
 - **Network.** The web view's CSP allows no network connections (`connect-src ipc: http://ipc.localhost`); requests go through `net_fetch`, which accepts only `http` and `https` URLs and keeps no cookies. Because `net_fetch` makes any such request without CORS, script injection into the web view would be worth more than in a browser tab, which is why the layers above (`script-src 'self'`, the sanitizer, the sandbox) and Tauri's `freezePrototype` matter.
-- **Capabilities** (`src-tauri/capabilities/main.json`) apply to the `main` window only and list just the plugin calls the UI makes ([desktop-app.md](desktop-app.md#capabilities-and-csp)). Tauri allows the app's own commands only to the app's local pages.
+- **Capabilities** (`src-tauri/capabilities/desktop.json`) apply to the `main` window only and list just the plugin calls the UI makes ([desktop-app.md](desktop-app.md#capabilities-and-csp)). Tauri allows the app's own commands only to the app's local pages.
 - **Opening links and files.** `opener:default` limits `openUrl` to `http(s):`, `mailto:` and `tel:`, and `followLink` itself refuses every other scheme (`file:`, `javascript:`, other apps). The UI can't open file paths at all: `shell_open_file` writes the file on the native side into `<app cache folder>/open/<random>/` under a cleaned name (`safe_name()`: path separators, reserved and control characters replaced, leading and trailing dots trimmed) and opens only that path. Only PDF attachments use it.
-- **Temporary folder.** `<app cache folder>/open` is deleted at every start (`clear_open_folder()` in `src-tauri/src/shell.rs`), so opened attachments don't pile up on disk.
+- **Temporary folder.** `<app cache folder>/open` is deleted at every start (`files::clear()` in `src-tauri/src/files.rs`), so opened attachments don't pile up on disk.
 - **Saving.** Attachments are written only to the path the user picked in the Save dialog; the fs plugin has no other scope.
 - **Updates** are verified against the public key compiled into the app before installing, and only newer versions are accepted ([releasing.md](releasing.md#latestjson-and-how-installed-apps-update)).
 - **`mailto:` links from other apps** only open a filled-in new mail; nothing is sent without the user.
+
+## Android specifics
+
+The Android app shares the desktop app's native side; what differs ([android.md](android.md)):
+
+- **Google accounts** get access tokens from Google Play services, which identifies the app by its package and signing certificate. No Google refresh token exists on the phone; the vault keeps only the account's address and scopes.
+- **Microsoft accounts** sign in in a Custom Tab (the browser, not a web view) with PKCE and `state`; the answer comes back through the `msauth://app.action0.mail/<signature hash>` link. Another app could register the same scheme, but without the PKCE verifier a caught code is useless. The refresh token is kept in the vault as on the desktop.
+- **Vault key.** The vault's key is encrypted with an AES-256-GCM key generated in the Android Keystore (`action0-vault`), which never leaves it, and stored in the app's private preferences. App data isn't readable by other apps.
+- **Background check.** `background.json` (app data) holds whether it's on, the notification texts, and per account the last check time and notified message ids; no content. Notifications show sender and subject, like the desktop's.
+- **Files for other apps** go through a `FileProvider` that only exposes the app's cache (`res/xml/file_paths.xml`), with a read grant for one file per intent. Shared files from other apps are copied into `cache/shared/` and handed to the UI once (`mobile_read_shared` accepts only paths inside that folder), then deleted.
+- **Incoming links.** Only `mailto:`, shares and `msauth://` answers are accepted from other apps; notification taps use an explicit intent to the app's own activity, so other apps can't send `action0://` links to it.
+- **Network.** The same `net_fetch`; TLS trusts Mozilla's root certificates compiled into the app, not user-installed CAs.
+- **Capabilities** (`src-tauri/capabilities/android.json`): the web view may only call `opener` and two commands of action0's plugin (`pending`, `insets`); everything else goes through the app's own commands.
 
 ## Reporting issues
 

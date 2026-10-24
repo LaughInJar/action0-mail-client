@@ -13,8 +13,8 @@ import { messages } from "./i18n/messages";
 import { getLocalStorage, getSessionStorage } from "./lib/storage";
 import "./index.css";
 
-/** True inside the desktop app (Tauri). */
-const inDesktopApp = "__TAURI_INTERNALS__" in window;
+/** True inside the desktop or Android app (Tauri). */
+const inApp = "__TAURI_INTERNALS__" in window;
 
 /** The page the browser shows after signing in, in the interface's language. */
 const signedInPage = () =>
@@ -24,37 +24,38 @@ const signedInPage = () =>
 const config = readConfig();
 const sessionStorage = getSessionStorage();
 const localStorage = getLocalStorage();
-// The desktop app's own sign-in, networking and integration.
-const desktop = inDesktopApp
-  ? await import("./platform/desktop").then((module) =>
-      module.startDesktop(signedInPage),
+// The app's own sign-in, networking and integration.
+const native = inApp
+  ? await import("./platform/native").then((module) =>
+      module.startNative(signedInPage),
     )
   : undefined;
-const desktopServices = desktop && {
-  native: { bridge: desktop.auth, accounts: desktop.accounts },
-  fetch: desktop.fetch,
+const nativeServices = native && {
+  native: { bridge: native.auth, accounts: native.accounts },
+  fetch: native.fetch,
+  android: native.platform.kind === "android",
 };
 const services = createAppServices({
   modules: createDefaultModules(
     config,
     sessionStorage,
     localStorage,
-    desktopServices,
+    nativeServices,
   ),
   createSetups: createDefaultSetups(
     config,
     sessionStorage,
     localStorage,
-    desktopServices,
+    nativeServices,
   ),
   localStorage,
   sessionStorage,
   version: config.version,
-  ...(desktop
+  ...(native
     ? {
-        platform: desktop.platform,
+        platform: native.platform,
         icsFactory: (subscription) =>
-          new IcsCalendarProvider(subscription, { fetch: desktop.fetch }),
+          new IcsCalendarProvider(subscription, { fetch: native.fetch }),
       }
     : {}),
 });

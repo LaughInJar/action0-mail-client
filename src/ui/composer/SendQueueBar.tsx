@@ -28,7 +28,7 @@ export function SendQueueBar({ actions }: { actions: ComposeActions }) {
   if (pending.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-16 z-50 flex flex-col items-center gap-2 px-4 pb-[env(safe-area-inset-bottom)]">
+    <div className="pointer-events-none fixed inset-x-0 bottom-16 z-50 flex flex-col items-center gap-2 px-4 pb-[var(--safe-bottom)]">
       {pending.map((item) => {
         // `now` may predate the item until the next tick.
         const left = item.sendAt - Math.max(now, item.queuedAt);

@@ -1,8 +1,4 @@
-/**
- * The desktop app's {@link Platform}, over Tauri: loaded with `import()`
- * only when running in the app, so the web bundle doesn't carry it.
- */
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+/** The desktop app's {@link Platform} (Linux, Windows, macOS). */
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as autostart from "@tauri-apps/plugin-autostart";
@@ -17,27 +13,17 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import type { NativeAccount, NativeAuthBridge } from "../../auth/native/bridge";
 import type { Platform } from "../types";
 import { createAuthBridge, type SignedInPage } from "./authBridge";
-import { createNativeFetch, type Invoke } from "./nativeFetch";
-
-/** What the composition root gets from the desktop app. */
-export interface DesktopStart {
-  readonly platform: Platform;
-  /** Network requests through the native side (no CORS). */
-  readonly fetch: typeof fetch;
-  readonly auth: NativeAuthBridge;
-  /** Accounts signed in at earlier starts, by account id. */
-  readonly accounts: ReadonlyMap<string, NativeAccount>;
-}
-
-const invoke: Invoke = (command, args, options) =>
-  tauriInvoke(
-    command,
-    args,
-    options?.headers ? { headers: options.headers } : undefined,
-  );
+import {
+  catchLinks,
+  fileRequest,
+  invoke,
+  linkFollower,
+  waiting,
+  type NativeStart,
+} from "./common";
+import { createNativeFetch } from "./nativeFetch";
 
 /** Native events, with listeners added and removed synchronously. */
 function relay(event: string): {
@@ -87,7 +73,7 @@ async function overlayPng(count: number): Promise<number[] | null> {
 /** Starts the desktop side: the platform, networking and kept accounts. */
 export async function startDesktop(
   page: () => SignedInPage,
-): Promise<DesktopStart> {
+): Promise<NativeStart> {
   const auth = createAuthBridge(invoke, page);
   const [info, kept, compose] = await Promise.all([
     invoke<{ os: string; version: string }>("shell_info"),
@@ -107,47 +93,18 @@ export async function startDesktop(
   });
 
   // mailto: links (from the system, the tray, mails) wait for the first listener.
-  const waiting = [...compose];
-  const composeListeners = new Set<(mailto: string) => void>();
-  const composeHere = (mailto: string) => {
-    if (composeListeners.size === 0) waiting.push(mailto);
-    for (const listener of [...composeListeners]) listener(mailto);
-  };
+  const composing = waiting<string>();
+  for (const link of compose) composing.emit(link);
   relay("a0://compose").subscribe((link) => {
-    composeHere(typeof link === "string" ? link : "");
+    composing.emit(typeof link === "string" ? link : "");
   });
   const polls = relay("a0://poll");
   const closedToTray = relay("a0://closed-to-tray");
   const openExternal = (url: string) => {
     void openUrl(url).catch(() => undefined);
   };
-  const followLink = (href: string): boolean => {
-    let url: URL;
-    try {
-      url = new URL(href, window.location.href);
-    } catch {
-      return true;
-    }
-    if (url.origin === window.location.origin) return false;
-    if (url.protocol === "https:" || url.protocol === "http:")
-      openExternal(url.href);
-    else if (url.protocol === "mailto:") composeHere(url.href);
-    // Anything else (file:, javascript:, other apps) isn't followed.
-    return true;
-  };
-  // Links of the app itself (target=_blank) would open nothing in a web view.
-  document.addEventListener(
-    "click",
-    (event) => {
-      const link =
-        event.target instanceof Element
-          ? event.target.closest<HTMLAnchorElement>("a[href]")
-          : null;
-      if (link && !event.defaultPrevented && followLink(link.href))
-        event.preventDefault();
-    },
-    true,
-  );
+  const followLink = linkFollower(openExternal, composing.emit);
+  catchLinks(followLink);
 
   let unread = "";
   const platform: Platform = {
@@ -161,10 +118,8 @@ export async function startDesktop(
     },
     openFileLater: () => (file) => {
       if (!file) return;
-      void file.blob.arrayBuffer().then((bytes) =>
-        invoke("shell_open_file", bytes, {
-          headers: { "x-a0-name": encodeURIComponent(file.name) },
-        }),
+      void fileRequest(file.blob, file.name, file.type).then(
+        ([bytes, options]) => invoke("shell_open_file", bytes, options),
       );
     },
     notifications: {
@@ -199,13 +154,7 @@ export async function startDesktop(
       polls.subscribe(() => {
         listener();
       }),
-    onCompose: (listener) => {
-      composeListeners.add(listener);
-      for (const link of waiting.splice(0)) listener(link);
-      return () => {
-        composeListeners.delete(listener);
-      };
-    },
+    onCompose: composing.subscribe,
     desktop: {
       version: info.version,
       os: info.os,

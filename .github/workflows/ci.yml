@@ -48,3 +48,27 @@ jobs:
         working-directory: src-tauri
       - run: cargo test --locked
         working-directory: src-tauri
+
+  # The Android app: its Rust side linted for an Android target (the check
+  # above only sees the desktop), the Kotlin side compiled, a debug APK
+  # built. Not a required check.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: ./.github/actions/android-setup
+      - name: Clippy for Android
+        working-directory: src-tauri
+        run: |
+          bin="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$bin/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$bin/llvm-ar"
+          cargo clippy --target aarch64-linux-android --locked -- -D warnings
+      - name: Debug APK
+        run: npm run tauri android build -- --debug --apk --target aarch64

@@ -532,7 +532,7 @@ function Calendar({
           onClick={() => {
             newEvent();
           }}
-          className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 grid size-14 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg"
+          className="fixed right-4 bottom-[calc(1.5rem+var(--safe-bottom))] z-30 grid size-14 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg"
         >
           <Icon name="plus" className="size-6" />
         </button>

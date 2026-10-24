@@ -61,7 +61,7 @@ export function Sheet({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className={`absolute inset-x-0 bottom-0 flex flex-col bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl focus:outline-none sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:rounded-xl sm:pb-0 dark:bg-zinc-900 ${SIZES[size]}`}
+        className={`absolute inset-x-0 bottom-0 flex flex-col bg-white pb-[var(--safe-bottom)] shadow-2xl focus:outline-none sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:rounded-xl sm:pb-0 dark:bg-zinc-900 ${SIZES[size]}`}
       >
         {children}
       </div>

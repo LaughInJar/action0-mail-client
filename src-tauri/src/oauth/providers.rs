@@ -23,6 +23,27 @@ pub struct Client {
     pub secret: Option<String>,
 }
 
+/// The client of Google accounts signed in through Play services
+/// (Android): no registration in the app, no refresh token.
+pub const PLAY_SERVICES: &str = "play-services";
+
+impl Client {
+    /// Google through Play services (Android).
+    pub fn is_play_services(&self) -> bool {
+        self.id == PLAY_SERVICES
+    }
+}
+
+/// Microsoft's redirect for an Android app: `msauth://<package>/<signature
+/// hash>`, the hash (base64 SHA-1 of the signing certificate) URL-encoded,
+/// as it's registered in Entra.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn msauth_redirect(package: &str, signature_hash: &str) -> String {
+    let hash =
+        percent_encoding::utf8_percent_encode(signature_hash, percent_encoding::NON_ALPHANUMERIC);
+    format!("msauth://{package}/{hash}")
+}
+
 const GOOGLE_AUTHORIZE: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_REVOKE: &str = "https://oauth2.googleapis.com/revoke";
@@ -253,6 +274,18 @@ pub fn has_scopes(granted: &[String], wanted: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_microsofts_android_redirect() {
+        assert_eq!(
+            msauth_redirect("app.action0.mail", "ga0RGNYHvNM5d0SLGQfpQWAPGJ8="),
+            "msauth://app.action0.mail/ga0RGNYHvNM5d0SLGQfpQWAPGJ8%3D"
+        );
+        assert_eq!(
+            msauth_redirect("app.action0.mail", "a+b/c="),
+            "msauth://app.action0.mail/a%2Bb%2Fc%3D"
+        );
+    }
 
     fn client() -> Client {
         Client {

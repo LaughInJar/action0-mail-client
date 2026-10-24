@@ -168,6 +168,41 @@ Pushing a version tag builds installers for Linux (AppImage, .deb, .rpm), Window
 
 Updates are signed. Create the key pair once with `npx tauri signer generate -w ~/.tauri/action0-updater.key`, put the public key into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and add the private key (the file's content) and its password as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep the private key safe: without it, installed apps can't be updated. Optionally, set the repository variables `VITE_MICROSOFT_CLIENT_ID` and `VITE_GOOGLE_DESKTOP_CLIENT_ID` (and the secret `VITE_GOOGLE_DESKTOP_CLIENT_SECRET`) to build your clients into the app. The installers aren't code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first start.
 
+## Android app
+
+The same app for Android phones and tablets, from the same Tauri project (`src-tauri/gen/android`, plus action0's Kotlin side in `src-tauri/plugins/action0`). It does what the web app does in its phone layout, plus:
+
+- **Stays signed in.** Google accounts sign in through **Google Play services**: Android renews access silently, and no Google refresh token is kept on the phone (phones without Play services can't add Google accounts). Microsoft accounts sign in in a browser tab, and their refresh token is kept like in the desktop app: encrypted in the app's data folder, with the key wrapped by the **Android Keystore**.
+- **Notifications for new mail** while action0 isn't open (Settings → Notifications): Android checks about every 15 minutes, or less often to save battery. There's no server, so there's no push: new mail can take a while to show up.
+- **Sharing**: "Share → action0" in other apps starts a new mail with the shared files, link or text; `mailto:` links open a new mail. Attachments have a **Share** button; PDFs open in your PDF app, and **Download** asks where to save.
+- The Back button and gesture go back through the app like Back in the browser; the status and navigation bars follow the theme.
+- **Updates**: the app says when a newer version is on the release page (Settings → App → **Check for updates**). Install it over the old one; accounts stay.
+
+### Installing
+
+Download `action0_<version>_android.apk` from the [latest release](https://github.com/LaughInJar/action0-mail-client/releases/latest) on your phone, open it, and allow installing from that app when Android asks. (From 2027, Google requires apps installed outside the Play Store to come from verified developers; Play Store distribution comes later.)
+
+### Signing in from the Android app
+
+The app needs its own registrations, because Google and Microsoft know Android apps by their package name (`app.action0.mail`) and the fingerprint of the key the APK is signed with. **Add account** shows both values, ready to copy.
+
+- **Google:** in the same Google Cloud project, under **Clients**, create a client of type **Android** with the package name `app.action0.mail` and the **SHA-1** fingerprint of the signing key. There's nothing to paste into the app. The account has to be on the phone (Android settings → Passwords & accounts). Development builds are signed with your debug key: add a second Android client with its SHA-1 (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android`).
+- **Microsoft:** in the same app registration, under **Authentication** → **Add a platform** → **Android**, enter the package name `app.action0.mail` and the **signature hash** (the same fingerprint, as base64). Entra then shows the redirect URI `msauth://app.action0.mail/<hash>`. The client ID is the same as for the web app. Companies that only allow apps on managed devices (Intune, through Microsoft Authenticator or Company Portal) aren't supported yet.
+
+### Building the Android app
+
+`scripts/android-setup.sh --emulator` installs what's needed into your home folder only: rustup with the Android targets (your PATH isn't changed), JDK 21, and the Android SDK with NDK r29, the emulator and an image with Google Play. Then:
+
+| Command                                          | What it does                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `npm run android:dev`                            | Runs the app on the emulator or a phone (USB debugging) with hot reload        |
+| `npm run android:build -- --debug --apk`         | A debug APK in `src-tauri/gen/android/app/build/outputs/apk/`                  |
+| `npm run android:build -- --apk --target x86_64` | A release APK for the emulator (signed if `keystore.properties` exists, below) |
+
+Both scripts set up the environment with `scripts/android-env.sh`. Start the emulator with `emulator -avd action0` (after `. scripts/android-env.sh`).
+
+Release builds are signed with your own key. Create it once (`keytool -genkeypair -keystore action0-release.jks -alias action0 -keyalg RSA -keysize 4096 -validity 10000`), keep it safe (Android only installs updates signed with the same key), and add it as the repository secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0 action0-release.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. The release workflow then adds the signed APK (and an AAB for Google Play) to each release. To sign locally, write them into `src-tauri/gen/android/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; it's git-ignored).
+
 ## Testing on a phone
 
 `npm run dev:lan` makes the dev server reachable on your local network. The demo works there right away (`http://<your-ip>:5173/?demo`).
@@ -187,7 +222,7 @@ Google and Microsoft sign-in do not: both only allow plain `http://` for `localh
 | `npm run format`  | Format everything with Prettier (`format:check` only checks)    |
 | `npm run check`   | Everything CI runs: typecheck, lint, format check, tests, build |
 
-The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](#desktop-app).
+The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](#desktop-app). So does the Android app (`android:dev`, `android:build`); see [Android app](#android-app).
 
 ## Keyboard shortcuts
 
@@ -247,7 +282,7 @@ The full picture, with the module map, the import rules, and how a click travels
 | sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                                                                                                                               | Tab session, ≤ 10 min for the cache |
 | localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked), dismissed and snoozed event reminders (ids and times, until the event ends), each account's colour | Until sign-out                      |
 
-Tokens never go to localStorage, and mail content is never stored long-term. In the desktop app, refresh tokens are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start.
+Tokens never go to localStorage, and mail content is never stored long-term. In the desktop app, refresh tokens are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start. The Android app keeps Microsoft refresh tokens the same way (the key wrapped by the Android Keystore) and no Google refresh tokens at all; its background check keeps only when it last checked and which message ids it notified.
 
 ### Security model for HTML mail
 

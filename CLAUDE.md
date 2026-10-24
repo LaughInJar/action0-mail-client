@@ -26,7 +26,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 
 Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
 
-1. Android and iOS app.
+1. iOS app (needs an Apple Developer account).
 2. Spell checker in the composer.
 3. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
 
@@ -69,11 +69,12 @@ Features the user asked for, in order; each goes through the four steps when it'
 - `npm run dev`: dev server on http://localhost:5173 (port is fixed: it is the OAuth origin). Demo: `/?demo`.
 - `npm run check`: everything CI runs (typecheck, lint, format check, tests, build). Run it before handing work over. For the desktop app also `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` in `src-tauri/` (CI runs them too).
 - `npm run app:dev` / `npm run app:build`: the desktop app (Tauri).
+- `npm run android:dev` / `npm run android:build`: the Android app (`scripts/android-setup.sh` installs the toolchain into the home folder first). Android-only Rust is linted with `cargo clippy --target aarch64-linux-android` (see `docs/android.md`).
 - `npm test`, `npm run lint`, `npm run format`: individual steps.
 
 ## Code conventions
 
-- Module layout and import rules: see `docs/architecture.md`. ESLint enforces that `ui/`, `data/`, `state/`, `keyboard/` and `compose/` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`), and that only `src/platform/desktop/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
+- Module layout and import rules: see `docs/architecture.md`. ESLint enforces that `ui/`, `data/`, `state/`, `keyboard/` and `compose/` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`), and that only `src/platform/native/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
 - Tests sit next to the code (`*.test.ts(x)`). Helpers live in `src/test/`. Gmail and Graph tests run in the Node environment against MSW (`onUnhandledFrame: "error"`); UI tests render the whole app with `renderApp()` and the in-memory provider.
 - Interfaces that get passed around as functions (subscribe, store actions, router) use function-typed properties, not method syntax (`@typescript-eslint/unbound-method`).
 
@@ -241,3 +242,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Opens in the app: a large dialog on desktop, its own screen on phones, part of the URL so Back/Esc close it. Fetched when opened (`getRawMessage`), kept in memory only, never in browser storage; shown as plain text only.
   - Contents: a summary (Message-ID, date, From/To/Cc/Subject decoded, SPF/DKIM/DMARC badges from the topmost Authentication-Results only, since lower ones could be forged; delivery time), every header in order with a filter, the delivery path (each Received hop and its delay), and the source. Download (.eml; save dialog in the desktop app) and Copy always give the complete original.
   - Large mails: encoded parts over 100 KB show as one line (name, type, size) so the view stays fast.
+- **Android app decisions:**
+  - The Tauri 2 desktop project gets an Android target: the same React UI in its phone layout and the same Rust side (networking, account vault; IMAP/CalDAV later). iOS follows as its own feature once there's an Apple Developer account (macOS CI, TestFlight). Desktop-only parts (tray, autostart, self-updater, single instance, window state) are off on phones.
+  - Sign-in never in an embedded web view. Google on Android uses Google Play services (`AuthorizationClient`, a small Kotlin plugin): access tokens are renewed silently, no Google refresh token on the phone; phones without Play services can't add Google accounts. Microsoft uses Custom Tabs with auth code + PKCE and the `msauth://<package>/<signature hash>` redirect on the same Entra app; its refresh token stays in the vault, whose key moves into the Android Keystore.
+  - Phone integration: Android Back follows the URL; attachments open in other apps and are saved/shared through the share sheet; `mailto:` and "Share → action0" start a new mail; notifications for new Inbox mail and the unread badge where the launcher supports it; event reminders stay in-app.
+  - Background checks are best effort without a server: an Android WorkManager job (about every 15 min or less often, as the system allows) calls a small Rust check for new Inbox mail (Gmail history, Graph delta) and notifies; the full app updates on opening. Checks while open as today.
+  - Distribution: a signed APK in the GitHub Release (built on Linux CI from the `v…` tag; key in secrets), and the app says when a newer one is out. Google Play later as its own step. Known limits go into the README: Google's restricted-scope verification for public releases, Microsoft tenants that require managed devices (Intune broker) not supported yet, sideloading verification from 2027.

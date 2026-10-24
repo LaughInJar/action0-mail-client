@@ -16,6 +16,7 @@ import type { Platform } from "../platform/types";
 import { webPlatform } from "../platform/web";
 import type { AppConfig } from "./config";
 import {
+  createGoogleAndroidSetup,
   createGoogleDesktopSetup,
   createGoogleSetup,
   storedGoogleClientId,
@@ -44,13 +45,22 @@ export interface AppServices {
   readonly platform: Platform;
 }
 
-/** What the desktop app adds to the composition: native sign-in and networking. */
-export interface DesktopServices {
+/** What the native apps add to the composition: native sign-in and networking. */
+export interface NativeServices {
   /** Native sign-in, without a client (each provider has its own). */
   readonly native: Omit<NativeSignIn, "client">;
   /** Network requests through the native side (no CORS). */
   readonly fetch: typeof fetch;
+  /** The Android app: Google accounts sign in through Play services. */
+  readonly android?: boolean;
 }
+
+/**
+ * Google's "client" on Android: Play services, which knows the app by its
+ * package and signing key (registered in Google Cloud), so the app needs
+ * no client ID.
+ */
+export const PLAY_SERVICES_CLIENT = { id: "play-services" } as const;
 
 /** Inputs of {@link createAppServices}. */
 export interface AppServicesOptions {
@@ -67,7 +77,7 @@ export interface AppServicesOptions {
   ) => readonly ProviderSetup[];
   /** Creates iCal subscriptions' calendars (default: fetched from the browser). */
   readonly icsFactory?: IcsFactory;
-  /** The web app (default) or the desktop app. */
+  /** The web app (default), or the desktop or Android app. */
   readonly platform?: Platform;
 }
 
@@ -109,7 +119,7 @@ export function createDefaultModules(
   config: AppConfig,
   sessionStorage: Storage | undefined,
   localStorage: Storage | undefined,
-  desktop?: DesktopServices,
+  desktop?: NativeServices,
 ): ProviderModule[] {
   const microsoftId =
     config.microsoftClientId ?? storedMicrosoftClientId(localStorage);
@@ -130,8 +140,9 @@ export function createDefaultModules(
           }),
         ];
   if (desktop) {
-    const client =
-      config.googleDesktopClient ?? storedGoogleDesktopClient(localStorage);
+    const client = desktop.android
+      ? PLAY_SERVICES_CLIENT
+      : (config.googleDesktopClient ?? storedGoogleDesktopClient(localStorage));
     return [
       ...(client === undefined
         ? []
@@ -162,23 +173,25 @@ export function createDefaultSetups(
   config: AppConfig,
   sessionStorage: Storage | undefined,
   localStorage: Storage | undefined,
-  desktop?: DesktopServices,
+  desktop?: NativeServices,
 ): (registry: AccountRegistry) => readonly ProviderSetup[] {
   return (registry) => [
-    desktop
-      ? createGoogleDesktopSetup({
-          registry,
-          buildClient: config.googleDesktopClient,
-          settings: localStorage,
-          native: desktop.native,
-          fetch: desktop.fetch,
-        })
-      : createGoogleSetup({
-          registry,
-          buildClientId: config.googleClientId,
-          settings: localStorage,
-          tokenStorage: sessionStorage,
-        }),
+    desktop?.android
+      ? createGoogleAndroidSetup()
+      : desktop
+        ? createGoogleDesktopSetup({
+            registry,
+            buildClient: config.googleDesktopClient,
+            settings: localStorage,
+            native: desktop.native,
+            fetch: desktop.fetch,
+          })
+        : createGoogleSetup({
+            registry,
+            buildClientId: config.googleClientId,
+            settings: localStorage,
+            tokenStorage: sessionStorage,
+          }),
     createMicrosoftSetup({
       registry,
       buildClientId: config.microsoftClientId,

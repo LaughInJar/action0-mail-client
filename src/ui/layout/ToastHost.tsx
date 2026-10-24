@@ -27,7 +27,7 @@ export function ToastHost({ onUndo }: { onUndo: () => void }) {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[max(1rem,var(--safe-bottom))]"
     >
       {toast && (
         <div

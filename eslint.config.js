@@ -22,11 +22,11 @@ const providerImplementations = {
     "UI, data and state code must use the provider-agnostic contracts in src/core. Wire concrete providers in src/app.",
 };
 
-/** Tauri's APIs: only the desktop platform (`src/platform/desktop`) talks to the native side. */
+/** Tauri's APIs: only the native platforms (`src/platform/native`: desktop, Android) talk to the native side. */
 const tauriApis = {
   group: ["@tauri-apps/*"],
   message:
-    "Only src/platform/desktop uses Tauri; everything else goes through the Platform interface.",
+    "Only src/platform/native uses Tauri; everything else goes through the Platform interface.",
 };
 
 /** `no-restricted-syntax` entries that catch interface text outside the catalogue. */
@@ -110,7 +110,7 @@ export default defineConfig([
   {
     files: ["src/**"],
     ignores: [
-      "src/platform/desktop/**",
+      "src/platform/native/**",
       "src/ui/**",
       "src/data/**",
       "src/state/**",

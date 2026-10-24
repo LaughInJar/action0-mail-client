@@ -1,8 +1,8 @@
 /**
- * What differs between the web app and the desktop app: opening links and
- * files, notifications, the unread count on icons, and the desktop's own
- * controls. The UI only knows this interface; `web.ts` is the browser,
- * `desktop/` the Tauri app.
+ * What differs between the web app, the desktop app and the Android app:
+ * opening links and files, notifications, the unread count on icons,
+ * content shared from other apps, and each app's own controls. The UI only
+ * knows this interface; `web.ts` is the browser, `native/` the Tauri apps.
  */
 
 /** A notification about new mail. */
@@ -79,9 +79,61 @@ export interface DesktopControls {
   readonly quit: () => void;
 }
 
+/** What another app shared into action0 (Android's "Share → action0"). */
+export interface SharedContent {
+  readonly text?: string;
+  readonly subject?: string;
+  /** Addresses to write to. */
+  readonly to: readonly string[];
+  readonly files: readonly File[];
+}
+
+/** A link that opened the app at an account or one of its messages. */
+export interface OpenTarget {
+  readonly accountId: string;
+  readonly messageId?: string;
+}
+
+/** A newer version of the Android app, to download from its release page. */
+export interface AvailableRelease {
+  readonly version: string;
+  readonly url: string;
+}
+
+/** The background check's notification texts, in the interface's language. */
+export interface BackgroundTexts {
+  /** `{count}` is replaced: "3 new messages". */
+  readonly newMessages: string;
+  readonly noSubject: string;
+}
+
+/** What only the Android app has. */
+export interface MobileControls {
+  readonly version: string;
+  /** "android". */
+  readonly os: string;
+  /** The package name, as Google Cloud and Entra ask for it. */
+  readonly package: string;
+  /** The signing key's base64 SHA-1, as Google Cloud and Entra ask for it. */
+  readonly signatureHash: string;
+  /** Microsoft's redirect URI for this build (`msauth://…`). */
+  readonly microsoftRedirect: string;
+  /** Offers a file to other apps (the share sheet). */
+  readonly share: (blob: Blob, name: string) => Promise<void>;
+  /** A newer release, if there is one (null if not, or offline). */
+  readonly checkForUpdate: () => Promise<AvailableRelease | null>;
+  /** The system bars follow the app's theme (`background`: "#rrggbb"). */
+  readonly setTheme: (dark: boolean, background: string) => void;
+  /** Turns the check for new mail while the app isn't open on or off. */
+  readonly configureBackground: (options: {
+    readonly enabled: boolean;
+    readonly texts: BackgroundTexts;
+  }) => Promise<void>;
+}
+
 /** See the module docs. */
 export interface Platform {
-  readonly kind: "web" | "desktop";
+  readonly kind: "web" | "desktop" | "android";
   /** Opens a web address outside the app (a new tab; the default browser). */
   readonly openExternal: (url: string) => void;
   /**
@@ -105,6 +157,12 @@ export interface Platform {
   readonly onPollRequest: (listener: () => void) => () => void;
   /** Asks the app to write a mail: a `mailto:` link, or "" for an empty one. */
   readonly onCompose: (listener: (mailto: string) => void) => () => void;
+  /** Content another app shared, to write a mail with (Android). */
+  readonly onShare?: (listener: (shared: SharedContent) => void) => () => void;
+  /** A link opened the app at a message (Android's notifications). */
+  readonly onOpen?: (listener: (target: OpenTarget) => void) => () => void;
   /** The desktop app's own controls. */
   readonly desktop?: DesktopControls;
+  /** The Android app's own controls. */
+  readonly mobile?: MobileControls;
 }

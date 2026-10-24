@@ -33,6 +33,19 @@
     height: 100%;
   }
 
+  :root {
+    /*
+     * The space to keep free at the bottom: the home indicator (iOS,
+     * browsers), or what the Android app reports as --a0-system-bottom
+     * (its navigation bar, or the keyboard while it's open), which its web
+     * view doesn't count as safe area.
+     */
+    --safe-bottom: max(
+      env(safe-area-inset-bottom),
+      var(--a0-system-bottom, 0px)
+    );
+  }
+
   body {
     @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
     /* No pull-to-refresh or rubber-banding of the whole app on phones. */

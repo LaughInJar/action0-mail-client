@@ -13,17 +13,17 @@ action0 is a mail and calendar client that runs entirely on the user's device. T
 
 The domain types (mailboxes, intents, capabilities) are explained in [domain-model.md](domain-model.md), the provider adapters in [providers.md](providers.md), the native side in [desktop-app.md](desktop-app.md), and the reasons behind the big choices in [decisions.md](decisions.md).
 
-## Two shells, one app
+## Three shells, one app
 
-|                   | Web app                                                        | Desktop app                                                                         |
-| ----------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Delivery          | Static files (`dist/`) on any HTTPS host                       | Installers built by Tauri; the same `dist/` inside a native window                  |
-| Sign-in           | Google Identity Services and MSAL.js popups in the page        | The system browser with a loopback redirect; tokens exchanged in Rust               |
-| Long-lived tokens | None: access tokens in sessionStorage, Reconnect when they end | Refresh tokens in an encrypted vault, its key in the OS keychain                    |
-| Network requests  | `fetch` from the page (CORS applies)                           | Through the native side (`net_fetch`), so CORS doesn't apply (iCal from any server) |
-| Extras            | —                                                              | Tray, autostart, `mailto:` handler, native notifications, updater                   |
+|                   | Web app                                                        | Desktop app                                                                         | Android app                                                                                |
+| ----------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Delivery          | Static files (`dist/`) on any HTTPS host                       | Installers built by Tauri; the same `dist/` inside a native window                  | An APK built by Tauri (`src-tauri/gen/android`); the same `dist/` in a web view            |
+| Sign-in           | Google Identity Services and MSAL.js popups in the page        | The system browser with a loopback redirect; tokens exchanged in Rust               | Google through Play services; Microsoft in a Custom Tab with an `msauth://` redirect       |
+| Long-lived tokens | None: access tokens in sessionStorage, Reconnect when they end | Refresh tokens in an encrypted vault, its key in the OS keychain                    | Microsoft's in the same vault, its key wrapped by the Android Keystore; none for Google    |
+| Network requests  | `fetch` from the page (CORS applies)                           | Through the native side (`net_fetch`), so CORS doesn't apply (iCal from any server) | The same as the desktop app                                                                |
+| Extras            | —                                                              | Tray, autostart, `mailto:` handler, native notifications, updater                   | Background check and notifications, Share → action0, `mailto:`, share sheet, release check |
 
-Everything that differs sits behind the `Platform` interface (`src/platform/types.ts`): `web.ts` is the web implementation, `desktop/` the Tauri one, loaded only in the app. Only `src/platform/desktop` may import `@tauri-apps/*`; the rest of the code asks the platform (`usePlatform()`) to open links, save files, show notifications or set the unread badge.
+Everything that differs sits behind the `Platform` interface (`src/platform/types.ts`): `web.ts` is the web implementation, `native/` the Tauri ones (`desktop.ts`, `android.ts`), loaded only in an app. Only `src/platform/native` may import `@tauri-apps/*`; the rest of the code asks the platform (`usePlatform()`) to open links, save files, show notifications or set the unread badge. The Android app is described in [android.md](android.md).
 
 `src/main.tsx` decides which shell it is in, builds the services (below) and renders `<App>`.
 
@@ -44,7 +44,7 @@ The rules, enforced by `eslint.config.js` where it can:
 - **`src/core` depends on nothing**: no React, TanStack, Zustand, and no `../` imports. It holds the domain model (`model.ts`), the provider contracts (`provider.ts`, `calendar.ts`), intents, errors and pure helpers (reply rules, recurrence, time zones, reminders, `mailto:` parsing).
 - **`ui`, `data`, `state`, `keyboard` and `compose` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`)**. They see accounts only through `AccountHandle` (`src/accounts/types.ts`): an account, its `AuthSession`, its `MailProvider` and optionally its `CalendarProvider`.
 - **Concrete providers are wired in `src/app`**, the composition root.
-- **Only `src/platform/desktop` imports `@tauri-apps/*`.**
+- **Only `src/platform/native` imports `@tauri-apps/*`.**
 - **Providers do no caching**; the data layer (TanStack Query) does.
 - **IDs and cursors are opaque.** Only the provider that issued an ID interprets it. The UI combines account and message IDs into a `MessageKey` (`src/core/ids.ts`) but never looks inside the provider's part.
 - **Every word on screen comes from `src/i18n/texts`**; ESLint flags literal text in `src/ui`.
@@ -63,11 +63,11 @@ The rules, enforced by `eslint.config.js` where it can:
 | `src/keyboard/`  | The central command registry: bindings, sequences (`g i`), the help dialog's data                                                                                                                                                               |
 | `src/i18n/`      | English and German texts (`texts/`), language choice, `useT()`                                                                                                                                                                                  |
 | `src/security/`  | DOMPurify sanitizing and the mail iframe document with its CSP                                                                                                                                                                                  |
-| `src/platform/`  | The `Platform` interface, the web implementation and the Tauri one                                                                                                                                                                              |
+| `src/platform/`  | The `Platform` interface, the web implementation and the Tauri ones (`native/`: desktop, Android)                                                                                                                                               |
 | `src/ui/`        | React components: `layout/` (shell, columns, drawer, toasts), `mailboxes/` (folder tree), `messages/` (list), `reader/`, `composer/`, `actions/`, `pickers/`, `labels/`, `calendar/`, `settings/`, `reminders/`, `desktop/`, `help/`, `common/` |
 | `src/app/`       | The composition root (`services.ts`), configuration (`config.ts`), runtime provider setup (client IDs entered in the app), `App.tsx` and its providers                                                                                          |
 | `src/test/`      | Test helpers: `renderApp`, the fake Graph server, Gmail fixtures, storage and viewport fakes (see [testing.md](testing.md))                                                                                                                     |
-| `src-tauri/`     | The desktop app's native side (see [desktop-app.md](desktop-app.md))                                                                                                                                                                            |
+| `src-tauri/`     | The native side of the desktop and Android apps (see [desktop-app.md](desktop-app.md), [android.md](android.md))                                                                                                                                |
 
 ## The composition root
 

@@ -10,8 +10,11 @@
   "scripts": {
     "dev": "vite",
     "dev:lan": "vite --host",
+    "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
+    "android:dev": "scripts/android.sh dev",
+    "android:build": "scripts/android.sh build",
     "app:icon": "tauri icon public/favicon.svg -o src-tauri/icons",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

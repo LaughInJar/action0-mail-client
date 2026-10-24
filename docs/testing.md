@@ -121,7 +121,7 @@ function setup(options: { personal?: boolean } = {}) {
 
 The Graph calendar adapter (`src/providers/microsoft/calendar.test.ts`) uses handlers per test, like Gmail.
 
-**Other adapters.** The iCal provider takes a `fetch` option, so its test passes a `vi.fn<typeof fetch>()` instead of using MSW (`src/providers/ical/IcsCalendarProvider.test.ts`). The sign-in sessions are tested against scriptable fakes of `google.accounts.oauth2` and of the MSAL client (`src/auth/google/GoogleAuthSession.test.ts`, `src/auth/microsoft/MicrosoftAuthSession.test.ts`), and the desktop bridge against a fake `invoke` (`src/platform/desktop/*.test.ts`). The in-memory provider used by the demo and the UI tests has its own tests in `src/providers/fake/`.
+**Other adapters.** The iCal provider takes a `fetch` option, so its test passes a `vi.fn<typeof fetch>()` instead of using MSW (`src/providers/ical/IcsCalendarProvider.test.ts`). The sign-in sessions are tested against scriptable fakes of `google.accounts.oauth2` and of the MSAL client (`src/auth/google/GoogleAuthSession.test.ts`, `src/auth/microsoft/MicrosoftAuthSession.test.ts`), and the desktop bridge against a fake `invoke` (`src/platform/native/*.test.ts`). The in-memory provider used by the demo and the UI tests has its own tests in `src/providers/fake/`.
 
 ## UI tests with `renderApp`
 
@@ -280,17 +280,19 @@ The desktop app's native side has unit tests in a `#[cfg(test)] mod tests` at th
 cargo test
 ```
 
-| Module (`src-tauri/src/`) | What the tests cover                                                                                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oauth/pkce.rs`           | The code challenge matches RFC 7636's example; generated verifiers are valid                                                                                                                |
-| `oauth/providers.rs`      | Building Google's sign-in URL, redeeming codes the way each provider wants, reading who signed in from the ID token, comparing scopes like the providers do                                 |
-| `oauth/loopback.rs`       | Parsing the browser's request, accepting only callbacks to its own path, escaping the page text, and a real round trip over a local port (`#[tokio::test]`)                                 |
-| `oauth/mod.rs`            | Telling token refusals apart (expired grant, bad client, HTTP errors) and handing errors to the UI with their kind                                                                          |
-| `vault.rs`                | Accounts stay encrypted between starts, nothing is written without a keychain, a different key starts over. They use an in-memory key store and a temporary folder, never the real keychain |
-| `net.rs`                  | Reading the request header, fetching only web addresses (no `file:`), framing the answer                                                                                                    |
-| `shell.rs`                | Finding `mailto:` links among the start arguments, keeping file names inside their folder                                                                                                   |
+| Module (`src-tauri/src/`) | What the tests cover                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oauth/pkce.rs`           | The code challenge matches RFC 7636's example; generated verifiers are valid                                                                                                                              |
+| `oauth/providers.rs`      | Building Google's sign-in URL, redeeming codes the way each provider wants, reading who signed in from the ID token, comparing scopes like the providers do                                               |
+| `oauth/loopback.rs`       | Parsing the browser's request, accepting only callbacks to its own path, escaping the page text, and a real round trip over a local port (`#[tokio::test]`)                                               |
+| `oauth/mod.rs`            | Telling token refusals apart (expired grant, bad client, HTTP errors) and handing errors to the UI with their kind                                                                                        |
+| `vault.rs`                | Accounts stay encrypted between starts, nothing is written without a keychain, a different key starts over. They use an in-memory key store and a temporary folder, never the real keychain               |
+| `net.rs`                  | Reading the request header, fetching only web addresses (no `file:`), framing the answer                                                                                                                  |
+| `shell.rs`                | Finding `mailto:` links among the start arguments                                                                                                                                                         |
+| `files.rs`                | Keeping file names inside their folder                                                                                                                                                                    |
+| `background.rs`           | The Android background check against a local mock server (`wiremock`): new Gmail mail notified once, Graph's answer, grouping, first sight only counting, nothing while off or without a token, UTC times |
 
-CI runs `cargo clippy --all-targets` too, so the tests are linted like the rest. How the UI uses the desktop side is tested in TypeScript instead: the bridge in `src/platform/desktop/*.test.ts` and `src/auth/native/NativeAuthSession.test.ts`, the interface with `fakeDesktopPlatform()` in `src/ui/desktop.test.tsx`.
+CI runs `cargo clippy --all-targets` too, so the tests are linted like the rest; its `android` job also runs Clippy for an Android target, where the Android-only code is compiled. How the UI uses the native side is tested in TypeScript instead: the bridge in `src/platform/native/*.test.ts` and `src/auth/native/NativeAuthSession.test.ts`, the interface with `fakeDesktopPlatform()` in `src/ui/desktop.test.tsx` and with `fakeAndroidPlatform()` in `src/ui/android.test.tsx`. The Kotlin side has no automated tests: try it on the emulator (`scripts/android-setup.sh --emulator`, then `npm run android:dev`) or a phone, as described in [android.md](android.md#building-running-and-debugging).
 
 ## Manual checks in headless Chrome
 
@@ -357,6 +359,8 @@ The headless browser doesn't replace a real device. Sign-in with Google or Micro
 2. `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npm run build`.
 3. Install the desktop app's Linux libraries (`libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libssl-dev`) and the stable Rust toolchain with `clippy` and `rustfmt`, with a Rust build cache.
 4. In `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. The Rust build embeds `dist/`, which the build step made.
+
+A second job, `android`, lints the Rust side for `aarch64-linux-android` and builds a debug APK (which compiles the Kotlin side). It isn't a required check.
 
 `main` is protected, and `check` is its required status check: a pull request can't be merged until it passes. To reproduce CI locally:
 

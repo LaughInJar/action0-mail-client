@@ -53,6 +53,8 @@ Versions must be valid semver and only go up: the updater installs a release onl
 5. **Setup:** checkout; Node from `.nvmrc` with the npm cache; on Ubuntu the WebKitGTK, AppIndicator, librsvg, libxdo, OpenSSL, `patchelf` and `xdg-utils` packages; stable Rust (on macOS with the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets); `Swatinem/rust-cache` for `src-tauri`; `npm ci`.
 6. **Build and upload:** `tauri-apps/tauri-action@v1` runs the Tauri build with `--config src-tauri/tauri.release.conf.json` (plus the matrix args). That build runs `npm run build` first, with the `VITE_*` values from the step's environment compiled in. The action then finds or creates the release for `tagName` (the pushed tag) as a **draft** named `action0 <tag>`, with a fixed body ("Download the installer for your system below. Installed apps update themselves."), not marked as prerelease, and uploads the bundles. With its default settings it also uploads the `.sig` signature files and the updater's `latest.json`.
 
+7. **`android`** (after the desktop builds, so the draft exists): the shared setup (`.github/actions/android-setup`: JDK 21, the Android SDK with NDK r29, Rust with the Android targets), the release key written from the secrets into `src-tauri/gen/android/keystore.properties`, `npm run tauri android build -- --apk --aab`, and `gh release upload` of `action0_<version>_android.apk` and `.aab` to the draft. The version code comes from the version (Tauri derives it).
+
 Nothing is built, and no draft appears, when `verify` or `checks` fails.
 
 What ends up in the draft:
@@ -63,7 +65,7 @@ What ends up in the draft:
 | Windows | NSIS `-setup.exe`           | `-setup.exe`                            |
 | macOS   | universal `.dmg`            | `.app.tar.gz` (the `.app` as a tarball) |
 
-plus `latest.json`. `bundle.createUpdaterArtifacts: true` in `src-tauri/tauri.release.conf.json` is what makes Tauri produce the update files and sign them with the key.
+plus `latest.json`, and the Android app's signed `action0_<version>_android.apk` (and `.aab` for Google Play later). `bundle.createUpdaterArtifacts: true` in `src-tauri/tauri.release.conf.json` is what makes Tauri produce the update files and sign them with the key.
 
 Variables and secrets (repository **Settings → Secrets and variables → Actions**):
 
@@ -73,8 +75,22 @@ Variables and secrets (repository **Settings → Secrets and variables → Actio
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Secret   | Yes      | Its password                                                                                                                |
 | `VITE_GOOGLE_DESKTOP_CLIENT_ID`      | Variable | No       | Google "Desktop app" client built into the app; otherwise users enter one in **Add account**                                |
 | `VITE_GOOGLE_DESKTOP_CLIENT_SECRET`  | Secret   | No       | That client's secret (stored as a secret, but readable in the built app; Google treats desktop secrets as not confidential) |
-| `VITE_MICROSOFT_CLIENT_ID`           | Variable | No       | Entra client ID built into the app                                                                                          |
+| `VITE_MICROSOFT_CLIENT_ID`           | Variable | No       | Entra client ID built into the app (desktop and Android)                                                                    |
+| `ANDROID_KEYSTORE_BASE64`            | Secret   | Yes      | The Android release key store, base64 (`base64 -w0 action0-release.jks`)                                                    |
+| `ANDROID_KEYSTORE_PASSWORD`          | Secret   | Yes      | Its password                                                                                                                |
+| `ANDROID_KEY_ALIAS`                  | Secret   | Yes      | The key's alias in it                                                                                                       |
+| `ANDROID_KEY_PASSWORD`               | Secret   | Yes      | The key's password                                                                                                          |
 | `GITHUB_TOKEN`                       | Built-in | —        | Creates the release and uploads the files                                                                                   |
+
+## The Android release key
+
+Android only installs an update over an installed app when both are signed with the same key, so this key is as important as the updater's. Create it once, outside the repository:
+
+```sh
+keytool -genkeypair -keystore action0-release.jks -alias action0 -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Add it and its passwords as the `ANDROID_*` secrets above (`base64 -w0 action0-release.jks | gh secret set ANDROID_KEYSTORE_BASE64`), keep a backup outside the machine, and register its SHA-1 (`keytool -list -v -keystore action0-release.jks`) as an Android OAuth client in Google Cloud and its base64 form as the Android platform in Entra (see the [README](../README.md#signing-in-from-the-android-app)). The installed app tells users about a newer release by asking GitHub for the latest published release; there's no self-updater on Android.
 
 ## Updater signing keys and secrets
 
@@ -103,14 +119,14 @@ GitHub's `releases/latest` is the newest **published** release that isn't a prer
 
 `latest.json` names the version and, per platform (keys like `linux-x86_64`, `windows-x86_64`, `darwin-aarch64`), the download URL of the update file and its signature. The plugin looks for `<os>-<arch>-<installer>` first, then `<os>-<arch>`.
 
-In the app (`src/platform/desktop/index.ts`, `src/ui/desktop/DesktopIntegration.tsx`):
+In the app (`src/platform/native/desktop.ts`, `src/ui/desktop/DesktopIntegration.tsx`):
 
 1. `UpdateBar` calls `desktop.checkForUpdate()` when the app starts and then every 24 hours (`UPDATE_CHECK_MS`). It wraps `check()` from `@tauri-apps/plugin-updater`; any error counts as "no update", so being offline stays silent.
 2. If there's a newer version, a bar says so (by version number; release notes aren't shown) with **Install** and **Later**. Nothing installs without that click.
 3. **Install** calls `downloadAndInstall()`, which verifies the signature against the built-in public key, then `relaunch()` from `@tauri-apps/plugin-process`. If it fails, the bar shows the error and offers Install again.
 4. Settings → App shows the running version and has **Check for updates** (`src/ui/settings/DesktopSettings.tsx`), which goes through the same steps.
 
-The capabilities `updater:default` and `process:allow-restart` (`src-tauri/capabilities/main.json`) allow exactly this.
+The capabilities `updater:default` and `process:allow-restart` (`src-tauri/capabilities/desktop.json`) allow exactly this.
 
 ## Code-signing status
 

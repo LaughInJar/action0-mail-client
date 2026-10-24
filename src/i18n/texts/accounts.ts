@@ -236,6 +236,92 @@ const en = {
       },
     ],
   },
+  googleAndroid: {
+    setUp: "Set up Google",
+    intro:
+      "On Android, Google accounts sign in through Google Play services, which knows apps by their package name and signing key. Register action0 once in your Google Cloud project; the README has the details.",
+    steps: [
+      "Use the Google Cloud project you set up for action0 (with the Gmail, People and Google Calendar APIs, the test users and the scopes), or create one as described in the README.",
+      "Under <clients>Clients</clients>, create a client of type <em>Android</em> with the package name <package/> and this SHA-1 fingerprint:<sha1/>",
+      "Nothing to paste here: come back and connect.",
+    ],
+    problems: {
+      missing:
+        "Nothing to enter: Google Play services finds the app by itself.",
+      secret: "Nothing to enter: Google Play services finds the app by itself.",
+      url: "Nothing to enter: Google Play services finds the app by itself.",
+      malformed:
+        "Nothing to enter: Google Play services finds the app by itself.",
+    } satisfies Record<SetupProblem, string>,
+    connect: "Connect Google",
+    continueWith: "Continue with Google",
+    loading: "Loading Google sign-in…",
+    waiting: "Waiting for Google…",
+    notes: [
+      "Google asks which account to use and what to allow. The account has to be on this phone (Settings → Passwords & accounts).",
+      "The app asks for full access to your mailbox, because “Delete forever” needs it. There's no server: your mail goes straight from Google to this app.",
+      "It also asks to read your contacts, for address suggestions while writing. That's optional.",
+    ],
+    errorQuestion: "Did Google show an error?",
+    help: [
+      {
+        term: "“This app isn't registered” or “DEVELOPER_ERROR”",
+        text: "Google Cloud has no Android client for action0 yet. Under <clients>Clients</clients>, create one of type <em>Android</em> with the package name <package/> and this SHA-1 fingerprint:<sha1/>",
+      },
+      {
+        term: "“Access blocked: … has not completed the Google verification process”",
+        text: "Your address isn't a test user. Add it under <audience>Audience → Test users</audience>, or publish the app there.",
+      },
+      {
+        term: "“Google Play services aren't available”",
+        text: "This phone has no Google Play services, which Google accounts need here. Microsoft accounts work without them.",
+      },
+    ],
+  },
+  microsoftAndroid: {
+    setUp: "Set up Microsoft",
+    intro:
+      "Microsoft only lets registered apps read mail. Register action0 once in Microsoft Entra. It's free and takes about five minutes; the README has the details. You need a Microsoft 365 work account or a (free) Azure account for it: an Outlook.com account can sign in, but can't register apps.",
+    steps: [
+      "In the <entra>Microsoft Entra admin center</entra>, open <registrations>App registrations</registrations> and choose <em>New registration</em>. Name it, e.g. action0. (Registered it already, for the web or desktop version? Open it and continue with the next step but one.)",
+      "Under <em>Supported account types</em>, choose <em>Accounts in any organizational directory and personal Microsoft accounts</em>.",
+      "Under <em>Authentication</em> → <em>Add a platform</em>, choose <em>Android</em>, enter the package name <package/> and this signature hash:<sha1/>Entra then shows the redirect URI:<redirect/>",
+      "Under <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em>, add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> and <code>MailboxSettings.ReadWrite</code> (<code>User.Read</code> is already there).",
+      "On the <em>Overview</em> page, copy the <em>Application (client) ID</em> and paste it here.",
+    ],
+    problems: {
+      missing: "Paste the Application (client) ID from Microsoft Entra.",
+      secret:
+        "That's a client secret. The app needs the Application (client) ID, which looks like 00000000-0000-0000-0000-000000000000.",
+      url: "That's a web address. The Application (client) ID looks like 00000000-0000-0000-0000-000000000000.",
+      malformed:
+        "This doesn't look like an Application (client) ID. It looks like 00000000-0000-0000-0000-000000000000.",
+    } satisfies Record<SetupProblem, string>,
+    connect: "Connect Microsoft",
+    continueWith: "Continue with Microsoft",
+    loading: "Loading Microsoft sign-in…",
+    waiting: "Waiting for Microsoft in your browser…",
+    notes: [
+      "Microsoft's sign-in opens in a browser tab. Choose your account and allow access; the tab closes by itself.",
+      "The app asks to read, change and send your mail, to see the people you write with, for address suggestions, and to use your calendar. There's no server: your mail goes straight from Microsoft to this app.",
+      "Signatures can't be read from Outlook: you set them up once in Settings → Writing (they're kept in this app).",
+    ],
+    errorQuestion: "Did Microsoft show an error?",
+    help: [
+      {
+        term: "“AADSTS50011”: the redirect URI doesn't match",
+        text: "The app registration has no <em>Android</em> platform for this build. Add it with the package name <package/> and this signature hash:<sha1/>",
+      },
+      {
+        term: "“AADSTS700016”, “unauthorized_client” or “not supported for personal accounts”",
+        text: "The client ID is wrong, or the app doesn't allow this kind of account. Check <em>Supported account types</em> under the app's <em>Authentication</em>.",
+      },
+      {
+        term: "Your company requires a managed device",
+        text: "Some companies only allow apps that use Microsoft's Authenticator or Company Portal (Intune). action0 doesn't support that yet; the web app or the desktop app may work instead.",
+      },
+    ],
+  },
   clientSecret: "Client secret",
   clientSecretNote:
     "Saved in the app. For desktop apps, Google doesn't treat the secret as confidential.",
@@ -482,6 +568,93 @@ const de: typeof en = {
       {
         term: "„Administratorgenehmigung erforderlich“",
         text: "Deine Organisation erlaubt nur Apps, die ein Administrator genehmigt hat. Nur deine IT kann dieser App zustimmen.",
+      },
+    ],
+  },
+  googleAndroid: {
+    setUp: "Google einrichten",
+    intro:
+      "Auf Android melden sich Google-Konten über die Google-Play-Dienste an, die Apps an ihrem Paketnamen und Signaturschlüssel erkennen. Registriere action0 einmal in deinem Google-Cloud-Projekt; Details stehen im README.",
+    steps: [
+      "Nimm das Google-Cloud-Projekt, das du für action0 eingerichtet hast (mit Gmail API, People API und Google Calendar API, den Testnutzern und den Bereichen), oder lege eines an, wie im README beschrieben.",
+      "Lege unter <clients>Clients</clients> einen Client vom Typ <em>Android</em> an, mit dem Paketnamen <package/> und diesem SHA-1-Fingerabdruck:<sha1/>",
+      "Hier musst du nichts einfügen: Komm zurück und verbinde.",
+    ],
+    problems: {
+      missing:
+        "Nichts einzugeben: Die Google-Play-Dienste finden die App selbst.",
+      secret:
+        "Nichts einzugeben: Die Google-Play-Dienste finden die App selbst.",
+      url: "Nichts einzugeben: Die Google-Play-Dienste finden die App selbst.",
+      malformed:
+        "Nichts einzugeben: Die Google-Play-Dienste finden die App selbst.",
+    },
+    connect: "Google verbinden",
+    continueWith: "Weiter mit Google",
+    loading: "Google-Anmeldung wird geladen …",
+    waiting: "Warte auf Google …",
+    notes: [
+      "Google fragt, welches Konto und was du erlauben willst. Das Konto muss auf diesem Handy sein (Einstellungen → Passwörter und Konten).",
+      "Die App bittet um vollen Zugriff auf dein Postfach, weil „Endgültig löschen“ ihn braucht. Es gibt keinen Server: Deine E-Mails gehen direkt von Google zu dieser App.",
+      "Außerdem bittet sie darum, deine Kontakte zu lesen, für Adressvorschläge beim Schreiben. Das ist freiwillig.",
+    ],
+    errorQuestion: "Hat Google einen Fehler gezeigt?",
+    help: [
+      {
+        term: "„Diese App ist nicht registriert“ oder „DEVELOPER_ERROR“",
+        text: "In Google Cloud gibt es noch keinen Android-Client für action0. Lege unter <clients>Clients</clients> einen vom Typ <em>Android</em> an, mit dem Paketnamen <package/> und diesem SHA-1-Fingerabdruck:<sha1/>",
+      },
+      {
+        term: "„Zugriff blockiert: … hat die Google-Überprüfung nicht abgeschlossen“",
+        text: "Deine Adresse ist kein Testnutzer. Füge sie unter <audience>Zielgruppe → Testnutzer</audience> hinzu oder veröffentliche die App dort.",
+      },
+      {
+        term: "„Die Google-Play-Dienste sind nicht verfügbar“",
+        text: "Dieses Handy hat keine Google-Play-Dienste, die Google-Konten hier brauchen. Microsoft-Konten gehen auch ohne.",
+      },
+    ],
+  },
+  microsoftAndroid: {
+    setUp: "Microsoft einrichten",
+    intro:
+      "Microsoft lässt nur registrierte Apps Mails lesen. Registriere action0 einmal in Microsoft Entra. Das ist kostenlos und dauert etwa fünf Minuten; Details stehen im README. Dafür brauchst du ein Microsoft-365-Arbeitskonto oder ein (kostenloses) Azure-Konto: Ein Outlook.com-Konto kann sich anmelden, aber keine Apps registrieren.",
+    steps: [
+      "Öffne im <entra>Microsoft Entra Admin Center</entra> die <registrations>App-Registrierungen</registrations> und wähle <em>Neue Registrierung</em>. Gib ihr einen Namen, z. B. action0. (Schon für die Web- oder Desktop-Version registriert? Öffne sie und mach beim übernächsten Schritt weiter.)",
+      "Wähle unter <em>Unterstützte Kontotypen</em> <em>Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten</em>.",
+      "Wähle unter <em>Authentifizierung</em> → <em>Plattform hinzufügen</em> <em>Android</em>, gib den Paketnamen <package/> und diesen Signaturhash ein:<sha1/>Entra zeigt dann den Umleitungs-URI:<redirect/>",
+      "Füge unter <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> und <code>MailboxSettings.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
+      "Kopiere auf der Seite <em>Übersicht</em> die <em>Anwendungs-ID (Client)</em> und füge sie hier ein.",
+    ],
+    problems: {
+      missing: "Füge die Anwendungs-ID (Client) aus Microsoft Entra ein.",
+      secret:
+        "Das ist ein geheimer Clientschlüssel. Die App braucht die Anwendungs-ID (Client), die so aussieht: 00000000-0000-0000-0000-000000000000.",
+      url: "Das ist eine Webadresse. Die Anwendungs-ID (Client) sieht so aus: 00000000-0000-0000-0000-000000000000.",
+      malformed:
+        "Das sieht nicht nach einer Anwendungs-ID (Client) aus. Sie sieht so aus: 00000000-0000-0000-0000-000000000000.",
+    },
+    connect: "Microsoft verbinden",
+    continueWith: "Weiter mit Microsoft",
+    loading: "Microsoft-Anmeldung wird geladen …",
+    waiting: "Warte auf Microsoft in deinem Browser …",
+    notes: [
+      "Die Microsoft-Anmeldung öffnet sich in einem Browser-Tab. Wähle dein Konto und erlaube den Zugriff; der Tab schließt sich von selbst.",
+      "Die App bittet darum, deine E-Mails zu lesen, zu ändern und zu senden, die Personen zu sehen, mit denen du schreibst (für Adressvorschläge), und deinen Kalender zu nutzen. Es gibt keinen Server: Deine E-Mails gehen direkt von Microsoft zu dieser App.",
+      "Signaturen lassen sich aus Outlook nicht lesen: Du richtest sie einmal unter Einstellungen → Schreiben ein (sie bleiben in dieser App).",
+    ],
+    errorQuestion: "Hat Microsoft einen Fehler gezeigt?",
+    help: [
+      {
+        term: "„AADSTS50011“: Der Umleitungs-URI passt nicht",
+        text: "Der App-Registrierung fehlt die Plattform <em>Android</em> für diesen Build. Füge sie mit dem Paketnamen <package/> und diesem Signaturhash hinzu:<sha1/>",
+      },
+      {
+        term: "„AADSTS700016“, „unauthorized_client“ oder „not supported for personal accounts“",
+        text: "Die Client-ID ist falsch oder die App erlaubt diese Kontoart nicht. Prüfe <em>Unterstützte Kontotypen</em> unter <em>Authentifizierung</em> der App.",
+      },
+      {
+        term: "Deine Firma verlangt ein verwaltetes Gerät",
+        text: "Manche Firmen erlauben nur Apps, die Microsofts Authenticator oder das Unternehmensportal (Intune) nutzen. Das kann action0 noch nicht; die Web-App oder die Desktop-App gehen vielleicht stattdessen.",
       },
     ],
   },

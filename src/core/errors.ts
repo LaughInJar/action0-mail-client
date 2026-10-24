@@ -27,6 +27,7 @@ export type MailErrorReason =
   | "signInAgain"
   | "signInUnavailable"
   | "signInFailed"
+  | "noPlayServices"
   | "signInClosed"
   | "signInBlocked"
   | "accessNotGranted"

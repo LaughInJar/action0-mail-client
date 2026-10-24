@@ -84,6 +84,8 @@ npm run app:build   # tauri build
 
 `npm run app:dev` runs the same app against the Vite dev server (`build.devUrl`, started through `beforeDevCommand`).
 
+Android builds are described in [android.md](android.md#building-running-and-debugging): `scripts/android-setup.sh` installs the toolchain into the home folder, `npm run android:build` builds APKs, and the release workflow builds the signed one.
+
 ### Prerequisites
 
 - Node.js 22.12 or newer (`engines` in `package.json`; CI uses `.nvmrc`).
@@ -134,4 +136,4 @@ The `mailto:` link then arrives as a command-line argument; [desktop-app.md](des
 npm run app:icon   # tauri icon public/favicon.svg -o src-tauri/icons
 ```
 
-This regenerates every icon in `src-tauri/icons/` (PNG sizes, `icon.icns`, `icon.ico` and the Windows Store logos) from the web app's `public/favicon.svg`, so the browser tab, the installers and the tray share one source. Run it only when the SVG changes and commit the results; the icons are tracked in git. The bundle uses the files listed under `bundle.icon` in `src-tauri/tauri.conf.json`, and the tray reuses the window icon (`app.default_window_icon()` in `src-tauri/src/shell.rs`).
+This regenerates every icon in `src-tauri/icons/` (PNG sizes, `icon.icns`, `icon.ico` and the Windows Store logos) from the web app's `public/favicon.svg`, so the browser tab, the installers and the tray share one source. Run it only when the SVG changes and commit the results; the icons are tracked in git. It also writes the Android app's launcher icons into `src-tauri/gen/android/app/src/main/res/mipmap-*` (and an `ios/` folder into `src-tauri/icons/`, which isn't used yet). The bundle uses the files listed under `bundle.icon` in `src-tauri/tauri.conf.json`, and the tray reuses the window icon (`app.default_window_icon()` in `src-tauri/src/shell.rs`).

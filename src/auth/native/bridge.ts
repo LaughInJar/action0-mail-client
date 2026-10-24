@@ -1,7 +1,8 @@
 /**
- * The desktop app's sign-in, done natively (system browser, PKCE, refresh
- * tokens in the OS keychain). The UI only ever gets access tokens.
- * Implemented over Tauri commands in `src/platform/desktop`.
+ * The native apps' sign-in (desktop: system browser, PKCE, refresh tokens
+ * in the OS keychain; Android: the same for Microsoft, Play services for
+ * Google). The UI only ever gets access tokens. Implemented over Tauri
+ * commands in `src/platform/native`.
  */
 
 /** The app's registration at the provider. */
@@ -42,7 +43,9 @@ export type NativeAuthErrorKind =
   | "denied"
   | "wrongAccount"
   | "network"
-  | "provider";
+  | "provider"
+  /** Android: Google accounts need Google Play services, which the phone lacks. */
+  | "noPlayServices";
 
 /** What the bridge rejects with. */
 export class NativeAuthError extends Error {

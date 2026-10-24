@@ -1,0 +1,5 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "What the UI uses directly: links and shared content that opened the app, what the system bars cover, and events for later ones."
+permissions = ["allow-pending", "allow-insets", "allow-register-listener", "allow-remove-listener"]

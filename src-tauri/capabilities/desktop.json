@@ -1,7 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "main",
-  "description": "What the main window may use: exactly the plugins action0 calls.",
+  "identifier": "desktop",
+  "description": "What the desktop app's main window may use: exactly the plugins action0 calls.",
+  "platforms": ["linux", "macOS", "windows"],
   "windows": ["main"],
   "permissions": [
     "core:default",

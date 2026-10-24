@@ -8,12 +8,16 @@ import { useT } from "../../i18n/context";
 /** localStorage setting: the bar was answered and isn't shown again. */
 const ASKED_KEY = "a0.settings.notificationsAsked";
 
-/** Only the browser needs asking (the desktop app may notify anyway). */
+/**
+ * Only the browser and the Android app need asking (the desktop app may
+ * notify anyway). Android's web view has no `Notification`.
+ */
 const askable = (notifications: NotificationsPort) =>
   notifications.mustAsk &&
   notifications.supported() &&
   !notifications.allowed() &&
-  Notification.permission === "default" &&
+  (typeof Notification === "undefined" ||
+    Notification.permission === "default") &&
   readJson(window.localStorage, ASKED_KEY) !== true;
 
 /**
@@ -22,7 +26,7 @@ const askable = (notifications: NotificationsPort) =>
  * only comes after "Turn on".
  */
 export function NotificationsBar() {
-  const { notifications } = usePlatform();
+  const { notifications, mobile } = usePlatform();
   const [visible, setVisible] = useState(() => askable(notifications));
   // Turned off in Settings: never ask.
   const enabled = useUi((state) => state.settings.notifications);
@@ -37,7 +41,9 @@ export function NotificationsBar() {
       role="status"
       className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100"
     >
-      <span className="min-w-0 flex-1">{t.layout.notificationsAsk}</span>
+      <span className="min-w-0 flex-1">
+        {mobile ? t.android.notificationsAsk : t.layout.notificationsAsk}
+      </span>
       <button
         type="button"
         onClick={() => {
