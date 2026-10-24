@@ -40,6 +40,7 @@ import type {
 } from "../../core/provider";
 import { sleep } from "../../lib/sleep";
 import { foldText } from "../../lib/text";
+import { buildMessage } from "../mime/buildMessage";
 
 /** In-memory content of a fake account. */
 export interface FakeMailData {
@@ -111,6 +112,7 @@ export class FakeMailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
+    rawSource: true,
     signatureStore: "provider",
   };
   /** Set to make writes fail with a provider error. */
@@ -303,6 +305,65 @@ export class FakeMailProvider implements MailProvider {
     if (!message)
       throw new MailError("not-found", `No message ${id}`, { status: 404 });
     return message;
+  }
+
+  /**
+   * A plausible source: the message built as MIME, below the headers a
+   * receiving server adds (two hops, and SPF/DKIM/DMARC that pass, or fail
+   * for mail in Spam).
+   */
+  async getRawMessage(
+    id: MessageId,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    const message = await this.getMessage(id, signal);
+    const attachments = await Promise.all(
+      message.attachments.map(async (info) => {
+        const blob = this.#attachments.get(`${id}/${info.id}`);
+        return {
+          filename: info.filename,
+          mimeType: info.mimeType,
+          content: blob
+            ? new Uint8Array(await blob.arrayBuffer())
+            : new Uint8Array(),
+          ...(info.contentId === undefined
+            ? {}
+            : { contentId: info.contentId }),
+        };
+      }),
+    );
+    const received = Date.parse(message.receivedAt);
+    const at = (seconds: number) =>
+      new Date(received - seconds * 1000).toUTCString();
+    const sender = message.from?.address ?? this.#me.address;
+    const domain = sender.slice(sender.indexOf("@") + 1);
+    const junk = this.#mailboxes.find((m) => m.role === "junk")?.id;
+    const spam = junk !== undefined && message.mailboxIds.includes(junk);
+    const [spf, dkim, dmarc] = spam
+      ? ["softfail", "fail", "fail"]
+      : ["pass", "pass", "pass"];
+    let part = 0;
+    const source = buildMessage(
+      {
+        ...(message.from ? { from: message.from } : {}),
+        to: message.to,
+        cc: message.cc,
+        bcc: [],
+        subject: message.subject,
+        text: message.body.text ?? "",
+        html: message.body.html ?? "",
+        attachments,
+        date: new Date(received - 5000),
+      },
+      { boundary: () => `demo-${id}-${String(++part)}` },
+    );
+    const headers = [
+      `Received: by mail.demo.example with SMTP id ${id}; ${at(0)}`,
+      `Authentication-Results: mx.demo.example; spf=${spf} smtp.mailfrom=${sender}; dkim=${dkim} header.d=${domain}; dmarc=${dmarc} header.from=${domain}`,
+      `Received: from mail.${domain} (mail.${domain} [198.51.100.7]) by mx.demo.example with ESMTPS id ${id}; ${at(2)}`,
+      `Message-ID: ${message.internetMessageId ?? `<${id}@demo.example>`}`,
+    ];
+    return new TextEncoder().encode([...headers, source].join("\r\n"));
   }
 
   async getAttachment(

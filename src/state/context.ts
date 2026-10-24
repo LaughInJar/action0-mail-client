@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { useStore } from "zustand";
+import type { MessageRef } from "../core/ids";
 import type { CalendarRoute, HashRouter, Route } from "./router";
 import type { UiActions, UiState, UiStore } from "./uiStore";
 
@@ -44,4 +45,10 @@ export function useCalendarRoute(): CalendarRoute | null {
 export function useSettingsOpen(): boolean {
   const router = useRouter();
   return useSyncExternalStore(router.subscribe, router.isSettingsOpen);
+}
+
+/** The message whose original (headers and source) is open, if any. */
+export function useOriginal(): MessageRef | null {
+  const router = useRouter();
+  return useSyncExternalStore(router.subscribe, router.getOriginal);
 }

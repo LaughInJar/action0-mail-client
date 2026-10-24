@@ -236,6 +236,7 @@ The UI asks what a provider can do instead of which provider it is. `ProviderCap
 | `mailboxEditing`     | `Partial<Record<MailboxKind, MailboxEditing>>` | What can be changed about own mailboxes, per kind. Kinds that are missing can't be created or changed. | `label`           | `folder`, `label`                    |
 | `threads`            | `boolean`                                      | `listThreads` and `getThread` work: the conversation switch applies                                    | yes               | yes                                  |
 | `senders`            | `boolean`                                      | `listSenders` works (From field, signatures)                                                           | yes               | yes                                  |
+| `rawSource`          | `boolean`                                      | `getRawMessage` works: "Show original" (headers and source)                                            | yes               | yes                                  |
 | `signatureStore`     | `"provider" \| "browser"`                      | Where `updateSignature` keeps signatures: with the provider, or only in this browser                   | `provider`        | `browser`                            |
 
 `MailboxEditing` describes one kind:

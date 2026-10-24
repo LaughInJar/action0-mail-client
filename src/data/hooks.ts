@@ -282,6 +282,22 @@ export function useMessage(
   });
 }
 
+/**
+ * A message's raw source, for "Show original". Kept in memory only while
+ * it's shown (never persisted) and dropped as soon as nothing shows it.
+ */
+export function useRawMessage(accountId: AccountId, messageId: MessageId) {
+  const handle = useReadyHandle(accountId);
+  return useQuery({
+    queryKey: queryKeys.rawMessage(accountId, messageId),
+    queryFn: handle?.provider.capabilities.rawSource
+      ? ({ signal }) => handle.provider.getRawMessage(messageId, signal)
+      : skipToken,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
+}
+
 /** Content IDs of image parts that the HTML body references as `cid:`. */
 export function referencedInlineImages(
   message: Message,

@@ -5,6 +5,7 @@ import {
   type AccountId,
   type MailboxId,
   type MessageId,
+  type MessageRef,
 } from "../core/ids";
 import { Emitter } from "../lib/emitter";
 
@@ -20,9 +21,9 @@ export interface RouteSearch {
  * Navigation state kept in the URL hash:
  * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]][&compose=…]`,
  * or `#/all/…` for All inboxes, or `null` for `#/` (on phones: the folder
- * tree). With a search, `mailboxId` is the mailbox it was started from. A
- * `settings` flag after it (see {@link formatLocation}) means Settings is
- * open over the route.
+ * tree). With a search, `mailboxId` is the mailbox it was started from.
+ * Something open over the route (Settings, a message's original) is an
+ * {@link Overlay}, added after it (see {@link formatLocation}).
  */
 export type Route = {
   /**
@@ -202,21 +203,54 @@ export function listRoute(route: NonNullable<Route>): NonNullable<Route> {
   return list;
 }
 
-/** True if the hash has the `settings` flag (Settings is open over the route). */
-export function hasSettingsFlag(hash: string): boolean {
+/**
+ * What's open over the route (mail or calendar), in the URL so Back closes
+ * it: Settings (`?settings`), or the original of a message
+ * (`?original=<messageId>&oa=<accountId>`; any account, since a row of
+ * All inboxes may be another account's).
+ */
+export type Overlay =
+  | { readonly kind: "settings" }
+  | { readonly kind: "original"; readonly message: MessageRef };
+
+/** The overlay a location hash names, if any. */
+export function overlayOf(hash: string): Overlay | null {
   const [, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
-  return new URLSearchParams(query).has("settings");
+  const params = new URLSearchParams(query);
+  if (params.has("settings")) return { kind: "settings" };
+  const messageId = params.get("original");
+  const accountId = params.get("oa");
+  return messageId && accountId
+    ? {
+        kind: "original",
+        message: {
+          accountId: asAccountId(accountId),
+          messageId: asMessageId(messageId),
+        },
+      }
+    : null;
 }
 
-/** A location hash: the route, plus the `settings` flag while Settings is open. */
-export function formatLocation(route: Route, settings: boolean): string {
-  return withFlag(formatRoute(route), settings);
+/** A location hash: the route, plus the overlay open over it. */
+export function formatLocation(route: Route, overlay: Overlay | null): string {
+  return withOverlay(formatRoute(route), overlay);
 }
 
-/** A hash with the `settings` flag added (if `settings`). */
-function withFlag(hash: string, settings: boolean): string {
-  if (!settings) return hash;
-  return `${hash}${hash.includes("?") ? "&" : "?"}settings`;
+/** A hash with `overlay` added to its query. */
+function withOverlay(hash: string, overlay: Overlay | null): string {
+  if (!overlay) return hash;
+  const flag =
+    overlay.kind === "settings"
+      ? "settings"
+      : new URLSearchParams({
+          original: overlay.message.messageId,
+          oa: overlay.message.accountId,
+        }).toString();
+  return `${hash}${hash.includes("?") ? "&" : "?"}${flag}`;
+}
+
+function sameOverlay(a: Overlay | null, b: Overlay | null): boolean {
+  return withOverlay("", a) === withOverlay("", b);
 }
 
 /** Hash-based router. */
@@ -237,7 +271,7 @@ export interface HashRouter {
   ) => void;
   /**
    * Navigates; `replace` avoids a new history entry. A new entry closes
-   * Settings; replacing keeps it open.
+   * the overlay (Settings, an original); replacing keeps it open.
    */
   readonly navigate: (route: Route, options?: { replace?: boolean }) => void;
   /** Settings is open (over the current route), so Back closes it. */
@@ -246,6 +280,15 @@ export interface HashRouter {
   readonly openSettings: () => void;
   /** Closes Settings: Back if it was opened here, else the flag is removed. */
   readonly closeSettings: () => void;
+  /**
+   * The message whose original is shown over the route, if any. The
+   * identity only changes when it does.
+   */
+  readonly getOriginal: () => MessageRef | null;
+  /** Shows a message's original (headers and source) as a new history entry. */
+  readonly openOriginal: (message: MessageRef) => void;
+  /** Closes the original: Back if it was opened here, else it's removed from the URL. */
+  readonly closeOriginal: () => void;
   /** True if going back stays inside the app. */
   readonly canGoBack: () => boolean;
   readonly back: () => void;
@@ -256,8 +299,8 @@ export interface HashRouter {
 interface HistoryState {
   /** Number of in-app history entries below this one. */
   a0Depth?: number;
-  /** This entry was added by opening Settings. */
-  a0Settings?: boolean;
+  /** This entry was added by opening an overlay (Settings, an original). */
+  a0Overlay?: boolean;
 }
 
 const depthOf = (state: unknown): number =>
@@ -271,32 +314,33 @@ export function createHashRouter(win: Window = window): HashRouter {
   let current = parseHash(win.location.hash);
   let lastMail = current;
   let calendar = parseCalendarHash(win.location.hash);
-  let settings = hasSettingsFlag(win.location.hash);
+  let overlay = overlayOf(win.location.hash);
 
-  /** The location of the current mail route or calendar. */
-  const here = (withSettings: boolean) =>
+  /** The location of the current mail route or calendar, with `over` open. */
+  const here = (over: Overlay | null) =>
     calendar
-      ? withFlag(formatCalendarRoute(calendar), withSettings)
-      : formatLocation(current, withSettings);
+      ? withOverlay(formatCalendarRoute(calendar), over)
+      : formatLocation(current, over);
 
   const sync = () => {
     const next = parseHash(win.location.hash);
     const nextCalendar = parseCalendarHash(win.location.hash);
-    const nextSettings = hasSettingsFlag(win.location.hash);
+    const nextOverlay = overlayOf(win.location.hash);
     const routeChanged = formatRoute(next) !== formatRoute(current);
     const calendarChanged =
       (nextCalendar && formatCalendarRoute(nextCalendar)) !==
       (calendar && formatCalendarRoute(calendar));
-    if (!routeChanged && !calendarChanged && nextSettings === settings) return;
+    const overlayChanged = !sameOverlay(nextOverlay, overlay);
+    if (!routeChanged && !calendarChanged && !overlayChanged) return;
     if (routeChanged) current = next;
     if (current !== null) lastMail = current;
     if (calendarChanged) calendar = nextCalendar;
-    settings = nextSettings;
+    if (overlayChanged) overlay = nextOverlay;
     emitter.emit();
   };
 
   const go = (url: string, replace: boolean) => {
-    if (url === here(settings)) return;
+    if (url === here(overlay)) return;
     const depth = depthOf(win.history.state);
     if (replace)
       win.history.replaceState(
@@ -310,34 +354,51 @@ export function createHashRouter(win: Window = window): HashRouter {
   win.addEventListener("popstate", sync);
   win.addEventListener("hashchange", sync);
 
+  const open = (next: Overlay) => {
+    if (sameOverlay(overlay, next)) return;
+    win.history.pushState(
+      { a0Depth: depthOf(win.history.state) + 1, a0Overlay: true },
+      "",
+      here(next),
+    );
+    sync();
+  };
+  const close = (kind: Overlay["kind"]) => {
+    if (overlay?.kind !== kind) return;
+    if ((win.history.state as HistoryState | null)?.a0Overlay === true)
+      win.history.back();
+    else {
+      win.history.replaceState(win.history.state, "", here(null));
+      sync();
+    }
+  };
+
   return {
     getRoute: () => current,
     getCalendarRoute: () => calendar,
     getLastMailRoute: () => lastMail,
     navigate: (route, { replace = false } = {}) => {
-      go(formatLocation(route, replace && settings), replace);
+      go(formatLocation(route, replace ? overlay : null), replace);
     },
     openCalendar: (route, { replace = false } = {}) => {
-      go(withFlag(formatCalendarRoute(route), replace && settings), replace);
-    },
-    isSettingsOpen: () => settings,
-    openSettings: () => {
-      if (settings) return;
-      win.history.pushState(
-        { a0Depth: depthOf(win.history.state) + 1, a0Settings: true },
-        "",
-        here(true),
+      go(
+        withOverlay(formatCalendarRoute(route), replace ? overlay : null),
+        replace,
       );
-      sync();
+    },
+    isSettingsOpen: () => overlay?.kind === "settings",
+    openSettings: () => {
+      open({ kind: "settings" });
     },
     closeSettings: () => {
-      if (!settings) return;
-      if ((win.history.state as HistoryState | null)?.a0Settings === true)
-        win.history.back();
-      else {
-        win.history.replaceState(win.history.state, "", here(false));
-        sync();
-      }
+      close("settings");
+    },
+    getOriginal: () => (overlay?.kind === "original" ? overlay.message : null),
+    openOriginal: (message) => {
+      open({ kind: "original", message });
+    },
+    closeOriginal: () => {
+      close("original");
     },
     canGoBack: () => depthOf(win.history.state) > 0,
     back: () => {

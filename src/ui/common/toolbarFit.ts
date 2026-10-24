@@ -8,7 +8,8 @@ const DIVIDER = 1 + 8 + GAP;
 /**
  * The items that fit into `width` (px) with buttons of `button` px: all of
  * them, or else the ⋯ button plus what's left after the lowest `keep`
- * moved out. Items without `keep` always stay.
+ * moved out. Items without `keep` always stay; `menuOnly` ones never show
+ * as buttons (so ⋯ is always there with them).
  */
 export function fittingItems(
   items: readonly ToolbarItem[],
@@ -22,9 +23,11 @@ export function fittingItems(
       count * button + Math.max(0, count - 1) * GAP + (groups > 1 ? DIVIDER : 0)
     );
   };
-  let shown = [...items];
-  if (widthOf(shown, false) <= width) return new Set(shown.map((i) => i.id));
-  const leaving = items
+  const buttons = buttonItems(items);
+  let shown = [...buttons];
+  if (widthOf(shown, buttons.length < items.length) <= width)
+    return new Set(shown.map((i) => i.id));
+  const leaving = buttons
     .filter((item) => item.keep !== undefined)
     .sort((a, b) => (a.keep ?? 0) - (b.keep ?? 0));
   for (const item of leaving) {
@@ -32,4 +35,9 @@ export function fittingItems(
     shown = shown.filter((candidate) => candidate !== item);
   }
   return new Set(shown.map((item) => item.id));
+}
+
+/** The items that may be buttons (all but the `menuOnly` ones). */
+export function buttonItems(items: readonly ToolbarItem[]): ToolbarItem[] {
+  return items.filter((item) => item.menuOnly !== true);
 }

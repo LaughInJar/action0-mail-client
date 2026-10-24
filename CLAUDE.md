@@ -26,10 +26,9 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 
 Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
 
-1. Show a mail's headers and source ("Show original").
-2. Android and iOS app.
-3. Spell checker in the composer.
-4. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
+1. Android and iOS app.
+2. Spell checker in the composer.
+3. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
 
 ## Architecture rules
 
@@ -237,3 +236,8 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Tree: Open in a new tab (web), Mark all as read (undoable; new provider `markAllRead`), Empty Trash/Spam, New label/folder inside, and for your own mailboxes the existing entries.
   - Reader: a message's header or folded line: Reply, Reply all, Forward, Star, Mark unread, Archive, Delete, Move, Labels, Copy sender address, Mail from <sender> (the mail body keeps the browser's menu).
   - Calendar events: Open, Edit, Delete, Join meeting, Copy link, Accept / Maybe / Decline for invitations (verbs, since the menu has no "Going?" heading; the current answer is checked); a long press that doesn't move opens the menu, one that moves drags.
+- **Show original decisions:**
+  - Any message's headers and raw source, from the reader's ⋯ More menu, the message context menus (reader and single list rows; a conversation row means its newest message) and Ctrl/⌘+U (like Thunderbird; the composer keeps Ctrl+U for underline). Only for providers with the `rawSource` capability (Gmail, Outlook, demo; IMAP later).
+  - Opens in the app: a large dialog on desktop, its own screen on phones, part of the URL so Back/Esc close it. Fetched when opened (`getRawMessage`), kept in memory only, never in browser storage; shown as plain text only.
+  - Contents: a summary (Message-ID, date, From/To/Cc/Subject decoded, SPF/DKIM/DMARC badges from the topmost Authentication-Results only, since lower ones could be forged; delivery time), every header in order with a filter, the delivery path (each Received hop and its delay), and the source. Download (.eml; save dialog in the desktop app) and Copy always give the complete original.
+  - Large mails: encoded parts over 100 KB show as one line (name, type, size) so the view stays fast.

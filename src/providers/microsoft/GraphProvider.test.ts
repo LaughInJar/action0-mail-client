@@ -403,6 +403,22 @@ describe("GraphProvider messages", () => {
   });
 });
 
+describe("GraphProvider.getRawMessage", () => {
+  it("reads the MIME source with $value", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "a", mime: "Subject: Hi\r\n\r\nBody\r\n" });
+    const bytes = await provider.getRawMessage(id("a"));
+    expect(new TextDecoder().decode(bytes)).toBe("Subject: Hi\r\n\r\nBody\r\n");
+  });
+
+  it("says when the message is gone", async () => {
+    const { provider } = setup();
+    expect(await failure(provider.getRawMessage(id("gone")))).toMatchObject({
+      code: "not-found",
+    });
+  });
+});
+
 describe("GraphProvider.markAllRead", () => {
   const unread = (graph: FakeGraph) =>
     graph.messages

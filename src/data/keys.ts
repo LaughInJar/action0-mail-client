@@ -54,6 +54,9 @@ export const queryKeys = {
   senders: (accountId: AccountId) => ["acct", accountId, "senders"] as const,
   message: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "message", messageId] as const,
+  /** A message's raw source ("Show original"): memory only. */
+  rawMessage: (accountId: AccountId, messageId: MessageId) =>
+    ["acct", accountId, "raw", messageId] as const,
   inlineImages: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "inline-images", messageId] as const,
   attachment: (

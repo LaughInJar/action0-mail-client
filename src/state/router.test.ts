@@ -5,7 +5,7 @@ import {
   formatCalendarRoute,
   formatLocation,
   formatRoute,
-  hasSettingsFlag,
+  overlayOf,
   listRoute,
   parseCalendarHash,
   parseHash,
@@ -185,12 +185,16 @@ describe("createHashRouter", () => {
     // Replacing (e.g. the cursor moving) keeps it open; a new entry closes it.
     router.navigate(route, { replace: true });
     expect(router.isSettingsOpen()).toBe(true);
-    expect(hasSettingsFlag(window.location.hash)).toBe(true);
+    expect(overlayOf(window.location.hash)).toEqual({ kind: "settings" });
     router.navigate(list);
     expect(router.isSettingsOpen()).toBe(false);
 
     // Opened from a reloaded URL (no entry of ours): closing removes the flag.
-    window.history.replaceState(null, "", formatLocation(list, true));
+    window.history.replaceState(
+      null,
+      "",
+      formatLocation(list, { kind: "settings" }),
+    );
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     expect(router.isSettingsOpen()).toBe(true);
     router.closeSettings();
@@ -200,10 +204,44 @@ describe("createHashRouter", () => {
   });
 
   it("keeps the settings flag on the root route too", () => {
-    expect(formatLocation(null, true)).toBe("#/?settings");
-    expect(hasSettingsFlag("#/?settings")).toBe(true);
+    expect(formatLocation(null, { kind: "settings" })).toBe("#/?settings");
+    expect(overlayOf("#/?settings")).toEqual({ kind: "settings" });
     expect(parseHash("#/?settings")).toBeNull();
-    expect(formatLocation(route, false)).toBe(formatRoute(route));
+    expect(formatLocation(route, null)).toBe(formatRoute(route));
+  });
+
+  it("shows a message's original over the route; Back closes it", () => {
+    const router = createHashRouter(window);
+    const searched = {
+      accountId: route.accountId,
+      mailboxId: route.mailboxId,
+      search: { text: "invoice", everywhere: false },
+    };
+    router.navigate(searched);
+    const message = {
+      accountId: asAccountId("other:b@example.com"),
+      messageId: asMessageId("m/1"),
+    };
+    router.openOriginal(message);
+    expect(window.location.hash).toBe(
+      `${formatRoute(searched)}&original=m%2F1&oa=other%3Ab%40example.com`,
+    );
+    expect(router.getOriginal()).toEqual(message);
+    // The same object while it stays open (for useSyncExternalStore).
+    expect(router.getOriginal()).toBe(router.getOriginal());
+    expect(router.getRoute()).toEqual(searched);
+    expect(overlayOf(window.location.hash)).toEqual({
+      kind: "original",
+      message,
+    });
+    expect(router.isSettingsOpen()).toBe(false);
+
+    // Without an entry of ours (a reloaded URL), closing removes it.
+    window.history.replaceState(null, "", window.location.hash);
+    router.closeOriginal();
+    expect(router.getOriginal()).toBeNull();
+    expect(window.location.hash).toBe(formatRoute(searched));
+    router.dispose();
   });
 
   it("follows external hash changes", () => {
@@ -285,7 +323,7 @@ describe("calendar routes", () => {
     expect(router.getLastMailRoute()).toEqual(route);
     // Settings opens over the calendar too.
     router.openSettings();
-    expect(hasSettingsFlag(window.location.hash)).toBe(true);
+    expect(overlayOf(window.location.hash)).toEqual({ kind: "settings" });
     expect(window.location.hash).toContain("#/calendar/month/2026-10-01");
     router.closeSettings();
     router.navigate(router.getLastMailRoute());

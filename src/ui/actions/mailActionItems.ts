@@ -20,6 +20,8 @@ export interface ToolbarItem {
    * without one an item always stays.
    */
   readonly keep?: number;
+  /** Only ever in the ⋯ menu, never a button (rarely needed, like Show original). */
+  readonly menuOnly?: boolean;
   /** Answering (Reply, Forward) or acting on the mail; a divider separates them. */
   readonly group: "answer" | "mail";
 }

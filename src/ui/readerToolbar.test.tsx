@@ -48,12 +48,20 @@ const buttons = () =>
     .map((button) => button.getAttribute("aria-label"));
 
 describe("the reader toolbar", () => {
-  it("shows every button when there's room", async () => {
+  it("shows every button when there's room; ⋯ keeps Show original", async () => {
     layOut(800);
-    renderApp();
+    const { user } = renderApp();
     await subject("Welcome to the demo");
-    expect(buttons()).not.toContain("More actions");
     expect(buttons()).toContain("Forward (f)");
+    expect(buttons()).not.toContain("Show original (Ctrl+U)");
+    await user.click(
+      within(toolbar()).getByRole("button", { name: "More actions" }),
+    );
+    expect(
+      within(screen.getByRole("menu", { name: "More actions" }))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Show original (Ctrl+U)"]);
   });
 
   it("puts what doesn't fit into ⋯, by priority, and runs it from there", async () => {
@@ -82,6 +90,7 @@ describe("the reader toolbar", () => {
       "Forward (f)",
       "Report spam (Shift+S)",
       "Labels… (l)",
+      "Show original (Ctrl+U)",
     ]);
     // The first item has focus; the arrow keys move it, Esc closes.
     await waitFor(() => {
@@ -107,11 +116,11 @@ describe("the reader toolbar", () => {
     const observers = layOut(300);
     renderApp();
     await subject("Welcome to the demo");
-    expect(buttons()).toContain("More actions");
+    expect(buttons()).not.toContain("Forward (f)");
     layOut(800);
     act(() => {
       for (const observer of observers) observer();
     });
-    expect(buttons()).not.toContain("More actions");
+    expect(buttons()).toContain("Forward (f)");
   });
 });

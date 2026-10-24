@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useLayoutEffect,
   useRef,
   useState,
@@ -6,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ToolbarItem } from "../actions/mailActionItems";
-import { fittingItems, GAP } from "./toolbarFit";
+import { buttonItems, fittingItems, GAP } from "./toolbarFit";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
 import { useFocusTrap } from "./useFocusTrap";
@@ -25,7 +26,8 @@ export interface OverflowToolbarProps {
 /**
  * A row of icon buttons that shows what fits and puts the rest into a ⋯
  * menu (see {@link fittingItems}), measured again whenever its width
- * changes. Without ResizeObserver everything shows.
+ * changes. Without ResizeObserver every button shows (`menuOnly` items
+ * are always in ⋯).
  */
 export function OverflowToolbar({
   label,
@@ -69,7 +71,7 @@ export function OverflowToolbar({
 
   const shown = space
     ? fittingItems(items, space.width, space.button)
-    : new Set(items.map((item) => item.id));
+    : new Set(buttonItems(items).map((item) => item.id));
   const visible = items.filter((item) => shown.has(item.id));
   const hidden = items.filter((item) => !shown.has(item.id));
   const answers = visible.filter((item) => item.group === "answer");
@@ -190,29 +192,37 @@ function MoreMenu({
             className="absolute top-full right-0 z-50 mt-1 min-w-56 rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
           >
             {items.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                disabled={item.disabled}
-                data-initial-focus={index === 0 ? "" : undefined}
-                onClick={() => {
-                  close();
-                  item.run();
-                }}
-                className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none disabled:opacity-40 dark:hover:bg-zinc-800 dark:focus:bg-zinc-800 pointer-coarse:min-h-11 ${
-                  item.danger
-                    ? "text-red-700 dark:text-red-400"
-                    : "text-zinc-800 dark:text-zinc-100"
-                }`}
-              >
-                <Icon
-                  name={item.icon}
-                  className={`size-4 shrink-0 ${item.pressed ? "fill-amber-400 text-amber-500" : "text-zinc-500 dark:text-zinc-400"}`}
-                />
-                {item.label}
-              </button>
+              <Fragment key={item.id}>
+                {/* The menu-only entries are a group of their own. */}
+                {item.menuOnly && index > 0 && !items[index - 1]?.menuOnly && (
+                  <div
+                    role="separator"
+                    className="my-1 border-t border-zinc-200 dark:border-zinc-800"
+                  />
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  disabled={item.disabled}
+                  data-initial-focus={index === 0 ? "" : undefined}
+                  onClick={() => {
+                    close();
+                    item.run();
+                  }}
+                  className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none disabled:opacity-40 dark:hover:bg-zinc-800 dark:focus:bg-zinc-800 pointer-coarse:min-h-11 ${
+                    item.danger
+                      ? "text-red-700 dark:text-red-400"
+                      : "text-zinc-800 dark:text-zinc-100"
+                  }`}
+                >
+                  <Icon
+                    name={item.icon}
+                    className={`size-4 shrink-0 ${item.pressed ? "fill-amber-400 text-amber-500" : "text-zinc-500 dark:text-zinc-400"}`}
+                  />
+                  {item.label}
+                </button>
+              </Fragment>
             ))}
           </div>
         </>

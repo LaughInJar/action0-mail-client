@@ -102,8 +102,11 @@ All navigation lives in the URL hash (`src/state/router.ts`), so Back works ever
 | `…&compose=new\|<draft>[&ca=<account>]`                         | A full-screen composer (tablets, phones), so Back closes it; `ca` is the draft's account |
 | `#/calendar/<view>/<date>[/<event>[/edit]\|/new[/<from>/<to>]]` | The calendar                                                                             |
 | `…&settings` / `…?settings`                                     | Settings open over the current place                                                     |
+| `…&original=<message>&oa=<account>`                             | A message's original (headers and source) open over the current place                    |
 
 `Route` is `null` for `#/`. IDs are URI-encoded but never parsed. The router keeps a history depth counter in `history.state`, so the app knows whether Back stays inside the app.
+
+Settings and a message's original are _overlays_ (`Overlay` in `src/state/router.ts`): they open over the route as a new history entry, so Back closes them; navigating to a new place closes them too, while replacing the place (the cursor moving) keeps them. The original names its account itself, because in All inboxes a row can be another account's than the route's. Closing goes Back if the overlay was opened in this tab, otherwise it's removed from the URL.
 
 `useNavigationDefaults` (`src/ui/layout/`) fills in a place when the URL has none: All inboxes with two or more accounts, otherwise the first account's Inbox. On phones it pushes that on top of the folder tree, so Back leads to the folders.
 

@@ -250,6 +250,27 @@ describe("GmailProvider.getAttachment", () => {
   });
 });
 
+describe("GmailProvider.getRawMessage", () => {
+  it("fetches the message with format=raw and decodes it", async () => {
+    let format: string | null = null;
+    server.use(
+      http.get(url("messages/m1"), ({ request }) => {
+        format = new URL(request.url).searchParams.get("format");
+        return HttpResponse.json({
+          id: "m1",
+          threadId: "t1",
+          raw: utf8Base64Url("Subject: Grüße\r\n\r\nHallo\r\n"),
+        });
+      }),
+    );
+    const bytes = await provider().getRawMessage(asMessageId("m1"));
+    expect(format).toBe("raw");
+    expect(new TextDecoder().decode(bytes)).toBe(
+      "Subject: Grüße\r\n\r\nHallo\r\n",
+    );
+  });
+});
+
 describe("GmailProvider writes", () => {
   function captureBatchModify() {
     const bodies: unknown[] = [];
