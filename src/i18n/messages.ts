@@ -5,7 +5,7 @@ import { common } from "./texts/common";
 import { composer } from "./texts/composer";
 import { desktop } from "./texts/desktop";
 import { errors } from "./texts/errors";
-import { folders, labels } from "./texts/labels";
+import { categories, folders, labels } from "./texts/labels";
 import { layout } from "./texts/layout";
 import { list } from "./texts/list";
 import { mailboxes } from "./texts/mailboxes";
@@ -28,6 +28,7 @@ export const messages = {
     composer: composer.en,
     desktop: desktop.en,
     errors: errors.en,
+    categories: categories.en,
     folders: folders.en,
     labels: labels.en,
     layout: layout.en,
@@ -46,6 +47,7 @@ export const messages = {
     composer: composer.de,
     desktop: desktop.de,
     errors: errors.de,
+    categories: categories.de,
     folders: folders.de,
     labels: labels.de,
     layout: layout.de,

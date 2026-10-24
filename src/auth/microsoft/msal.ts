@@ -17,6 +17,8 @@ export const GRAPH_SCOPES: readonly string[] = [
   "Mail.Send",
   "People.Read",
   "User.Read",
+  // Outlook's category list.
+  "MailboxSettings.ReadWrite",
   "offline_access",
 ];
 

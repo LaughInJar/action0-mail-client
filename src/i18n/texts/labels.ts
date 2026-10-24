@@ -39,6 +39,8 @@ const en = {
   showInFolderList: "Show in folder list",
   hideFromFolderList: "Hide from folder list",
   deleteMenu: "Delete…",
+  /** In place of Rename where it can't be done (Outlook categories). */
+  cantRename: "Outlook can’t rename categories.",
 
   // Manage labels.
   manageLabels: "Manage labels",
@@ -131,6 +133,7 @@ const de: typeof en = {
   showInFolderList: "In der Ordnerliste anzeigen",
   hideFromFolderList: "In der Ordnerliste ausblenden",
   deleteMenu: "Löschen …",
+  cantRename: "Outlook kann Kategorien nicht umbenennen.",
 
   manageLabels: "Labels verwalten",
   loadingLabels: "Labels werden geladen …",
@@ -252,3 +255,62 @@ const deFolders: typeof en = {
 
 /** {@link labels} in folder wording, for folder-based accounts. */
 export const folders = { en: enFolders, de: deFolders };
+
+/**
+ * The same texts for Outlook's categories (labels next to folders): they
+ * can't be renamed or nested; deleting one leaves the mail as it is.
+ */
+const enCategories: typeof en = {
+  ...en,
+  labels: "Categories",
+  filterLabels: "Filter categories",
+  findLabel: "Find a category",
+  createLabel: (path) => `Create category “${path}”`,
+  nameMissing: "Give the category a name.",
+  preview: "Category",
+  newLabel: "New category",
+  newLabelIn: () => "New category",
+  editLabel: (name) => `Category “${name}”`,
+  menuOf: (name) => `Category ${name}`,
+  manageLabels: "Manage categories",
+  loadingLabels: "Loading categories…",
+  noLabels: "No categories yet.",
+  allLabels: "Categories",
+  saved: (name) => `Saved category “${name}”`,
+  created: (name) => `Created category “${name}”`,
+  couldntChange: "Couldn’t change the category",
+  deleteTitle: (name) => `Delete category “${name}”?`,
+  deleteMessage: () =>
+    "It leaves your list of categories. Mail that has it keeps the name in Outlook, without a colour. This can’t be undone.",
+  deleteLabel: "Delete category",
+  deleted: (name) => `Deleted category “${name}”`,
+};
+
+const deCategories: typeof en = {
+  ...de,
+  labels: "Kategorien",
+  filterLabels: "Kategorien filtern",
+  findLabel: "Kategorie suchen",
+  createLabel: (path) => `Kategorie „${path}“ erstellen`,
+  nameMissing: "Gib der Kategorie einen Namen.",
+  preview: "Kategorie",
+  newLabel: "Neue Kategorie",
+  newLabelIn: () => "Neue Kategorie",
+  editLabel: (name) => `Kategorie „${name}“`,
+  menuOf: (name) => `Kategorie ${name}`,
+  manageLabels: "Kategorien verwalten",
+  loadingLabels: "Kategorien werden geladen …",
+  noLabels: "Noch keine Kategorien.",
+  allLabels: "Kategorien",
+  saved: (name) => `Kategorie „${name}“ gespeichert`,
+  created: (name) => `Kategorie „${name}“ erstellt`,
+  couldntChange: "Ändern der Kategorie fehlgeschlagen",
+  deleteTitle: (name) => `Kategorie „${name}“ löschen?`,
+  deleteMessage: () =>
+    "Sie verschwindet aus deiner Kategorienliste. E-Mails damit behalten den Namen in Outlook, ohne Farbe. Das lässt sich nicht rückgängig machen.",
+  deleteLabel: "Kategorie löschen",
+  deleted: (name) => `Kategorie „${name}“ gelöscht`,
+};
+
+/** {@link labels} in category wording, for Outlook's categories. */
+export const categories = { en: enCategories, de: deCategories };

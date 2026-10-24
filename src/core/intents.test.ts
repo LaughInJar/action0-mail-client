@@ -31,7 +31,9 @@ const change = (
 
 const ids = (...names: string[]): MessageId[] => names.map(asMessageId);
 const box = asMailboxId;
-const labels = { labels: true };
+const labels = {};
+/** A folder account whose mailboxes are all folders. */
+const folders = { isFolder: () => true };
 
 describe("inverseOf", () => {
   it("swaps archive and unarchive for the messages that changed", () => {
@@ -112,9 +114,7 @@ describe("inverseOf", () => {
     } as const;
     const moved = { mailboxIds: [box("archive")] };
     expect(
-      inverseOf(intent, [change(a, moved), change(b, moved)], {
-        labels: false,
-      }),
+      inverseOf(intent, [change(a, moved), change(b, moved)], folders),
     ).toEqual([
       { kind: "move", ids: ["a"], from: "archive", to: "inbox" },
       { kind: "move", ids: ["b"], from: "archive", to: "projects" },
@@ -156,13 +156,46 @@ describe("inverseOf for trash, spam and deletion", () => {
     ]);
   });
 
+  it("moves back into the folder, keeping categories, and undoes categories as labels", () => {
+    const outlook = { isFolder: (id: string) => !id.startsWith("cat:") };
+    const a = summary("a", ["cat:red", "projects"]);
+    const moved = { mailboxIds: [box("cat:red"), box("archive")] };
+    expect(
+      inverseOf(
+        {
+          kind: "move",
+          ids: ids("a"),
+          from: box("projects"),
+          to: box("archive"),
+        },
+        [change(a, moved)],
+        outlook,
+      ),
+    ).toEqual([{ kind: "move", ids: ["a"], from: "archive", to: "projects" }]);
+    const tagged = {
+      mailboxIds: [box("projects"), box("cat:red"), box("cat:blue")],
+    };
+    expect(
+      inverseOf(
+        {
+          kind: "set-labels",
+          ids: ids("a"),
+          add: [box("cat:blue")],
+          remove: [],
+        },
+        [change(a, tagged)],
+        outlook,
+      ),
+    ).toEqual([
+      { kind: "set-labels", ids: ["a"], add: [], remove: ["cat:blue"] },
+    ]);
+  });
+
   it("moves back for folder providers", () => {
     const a = summary("a", ["projects"]);
     const changes = [change(a, { mailboxIds: [box("junk")] })];
     expect(
-      inverseOf({ kind: "report-spam", ids: ids("a") }, changes, {
-        labels: false,
-      }),
+      inverseOf({ kind: "report-spam", ids: ids("a") }, changes, folders),
     ).toEqual([{ kind: "move", ids: ["a"], from: "junk", to: "projects" }]);
   });
 
@@ -174,9 +207,7 @@ describe("inverseOf for trash, spam and deletion", () => {
       change(b, { mailboxIds: [box("trash")] }),
     ];
     expect(
-      inverseOf({ kind: "trash", ids: ids("a", "b") }, changes, {
-        labels: false,
-      }),
+      inverseOf({ kind: "trash", ids: ids("a", "b") }, changes, folders),
     ).toEqual([
       { kind: "move", ids: ["a"], from: "trash", to: "projects" },
       { kind: "move", ids: ["b"], from: "trash", to: "inbox" },

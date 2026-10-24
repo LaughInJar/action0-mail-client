@@ -19,10 +19,11 @@ import type {
   GraphMessage,
   GraphRecipient,
 } from "./types";
+import { categoryId } from "./folders";
 
 /** `$select` for list rows. */
 export const SUMMARY_SELECT =
-  "id,conversationId,parentFolderId,from,toRecipients,subject,bodyPreview,receivedDateTime,createdDateTime,isRead,isDraft,flag,hasAttachments";
+  "id,conversationId,parentFolderId,from,toRecipients,subject,bodyPreview,receivedDateTime,createdDateTime,isRead,isDraft,flag,hasAttachments,categories";
 
 /** `$select` for a whole message (its attachments come separately). */
 export const MESSAGE_SELECT = `${SUMMARY_SELECT},ccRecipients,bccRecipients,replyTo,internetMessageId,internetMessageHeaders,body`;
@@ -81,9 +82,11 @@ export function toMessageSummary(message: GraphMessage): MessageSummary {
     ...(message.conversationId
       ? { threadId: asThreadId(message.conversationId) }
       : {}),
-    mailboxIds: message.parentFolderId
-      ? [asMailboxId(message.parentFolderId)]
-      : [],
+    // The folder first (undo moves back to it), then the categories.
+    mailboxIds: [
+      ...(message.parentFolderId ? [asMailboxId(message.parentFolderId)] : []),
+      ...(message.categories ?? []).map(categoryId),
+    ],
     ...(from ? { from } : {}),
     to: toAddresses(message.toRecipients),
     subject: message.subject ?? "",

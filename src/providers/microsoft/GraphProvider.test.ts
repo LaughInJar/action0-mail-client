@@ -629,6 +629,161 @@ describe("GraphProvider folders", () => {
   });
 });
 
+describe("GraphProvider categories", () => {
+  /** Two categories and three messages, one in Archive. */
+  function withCategories() {
+    const context = setup();
+    const { graph } = context;
+    graph.categories.push(
+      { id: "c1", displayName: "Team", color: "preset7" },
+      { id: "c2", displayName: "Bob's", color: "none" },
+    );
+    graph.add({ id: "a", categories: ["Team"], isRead: false });
+    graph.add({
+      id: "b",
+      categories: ["Team", "Bob's"],
+      isRead: true,
+      receivedDateTime: "2026-10-18T11:00:00Z",
+    });
+    graph.add(
+      {
+        id: "c",
+        categories: ["Team"],
+        receivedDateTime: "2026-10-17T10:00:00Z",
+      },
+      "archive",
+    );
+    graph.add({ id: "d" });
+    return context;
+  }
+
+  it("lists them as coloured labels in their own group, with unread counts", async () => {
+    const { provider } = withCategories();
+    const mailboxes = await provider.listMailboxes();
+    const group = mailboxes.find((m) => m.standard === "categories");
+    expect(group).toMatchObject({ kind: "view", selectable: false });
+    const categories = mailboxes.filter((m) => m.parentId === group?.id);
+    expect(
+      categories.map((m) => [m.name, m.kind, m.color?.background ?? null]),
+    ).toEqual([
+      ["Bob's", "label", null],
+      ["Team", "label", "#4cb4e7"],
+    ]);
+    expect(categories.map((m) => m.counts?.unread)).toEqual([0, 2]);
+    expect(provider.capabilities.mailboxEditing.label).toMatchObject({
+      rename: false,
+      nest: false,
+    });
+  });
+
+  it("does without them while the permission is missing", async () => {
+    const { graph, provider } = withCategories();
+    graph.failures.set("GET me/outlook/masterCategories", 403);
+    const mailboxes = await provider.listMailboxes();
+    expect(mailboxes.some((m) => m.standard === "categories")).toBe(false);
+    expect(mailboxes.some((m) => m.role === "inbox")).toBe(true);
+  });
+
+  it("puts the folder first in a message's mailboxes, then its categories", async () => {
+    const { provider } = withCategories();
+    const team = (await provider.listMailboxes()).find(
+      (m) => m.name === "Team",
+    );
+    const { items } = await provider.listMessages({
+      mailboxId: box("inbox-id"),
+      limit: 10,
+    });
+    expect(items.find((m) => m.id === "b")?.mailboxIds[0]).toBe("inbox-id");
+    expect(items.find((m) => m.id === "b")?.mailboxIds).toContain(team?.id);
+  });
+
+  it("lists a category's mail from every folder, and searches inside it", async () => {
+    const { provider } = withCategories();
+    const mailboxes = await provider.listMailboxes();
+    const team = mailboxes.find((m) => m.name === "Team");
+    const bobs = mailboxes.find((m) => m.name === "Bob's");
+    if (!team || !bobs) throw new Error("no categories");
+    const all = await provider.listMessages({ mailboxId: team.id, limit: 10 });
+    expect(all.items.map((m) => m.id)).toEqual(["b", "a", "c"]);
+    // Quotes in names are escaped in the filter.
+    const quoted = await provider.listMessages({
+      mailboxId: bobs.id,
+      limit: 10,
+    });
+    expect(quoted.items.map((m) => m.id)).toEqual(["b"]);
+    const searched = await provider.listMessages({
+      mailboxId: bobs.id,
+      search: "a",
+      limit: 10,
+    });
+    expect(searched.items.map((m) => m.id)).toEqual([]);
+  });
+
+  it("adds and removes categories, keeping the others", async () => {
+    const { graph, provider } = withCategories();
+    const mailboxes = await provider.listMailboxes();
+    const team = mailboxes.find((m) => m.name === "Team");
+    const bobs = mailboxes.find((m) => m.name === "Bob's");
+    if (!team || !bobs) throw new Error("no categories");
+    await provider.setLabels([id("a"), id("b")], {
+      add: [bobs.id],
+      remove: [team.id],
+    });
+    expect(graph.messages.find((m) => m.id === "a")?.categories).toEqual([
+      "Bob's",
+    ]);
+    expect(graph.messages.find((m) => m.id === "b")?.categories).toEqual([
+      "Bob's",
+    ]);
+    const folder = await failure(
+      provider.setLabels([id("a")], { add: [box("projects-id")], remove: [] }),
+    );
+    expect(isMailError(folder) && folder.reason).toBe("notACategory");
+  });
+
+  it("creates, recolours and deletes categories, but can't rename them", async () => {
+    const { graph, provider } = withCategories();
+    const { OUTLOOK_CATEGORY_COLORS } = await import("./folders");
+    const red = OUTLOOK_CATEGORY_COLORS[0];
+    const created = await provider.createMailbox({
+      name: " Urgent ",
+      kind: "label",
+      ...(red ? { color: red } : {}),
+    });
+    expect(created).toMatchObject({ name: "Urgent", kind: "label" });
+    expect(graph.categories.at(-1)).toMatchObject({
+      displayName: "Urgent",
+      color: "preset0",
+    });
+    const duplicate = await failure(
+      provider.createMailbox({ name: "Urgent", kind: "label" }),
+    );
+    expect(isMailError(duplicate) && duplicate.reason).toBe("categoryExists");
+
+    const blue = OUTLOOK_CATEGORY_COLORS[7];
+    await provider.updateMailbox(created.id, blue ? { color: blue } : {});
+    expect(graph.categories.at(-1)?.color).toBe("preset7");
+    const renamed = await failure(
+      provider.updateMailbox(created.id, { name: "Later" }),
+    );
+    expect(isMailError(renamed) && renamed.reason).toBe("categoryRename");
+
+    await provider.deleteMailbox(created.id);
+    expect(graph.categories.map((c) => c.displayName)).toEqual([
+      "Team",
+      "Bob's",
+    ]);
+    // Like Outlook: mail keeps the name.
+    await provider.deleteMailbox(
+      (await provider.listMailboxes()).find((m) => m.name === "Team")?.id ??
+        box("x"),
+    );
+    expect(graph.messages.find((m) => m.id === "a")?.categories).toEqual([
+      "Team",
+    ]);
+  });
+});
+
 describe("GraphProvider people, senders and signatures", () => {
   it("suggests people and says when the list isn't available", async () => {
     const { graph, provider } = setup();

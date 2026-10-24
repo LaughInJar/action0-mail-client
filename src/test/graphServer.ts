@@ -2,6 +2,7 @@ import { http, HttpResponse, type HttpHandler } from "msw";
 import { GRAPH_BASE } from "../providers/microsoft/http";
 import type {
   GraphAttachment,
+  GraphCategory,
   GraphMailFolder,
   GraphMessage,
 } from "../providers/microsoft/types";
@@ -38,6 +39,8 @@ export class FakeGraph {
   readonly wellKnown: Record<string, string>;
   readonly seen: SeenRequest[] = [];
   readonly people: { displayName: string; address: string }[] = [];
+  /** The user's categories (`me/outlook/masterCategories`). */
+  readonly categories: GraphCategory[] = [];
   me = {
     displayName: "Max Muster",
     mail: "max@contoso.com",
@@ -288,6 +291,51 @@ export class FakeGraph {
         },
       };
 
+    // Categories.
+    if (path === "me/outlook/masterCategories") {
+      if (method === "GET")
+        return { status: 200, body: { value: this.categories } };
+      if (method === "POST") {
+        const spec = body as { displayName: string; color?: string };
+        if (this.categories.some((c) => c.displayName === spec.displayName))
+          return {
+            status: 409,
+            body: {
+              error: { code: "ErrorDuplicate", message: "It exists." },
+            },
+          };
+        const created: GraphCategory = {
+          id: `cat-${String(this.#nextId++)}`,
+          displayName: spec.displayName,
+          color: spec.color ?? "none",
+        };
+        this.categories.push(created);
+        return { status: 201, body: created };
+      }
+    }
+    if ((match = /^me\/outlook\/masterCategories\/([^/]+)$/.exec(path))) {
+      const index = this.categories.findIndex((c) => c.id === match?.[1]);
+      const found = this.categories[index];
+      if (!found) return notFound;
+      if (method === "PATCH") {
+        const { displayName, color } = body as Partial<GraphCategory>;
+        if (displayName !== undefined && displayName !== found.displayName)
+          return {
+            status: 400,
+            body: {
+              error: { code: "ErrorInvalidRequest", message: "Read-only." },
+            },
+          };
+        const updated = { ...found, ...(color ? { color } : {}) };
+        this.categories[index] = updated;
+        return { status: 200, body: updated };
+      }
+      if (method === "DELETE") {
+        this.categories.splice(index, 1);
+        return { status: 204 };
+      }
+    }
+
     // Folders.
     if (method === "GET" && path === "me/mailFolders/delta")
       return { status: 200, body: this.#folderDelta(query) };
@@ -490,6 +538,13 @@ export class FakeGraph {
     const filter = query.get("$filter") ?? "";
     if (filter.includes("flag/flagStatus eq 'flagged'"))
       items = items.filter((m) => m.flag?.flagStatus === "flagged");
+    if (filter.includes("isRead eq false"))
+      items = items.filter((m) => m.isRead === false);
+    const byCategory = /categories\/any\(c:c eq '(.*)'\)/.exec(filter);
+    if (byCategory) {
+      const name = byCategory[1]?.replace(/''/g, "'") ?? "";
+      items = items.filter((m) => m.categories?.includes(name));
+    }
     const byId = /internetMessageId eq '(.*)'/.exec(filter);
     if (byId)
       items = items.filter(
@@ -523,6 +578,9 @@ export class FakeGraph {
       status: 200,
       body: {
         value: page.map((m) => select(m, query.get("$select"))),
+        ...(query.get("$count") === "true"
+          ? { "@odata.count": items.length }
+          : {}),
         ...(skip + top < items.length ? { "@odata.nextLink": next.href } : {}),
       },
     };

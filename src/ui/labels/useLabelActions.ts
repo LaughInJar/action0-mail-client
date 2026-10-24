@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { AccountId, MailboxId } from "../../core/ids";
-import type { Mailbox } from "../../core/model";
+import type { Mailbox, MailboxKind } from "../../core/model";
 import type { MailboxChange, NewMailbox } from "../../core/provider";
 import {
   inverseChange,
@@ -43,6 +43,7 @@ export interface LabelActions {
   readonly createPath: (
     accountId: AccountId,
     path: readonly string[],
+    kind?: MailboxKind,
   ) => Promise<Mailbox>;
   /** Changes a label; the toast offers Undo. Rejects with the reason. */
   readonly edit: (
@@ -119,9 +120,13 @@ export function useLabelActions(): LabelActions {
   const t = useT();
 
   return useMemo((): LabelActions => {
-    /** Label or folder wording, by the account. */
-    const textsOf = (accountId: AccountId) =>
-      mailboxTexts(t, registry.get(accountId)?.provider.capabilities);
+    /** Label, folder or category wording, by the account and the kind. */
+    const textsOf = (accountId: AccountId, kind?: MailboxKind) =>
+      mailboxTexts(t, registry.get(accountId)?.provider.capabilities, kind);
+    const kindOf = (accountId: AccountId, mailboxId: MailboxId) =>
+      cachedMailboxes(queryClient, accountId).find(
+        (mailbox) => mailbox.id === mailboxId,
+      )?.kind;
     const showError = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
         message: `${prefix}: ${errorMessage(error, t)}`,
@@ -134,7 +139,12 @@ export function useLabelActions(): LabelActions {
       await actions.update(accountId, mailbox.id, change);
       const inverse = inverseChange(mailbox, change);
       store.getState().showToast({
-        message: describe(mailbox, change, mailboxes, textsOf(accountId)),
+        message: describe(
+          mailbox,
+          change,
+          mailboxes,
+          textsOf(accountId, mailbox.kind),
+        ),
         tone: "info",
         revert: () => {
           actions
@@ -148,7 +158,7 @@ export function useLabelActions(): LabelActions {
       create: async (accountId, spec, { undoable = false } = {}) => {
         const mailbox = await actions.create(accountId, spec);
         store.getState().showToast({
-          message: textsOf(accountId).created(mailbox.name),
+          message: textsOf(accountId, mailbox.kind).created(mailbox.name),
           tone: "info",
           ...(undoable
             ? {
@@ -163,7 +173,15 @@ export function useLabelActions(): LabelActions {
         return mailbox;
       },
 
-      createPath: async (accountId, path) => {
+      createPath: async (accountId, path, kind) => {
+        // Outlook categories don't nest: one, named as typed.
+        if (
+          kind === "label" &&
+          registry
+            .get(accountId)
+            ?.provider.capabilities.mailboxKinds.includes("folder")
+        )
+          return actions.create(accountId, { name: path.join("/"), kind });
         const { parentId, missing } = resolvePath(
           path,
           cachedMailboxes(queryClient, accountId),
@@ -195,17 +213,18 @@ export function useLabelActions(): LabelActions {
 
       toggleHidden: (accountId, mailbox) => {
         edit(accountId, mailbox, { hidden: !mailbox.hidden }).catch(
-          showError(textsOf(accountId).couldntChange),
+          showError(textsOf(accountId, mailbox.kind).couldntChange),
         );
       },
 
       requestDelete: (accountId, mailbox) => {
         const mailboxes = cachedMailboxes(queryClient, accountId);
         const nested = subtreeIds(mailbox.id, mailboxes).size > 1;
+        const l = textsOf(accountId, mailbox.kind);
         store.getState().setConfirm({
-          title: textsOf(accountId).deleteTitle(mailbox.name),
-          message: textsOf(accountId).deleteMessage(nested),
-          confirmLabel: textsOf(accountId).deleteLabel,
+          title: l.deleteTitle(mailbox.name),
+          message: l.deleteMessage(nested),
+          confirmLabel: l.deleteLabel,
           action: {
             kind: "delete-label",
             accountId,
@@ -216,6 +235,7 @@ export function useLabelActions(): LabelActions {
       },
 
       runDelete: ({ accountId, mailboxId, name }) => {
+        const l = textsOf(accountId, kindOf(accountId, mailboxId));
         const state = store.getState();
         state.setConfirm(null);
         state.setLabelMenu(null);
@@ -235,11 +255,11 @@ export function useLabelActions(): LabelActions {
         actions.remove(accountId, mailboxId).then(
           () => {
             store.getState().showToast({
-              message: textsOf(accountId).deleted(name),
+              message: l.deleted(name),
               tone: "info",
             });
           },
-          showError(textsOf(accountId).couldntDelete(name)),
+          showError(l.couldntDelete(name)),
         );
       },
     };

@@ -29,9 +29,12 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
   const { data: mailboxes } = useMailboxList(menu.accountId);
   const mailbox = findMailbox(mailboxes, menu.mailboxId);
   const capabilities = useAccountHandle(menu.accountId)?.provider.capabilities;
-  const colors = capabilities?.mailboxColors ?? [];
+  const rules = mailbox
+    ? capabilities?.mailboxEditing[mailbox.kind]
+    : undefined;
+  const colors = rules?.colors ?? [];
   const labels = useLabelActions();
-  const l = mailboxTexts(useT(), capabilities);
+  const l = mailboxTexts(useT(), capabilities, mailbox?.kind);
   const menuRef = useRef<HTMLDivElement>(null);
   // The click that ends a long-press lands on whatever opened under the
   // finger: only presses that started on the backdrop or the menu count.
@@ -68,16 +71,26 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
     readonly run: () => void;
     readonly danger?: boolean;
   }[] = [
-    { label: l.rename, run: edit("name") },
+    ...(rules?.rename === false
+      ? []
+      : [{ label: l.rename, run: edit("name") }]),
     ...(colors.length > 0 ? [{ label: l.colourMenu, run: edit("color") }] : []),
-    { label: l.moveUnder, run: edit("parent") },
-    {
-      label: l.addSublabel,
-      run: () => {
-        setLabelDialog({ mode: "create", accountId, parentId: mailbox.id });
-      },
-    },
-    ...(capabilities?.hideMailboxes
+    ...(rules?.nest === false
+      ? []
+      : [
+          { label: l.moveUnder, run: edit("parent") },
+          {
+            label: l.addSublabel,
+            run: () => {
+              setLabelDialog({
+                mode: "create",
+                accountId,
+                parentId: mailbox.id,
+              });
+            },
+          },
+        ]),
+    ...(rules?.hide
       ? [
           {
             label: mailbox.hidden ? l.showInFolderList : l.hideFromFolderList,
@@ -169,6 +182,11 @@ function LabelMenu({ menu }: { menu: LabelMenuState }) {
             {item.label}
           </button>
         ))}
+        {rules?.rename === false && (
+          <p className="max-w-56 px-3 pt-1.5 pb-1 text-xs text-zinc-500">
+            {l.cantRename}
+          </p>
+        )}
       </div>
     </div>
   );

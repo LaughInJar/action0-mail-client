@@ -54,7 +54,13 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const t = useT();
   const capabilities = useAccountHandle(picker.accountId)?.provider
     .capabilities;
-  const l = mailboxTexts(t, capabilities);
+  // Outlook: moving is between folders, and its labels are categories.
+  const folderAccount = capabilities?.mailboxKinds.includes("folder") ?? false;
+  const l = mailboxTexts(
+    t,
+    capabilities,
+    picker.mode === "labels" ? "label" : undefined,
+  );
   const queryClient = useQueryClient();
   const { data: mailboxes = [] } = useMailboxList(picker.accountId);
   const [filter, setFilter] = useState("");
@@ -85,14 +91,20 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           isTarget(mailbox) &&
           (labelsMode
             ? mailbox.kind === "label" && mailbox.role === undefined
-            : mailbox.id !== listed),
+            : mailbox.id !== listed &&
+              !(folderAccount && mailbox.kind === "label")),
       ),
-    [mailboxes, labelsMode, listed],
+    [mailboxes, labelsMode, listed, folderAccount],
   );
+  // Categories by name (they all sit in the one "Categories" group).
+  const pathOf = (mailbox: Mailbox) =>
+    folderAccount && mailbox.kind === "label"
+      ? [mailbox.name]
+      : mailboxPath(mailbox, mailboxes);
   const visible = candidates
     .map((mailbox) => ({
       mailbox,
-      path: mailboxPath(mailbox, mailboxes).join(" / "),
+      path: pathOf(mailbox).join(" / "),
     }))
     .filter(({ path }) =>
       path.toLowerCase().includes(filter.trim().toLowerCase()),
@@ -106,7 +118,8 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
     typed.length > 0 &&
     !mailboxes.some(
       (mailbox) =>
-        mailboxPath(mailbox, mailboxes).join("/").toLowerCase() === typedKey,
+        (!labelsMode || mailbox.kind === "label") &&
+        pathOf(mailbox).join("/").toLowerCase() === typedKey,
     );
   const optionCount = visible.length + (offerCreate ? 1 : 0);
   const activeIndex = Math.max(0, Math.min(active, optionCount - 1));
@@ -176,23 +189,25 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
     if (creating || !offerCreate) return;
     setCreating(true);
     setCreateError(undefined);
-    labels.createPath(picker.accountId, typed).then(
-      (mailbox) => {
-        setCreating(false);
-        if (labelsMode) {
-          setChoices((current) => new Map(current).set(mailbox.id, true));
-          setFilter(typed.join(" / "));
-          setActive(0);
-        } else {
-          actions.moveTo(mailbox.id, keys);
-          close();
-        }
-      },
-      (error: unknown) => {
-        setCreating(false);
-        setCreateError(errorMessage(error, t));
-      },
-    );
+    labels
+      .createPath(picker.accountId, typed, labelsMode ? "label" : undefined)
+      .then(
+        (mailbox) => {
+          setCreating(false);
+          if (labelsMode) {
+            setChoices((current) => new Map(current).set(mailbox.id, true));
+            setFilter(typed.join(" / "));
+            setActive(0);
+          } else {
+            actions.moveTo(mailbox.id, keys);
+            close();
+          }
+        },
+        (error: unknown) => {
+          setCreating(false);
+          setCreateError(errorMessage(error, t));
+        },
+      );
   };
 
   const choose = (mailbox: Mailbox) => {

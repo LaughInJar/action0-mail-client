@@ -51,7 +51,7 @@ export interface FakeMailData {
   readonly me?: EmailAddress;
   /** People for address suggestions; enables {@link MailProvider.searchContacts}. */
   readonly contacts?: readonly EmailAddress[];
-  /** Colours labels may get. */
+  /** Colours labels (in folder mode: categories) may get. */
   readonly mailboxColors?: readonly MailboxColor[];
   /** Addresses the account sends from; by default just `me`, without a signature. */
   readonly senders?: readonly Sender[];
@@ -106,8 +106,9 @@ export class FakeMailProvider implements MailProvider {
     contacts: false,
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
-    mailboxColors: [],
-    hideMailboxes: true,
+    mailboxEditing: {
+      label: { rename: true, colors: [], nest: true, hide: true },
+    },
     threads: true,
     senders: true,
     editSignatures: true,
@@ -167,18 +168,24 @@ export class FakeMailProvider implements MailProvider {
     this.#now = options.now ?? Date.now;
     this.#lastArrival = this.#now();
     this.#folders = data.folders ?? false;
+    const colors = data.mailboxColors ?? [];
     this.capabilities = {
       ...this.capabilities,
       contacts: data.contacts !== undefined,
-      mailboxColors: data.mailboxColors ?? [],
       ...(this.#folders
         ? {
-            mailboxKinds: ["folder", "view"],
-            labels: false,
-            hideMailboxes: false,
-            mailboxColors: [],
+            // Like Outlook: folders, and categories as labels.
+            mailboxKinds: ["folder", "label", "view"],
+            mailboxEditing: {
+              folder: { rename: true, colors: [], nest: true, hide: false },
+              label: { rename: false, colors, nest: false, hide: false },
+            },
           }
-        : {}),
+        : {
+            mailboxEditing: {
+              label: { rename: true, colors, nest: true, hide: true },
+            },
+          }),
     };
   }
 
@@ -650,20 +657,23 @@ export class FakeMailProvider implements MailProvider {
   }
 
   async createMailbox(
-    { name, parentId, color, hidden = false }: NewMailbox,
+    { name, parentId, color, hidden = false, kind }: NewMailbox,
     signal?: AbortSignal,
   ): Promise<Mailbox> {
     await this.#refuseIfFailing(signal);
-    const leaf = this.#checkedName(name, parentId, undefined);
-    if (parentId !== undefined) this.#userMailbox(parentId);
+    // Folder mode: a category (label) sits in the categories' group.
+    const category = this.#folders && kind === "label";
+    const parent = category ? this.#categoriesGroup() : parentId;
+    const leaf = this.#checkedName(name, parent, undefined, category);
+    if (parent !== undefined && !category) this.#userMailbox(parent);
     const mailbox: Mailbox = {
       id: asMailboxId(`label-${String(this.#nextId++)}`),
       name: leaf,
-      kind: this.#folders ? "folder" : "label",
+      kind: this.#folders && !category ? "folder" : "label",
       selectable: true,
       hidden: hidden && !this.#folders,
       assignable: true,
-      ...(parentId === undefined ? {} : { parentId }),
+      ...(parent === undefined ? {} : { parentId: parent }),
       ...(color ? { color } : {}),
     };
     this.#setMailboxes([...this.#mailboxes, mailbox]);
@@ -677,6 +687,25 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<Mailbox> {
     await this.#refuseIfFailing(signal);
     const current = this.#userMailbox(id);
+    if (this.#folders && current.kind === "label") {
+      // Like Outlook: categories only change colour.
+      if ((name !== undefined && name !== current.name) || parentId)
+        throw new MailError("provider", "Outlook can’t rename categories.", {
+          reason: "categoryRename",
+        });
+      const { color: oldColor, ...rest } = current;
+      const nextColor = color === undefined ? oldColor : (color ?? undefined);
+      const updated: Mailbox = {
+        ...rest,
+        ...(nextColor ? { color: nextColor } : {}),
+      };
+      this.#setMailboxes(
+        this.#mailboxes.map((mailbox) =>
+          mailbox.id === id ? updated : mailbox,
+        ),
+      );
+      return updated;
+    }
     const parent = parentId === undefined ? current.parentId : parentId;
     if (parent !== null && parent !== undefined) {
       this.#userMailbox(parent);
@@ -721,6 +750,13 @@ export class FakeMailProvider implements MailProvider {
     await this.#refuseIfFailing(signal);
     const gone = this.#userMailbox(id);
     const trash = this.#roleId("trash");
+    if (this.#folders && gone.kind === "label") {
+      // Like Outlook: the category leaves the list, mail keeps the name.
+      this.#setMailboxes(
+        this.#mailboxes.filter((mailbox) => mailbox.id !== id),
+      );
+      return;
+    }
     if (this.#folders && trash !== undefined) {
       this.#setMailboxes(
         this.#mailboxes.map((mailbox) =>
@@ -813,16 +849,27 @@ export class FakeMailProvider implements MailProvider {
     return mailbox;
   }
 
+  /** The group categories sit in (folder mode), if the data has one. */
+  #categoriesGroup(): MailboxId | undefined {
+    return this.#mailboxes.find((mailbox) => mailbox.standard === "categories")
+      ?.id;
+  }
+
   /** A trimmed name that no sibling has yet (ignoring `self`). */
   #checkedName(
     name: string,
     parentId: MailboxId | undefined,
     self: MailboxId | undefined,
+    category = false,
   ): string {
     const trimmed = name.trim();
     if (trimmed === "")
       throw new MailError("provider", "A label needs a name.", {
-        reason: this.#folders ? "folderNeedsName" : "labelNeedsName",
+        reason: category
+          ? "categoryNeedsName"
+          : this.#folders
+            ? "folderNeedsName"
+            : "labelNeedsName",
       });
     if (!this.#folders && trimmed.includes("/"))
       throw new MailError("provider", "Label names can’t contain “/”.", {
@@ -840,7 +887,11 @@ export class FakeMailProvider implements MailProvider {
         `There’s already a label called “${trimmed}”.`,
         {
           status: 409,
-          reason: this.#folders ? "folderExists" : "labelExists",
+          reason: category
+            ? "categoryExists"
+            : this.#folders
+              ? "folderExists"
+              : "labelExists",
           params: { name: trimmed },
         },
       );

@@ -1101,7 +1101,7 @@ describe("GmailProvider label management", () => {
     const { writes } = labelServer([user("Label_1", "Work")]);
     const gmail = provider();
     expect(gmail.capabilities.manageMailboxes).toBe(true);
-    expect(gmail.capabilities.mailboxColors).toHaveLength(16);
+    expect(gmail.capabilities.mailboxEditing.label?.colors).toHaveLength(16);
 
     const created = await gmail.createMailbox({
       name: " 2026 ",

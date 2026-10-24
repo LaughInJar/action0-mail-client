@@ -62,9 +62,18 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
   const t = useT();
   const capabilities = useAccountHandle(dialog.accountId)?.provider
     .capabilities;
-  const l = mailboxTexts(t, capabilities);
-  const palette = capabilities?.mailboxColors ?? [];
-  const canHide = capabilities?.hideMailboxes ?? false;
+  // A folder account's own kind is the folder; Gmail's the label.
+  const kind =
+    editing?.kind ??
+    (dialog.mode === "create" ? dialog.kind : undefined) ??
+    (capabilities?.mailboxKinds.includes("folder") ? "folder" : "label");
+  const l = mailboxTexts(t, capabilities, kind);
+  const rules = capabilities?.mailboxEditing[kind];
+  const palette = rules?.colors ?? [];
+  const canHide = rules?.hide ?? false;
+  const canNest = rules?.nest ?? false;
+  // Outlook categories keep their name.
+  const canRename = !editing || (rules?.rename ?? false);
   const titleId = useId();
   const nameId = useId();
   const parentFieldId = useId();
@@ -133,6 +142,10 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
             ...(parentId === "" ? {} : { parentId }),
             ...(color ? { color } : {}),
             ...(shown ? {} : { hidden: true }),
+            ...(kind === "label" &&
+            capabilities?.mailboxKinds.includes("folder")
+              ? { kind }
+              : {}),
           },
           { undoable: true },
         )
@@ -176,6 +189,7 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
             <input
               id={nameId}
               value={name}
+              readOnly={!canRename}
               onChange={(event) => {
                 setName(event.target.value);
                 setError(undefined);
@@ -187,28 +201,33 @@ function LabelDialog({ dialog, mailboxes, editing }: LabelDialogProps) {
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
             />
           </div>
-          <div className="space-y-1">
-            <label htmlFor={parentFieldId} className="text-sm font-medium">
-              {l.inside}
-            </label>
-            <select
-              id={parentFieldId}
-              value={parentId}
-              onChange={(event) => {
-                setParentId(event.target.value as MailboxId | "");
-                setError(undefined);
-              }}
-              data-initial-focus={focus === "parent" ? "" : undefined}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="">{l.topLevel}</option>
-              {parents.map(({ mailbox, path }) => (
-                <option key={mailbox.id} value={mailbox.id}>
-                  {path}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!canRename && (
+            <p className="-mt-3 text-xs text-zinc-500">{l.cantRename}</p>
+          )}
+          {canNest && (
+            <div className="space-y-1">
+              <label htmlFor={parentFieldId} className="text-sm font-medium">
+                {l.inside}
+              </label>
+              <select
+                id={parentFieldId}
+                value={parentId}
+                onChange={(event) => {
+                  setParentId(event.target.value as MailboxId | "");
+                  setError(undefined);
+                }}
+                data-initial-focus={focus === "parent" ? "" : undefined}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950"
+              >
+                <option value="">{l.topLevel}</option>
+                {parents.map(({ mailbox, path }) => (
+                  <option key={mailbox.id} value={mailbox.id}>
+                    {path}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {colors.length > 0 && (
             <fieldset className="space-y-2">
               <legend className="flex w-full items-center gap-2 text-sm font-medium">

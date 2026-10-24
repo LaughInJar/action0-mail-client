@@ -50,6 +50,8 @@ interface DropHighlight {
   readonly key: string;
   readonly copy: boolean;
   readonly otherAccount?: boolean;
+  /** An Outlook category: dropping adds it (the mail stays in its folder). */
+  readonly category?: boolean;
 }
 
 const DropContext = createContext<DropHighlight | null>(null);
@@ -148,7 +150,14 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     );
     const dragging = store.getState().dragging;
     if (!item || !dragging) return undefined;
-    const { key = "", accountId, mailboxId, assignable, role } = item.dataset;
+    const {
+      key = "",
+      accountId,
+      mailboxId,
+      assignable,
+      role,
+      kind,
+    } = item.dataset;
     if (accountId === undefined || mailboxId === undefined) return undefined;
     if (assignable !== "true") return undefined;
     // The mailbox they're listed in isn't a target.
@@ -159,11 +168,15 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
         ? current.mailboxId
         : undefined;
     if (listed === mailboxId) return undefined;
+    const folders = accounts
+      .find((handle) => handle.account.id === accountId)
+      ?.provider.capabilities.mailboxKinds.includes("folder");
     return {
       key,
       role,
       mailboxId: asMailboxId(mailboxId),
       keys: dragging.keys,
+      category: folders === true && kind === "label",
       // Mail can't move between accounts.
       otherAccount: dragging.keys.some(
         (dragged) => messageRef(dragged).accountId !== accountId,
@@ -173,11 +186,15 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
 
   // Ctrl (Linux/Windows) or Alt/Option (macOS) while dropping: only add the
   // label. Spam and Trash aren't labels, so there it always moves.
-  const wantsCopy = (event: DragEvent, role: string | undefined) =>
-    (event.ctrlKey || event.altKey) &&
-    actions.canLabel &&
-    role !== "trash" &&
-    role !== "junk";
+  const wantsCopy = (
+    event: DragEvent,
+    target: { readonly role: string | undefined; readonly category: boolean },
+  ) =>
+    target.category ||
+    ((event.ctrlKey || event.altKey) &&
+      actions.canLabel &&
+      target.role !== "trash" &&
+      target.role !== "junk");
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
     const target = dropTargetOf(event.target);
@@ -195,12 +212,12 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       return;
     }
     event.preventDefault();
-    const copy = wantsCopy(event, target.role);
+    const copy = wantsCopy(event, target);
     event.dataTransfer.dropEffect = copy ? "copy" : "move";
     setDrop((current) =>
       current?.key === target.key && current.copy === copy
         ? current
-        : { key: target.key, copy },
+        : { key: target.key, copy, category: target.category },
     );
   };
 
@@ -210,7 +227,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     if (!target || target.otherAccount) return;
     event.preventDefault();
     store.getState().setDragging(null);
-    if (wantsCopy(event, target.role))
+    if (wantsCopy(event, target))
       actions.setLabels([target.mailboxId], [], target.keys);
     else actions.moveTo(target.mailboxId, target.keys);
   };
@@ -553,6 +570,7 @@ function MailboxBranch({
         data-has-children={String(hasChildren)}
         data-assignable={String(mailbox.assignable)}
         data-role={mailbox.role}
+        data-kind={mailbox.kind}
         data-match={node.match}
         data-editable={editable || undefined}
         aria-haspopup={editable ? "menu" : undefined}
@@ -583,9 +601,11 @@ function MailboxBranch({
           >
             {drop.otherAccount
               ? a.otherAccount
-              : drop.copy
-                ? a.addLabelHere
-                : a.moveHere}
+              : drop.category
+                ? a.addCategoryHere
+                : drop.copy
+                  ? a.addLabelHere
+                  : a.moveHere}
           </span>
         )}
         {badge !== undefined && (

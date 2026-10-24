@@ -368,7 +368,7 @@ describe("FakeMailProvider label management", () => {
 
   it("creates labels in order, nested and coloured", async () => {
     const fake = provider();
-    const [color] = fake.capabilities.mailboxColors;
+    const [color] = fake.capabilities.mailboxEditing.label?.colors ?? [];
     const created = await fake.createMailbox({
       name: " Hobbies ",
       ...(color ? { color } : {}),

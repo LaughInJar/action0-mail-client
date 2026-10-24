@@ -90,10 +90,12 @@ export function runIntent(
 /** Options of {@link inverseOf}. */
 export interface InverseOptions {
   /**
-   * The provider supports free label changes (Gmail); otherwise moves (and
-   * trash, spam) are undone by moving back into the original folder.
+   * For folder providers (Outlook, IMAP): which memberships are folders.
+   * Moves, trash and spam are then undone by moving back into the folder a
+   * message came from (its other memberships, e.g. categories, stay). Omit
+   * for label providers (Gmail).
    */
-  readonly labels: boolean;
+  readonly isFolder?: (id: MailboxId) => boolean;
 }
 
 /**
@@ -104,7 +106,7 @@ export interface InverseOptions {
 export function inverseOf(
   intent: MailIntent,
   changes: readonly MessageChange[],
-  { labels }: InverseOptions,
+  { isFolder }: InverseOptions = {},
 ): MailIntent[] {
   if (changes.length === 0) return [];
   const ids = changes.map((change) => change.id);
@@ -130,18 +132,25 @@ export function inverseOf(
               },
             ];
       });
-    case "move":
     case "set-labels":
-      return labels ? labelInverses(changes) : moveBackInverses(changes);
+      return labelInverses(changes);
+    case "move":
+      return isFolder
+        ? moveBackInverses(changes, isFolder)
+        : labelInverses(changes);
     case "trash":
       // Folders: back into the folder it came from, not just the inbox.
-      return labels ? [{ kind: "untrash", ids }] : moveBackInverses(changes);
+      return isFolder
+        ? moveBackInverses(changes, isFolder)
+        : [{ kind: "untrash", ids }];
     case "untrash":
       return [{ kind: "trash", ids }];
     case "report-spam":
     case "not-spam":
       // Exact restore of the memberships (e.g. back into a label, not the inbox).
-      return labels ? labelInverses(changes) : moveBackInverses(changes);
+      return isFolder
+        ? moveBackInverses(changes, isFolder)
+        : labelInverses(changes);
     case "delete-forever":
       return [];
   }
@@ -175,14 +184,17 @@ function labelInverses(changes: readonly MessageChange[]): MailIntent[] {
 }
 
 /** For folder providers: move each message back to the folder it came from. */
-function moveBackInverses(changes: readonly MessageChange[]): MailIntent[] {
+function moveBackInverses(
+  changes: readonly MessageChange[],
+  isFolder: (id: MailboxId) => boolean,
+): MailIntent[] {
   const groups = new Map<
     string,
     { from: MailboxId; to: MailboxId; ids: MessageId[] }
   >();
   for (const { id, before, after } of changes) {
-    const origin = before.mailboxIds[0];
-    const current = after.mailboxIds[0];
+    const origin = before.mailboxIds.find(isFolder);
+    const current = after.mailboxIds.find(isFolder);
     if (origin === undefined || current === undefined || origin === current)
       continue;
     const key = JSON.stringify([current, origin]);

@@ -24,6 +24,7 @@ import type {
   EmailAddress,
   Invitation,
   Mailbox,
+  MailboxColor,
   Message,
   MessageFlags,
   MessageSummary,
@@ -47,13 +48,18 @@ import { encodeBase64 } from "../../lib/base64url";
 import { readJson, writeJson } from "../../lib/storage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
 import {
+  CATEGORIES_GROUP,
+  categoryName,
   FLAGGED_VIEW_ID,
   FOLDER_SELECT,
   folderIdsOf,
   internalIds,
   isViewId,
   mapFolders,
+  OUTLOOK_CATEGORY_COLORS,
+  presetOf,
   ROOT_FOLDER,
+  toCategory,
   toMailbox,
   WELL_KNOWN_NAMES,
   type WellKnownFolders,
@@ -80,6 +86,7 @@ import {
 } from "./mappers";
 import type {
   GraphAttachment,
+  GraphCategory,
   GraphMailFolder,
   GraphMessage,
   GraphPage,
@@ -208,11 +215,12 @@ export class GraphProvider implements MailProvider {
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.#now = options.now ?? Date.now;
     this.capabilities = {
-      mailboxKinds: ["folder", "view"],
+      // Folders, and Outlook's categories as labels.
+      mailboxKinds: ["folder", "label", "view"],
       archive: true,
       settableFlags: ["seen", "flagged"],
       move: true,
-      labels: false,
+      labels: true,
       trash: true,
       spam: true,
       deleteForever: true,
@@ -220,8 +228,16 @@ export class GraphProvider implements MailProvider {
       contacts: true,
       maxAttachmentBytes: (options.personal ? 20 : 25) * 1024 * 1024,
       manageMailboxes: true,
-      mailboxColors: [],
-      hideMailboxes: false,
+      mailboxEditing: {
+        folder: { rename: true, colors: [], nest: true, hide: false },
+        // Graph can only change a category's colour.
+        label: {
+          rename: false,
+          colors: OUTLOOK_CATEGORY_COLORS,
+          nest: false,
+          hide: false,
+        },
+      },
       threads: true,
       senders: true,
       editSignatures: true,
@@ -255,7 +271,54 @@ export class GraphProvider implements MailProvider {
       );
       level = pages.flatMap((page) => page.value ?? []);
     }
-    return mapFolders(all, wellKnown);
+    const categories = await this.#categories(signal);
+    return [
+      ...mapFolders(all, wellKnown),
+      ...(categories.length > 0 ? [CATEGORIES_GROUP, ...categories] : []),
+    ];
+  }
+
+  /**
+   * The user's categories as labels, by name, with their unread mail where
+   * Graph counts it. None while the permission for them is missing (an
+   * account that hasn't reconnected since).
+   */
+  async #categories(signal: AbortSignal | undefined): Promise<Mailbox[]> {
+    let categories: readonly GraphCategory[];
+    try {
+      categories =
+        (
+          await this.#http.get<GraphPage<GraphCategory>>(
+            "me/outlook/masterCategories",
+            undefined,
+            signal,
+          )
+        ).value ?? [];
+    } catch (error) {
+      if (error instanceof MailError && error.status === 403) return [];
+      throw error;
+    }
+    const sorted = [...categories].sort((a, b) =>
+      a.displayName.localeCompare(b.displayName),
+    );
+    const counts = await this.#http.batch<{ "@odata.count"?: number }>(
+      sorted.map((category) => ({
+        method: "GET",
+        path: `me/messages?${new URLSearchParams({
+          $filter: `isRead eq false and ${categoryFilter(category.displayName)}`,
+          $count: "true",
+          $top: "1",
+          $select: "id",
+        }).toString()}`,
+        headers: { ConsistencyLevel: "eventual" },
+      })),
+      signal,
+    );
+    return sorted.map((category, index) => {
+      const result = counts[index];
+      const unread = result?.ok ? result.body["@odata.count"] : undefined;
+      return toCategory(category, unread);
+    });
   }
 
   async listMessages(
@@ -491,10 +554,56 @@ export class GraphProvider implements MailProvider {
     return this.#moveAll(ids, to, signal);
   }
 
-  setLabels(): Promise<MutationResult> {
-    return Promise.reject(
-      new MailError("unavailable", "Outlook folders aren't labels."),
+  /** Adds and removes categories (the only labels Outlook has). */
+  async setLabels(
+    ids: readonly MessageId[],
+    {
+      add,
+      remove,
+    }: {
+      readonly add: readonly MailboxId[];
+      readonly remove: readonly MailboxId[];
+    },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const names = (mailboxIds: readonly MailboxId[]) =>
+      mailboxIds.map((id) => {
+        const name = categoryName(id);
+        if (name === undefined) throw notACategory(id);
+        return name;
+      });
+    const added = names(add);
+    const removed = new Set(names(remove));
+    // Graph replaces the whole list, so read each message's first.
+    const current = bodiesOrThrow(
+      await this.#http.batch<Pick<GraphMessage, "categories">>(
+        ids.map((id) => ({
+          method: "GET",
+          path: `me/messages/${enc(id)}?$select=categories`,
+        })),
+        signal,
+      ),
     );
+    bodiesOrThrow(
+      await this.#http.batch(
+        ids.map((id, index) => ({
+          method: "PATCH",
+          path: `me/messages/${enc(id)}`,
+          body: {
+            categories: [
+              ...new Set([
+                ...(current[index]?.categories ?? []).filter(
+                  (name) => !removed.has(name),
+                ),
+                ...added,
+              ]),
+            ],
+          },
+        })),
+        signal,
+      ),
+    );
+    return {};
   }
 
   trash(
@@ -798,9 +907,10 @@ export class GraphProvider implements MailProvider {
   }
 
   async createMailbox(
-    { name, parentId }: NewMailbox,
+    { name, parentId, kind, color }: NewMailbox,
     signal?: AbortSignal,
   ): Promise<Mailbox> {
+    if (kind === "label") return this.#createCategory(name, color, signal);
     const leaf = checkedName(name);
     if (parentId !== undefined && isViewId(parentId))
       throw notAFolder(parentId);
@@ -821,9 +931,13 @@ export class GraphProvider implements MailProvider {
 
   async updateMailbox(
     id: MailboxId,
-    { name, parentId }: MailboxChange,
+    change: MailboxChange,
     signal?: AbortSignal,
   ): Promise<Mailbox> {
+    const category = categoryName(id);
+    if (category !== undefined)
+      return this.#updateCategory(category, change, signal);
+    const { name, parentId } = change;
     const wellKnown = await this.#userFolder(id);
     const leaf = name === undefined ? undefined : checkedName(name);
     if (parentId === id)
@@ -869,6 +983,16 @@ export class GraphProvider implements MailProvider {
    * can be restored). A folder that's already there is deleted.
    */
   async deleteMailbox(id: MailboxId, signal?: AbortSignal): Promise<void> {
+    const category = categoryName(id);
+    if (category !== undefined) {
+      // Like Outlook: it leaves the list; mail keeps the name.
+      const { id: categoryId } = await this.#category(category, signal);
+      await this.#http.delete(
+        `me/outlook/masterCategories/${enc(categoryId)}`,
+        signal,
+      );
+      return;
+    }
     const wellKnown = await this.#userFolder(id);
     const trash = wellKnown.get("deleteditems");
     const folder = await this.#http.get<GraphMailFolder>(
@@ -885,6 +1009,73 @@ export class GraphProvider implements MailProvider {
       { destinationId: "deleteditems" },
       signal ? { signal } : {},
     );
+  }
+
+  /** A new category with one of Outlook's colours. */
+  async #createCategory(
+    name: string,
+    color: MailboxColor | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Mailbox> {
+    const displayName = name.trim();
+    if (!displayName)
+      throw new MailError("provider", "A category needs a name.", {
+        reason: "categoryNeedsName",
+      });
+    try {
+      const created = await this.#http.post<GraphCategory>(
+        "me/outlook/masterCategories",
+        { displayName, color: presetOf(color) },
+        { retry: false, ...(signal ? { signal } : {}) },
+      );
+      return toCategory(created, 0);
+    } catch (error) {
+      if (error instanceof MailError && error.status === 409)
+        throw new MailError("provider", "That category exists already.", {
+          cause: error,
+          reason: "categoryExists",
+          params: { name: displayName },
+        });
+      throw error;
+    }
+  }
+
+  /** Changes a category's colour (the only thing Graph can change). */
+  async #updateCategory(
+    name: string,
+    { name: newName, color, parentId }: MailboxChange,
+    signal: AbortSignal | undefined,
+  ): Promise<Mailbox> {
+    if (newName !== undefined && newName !== name)
+      throw new MailError("provider", "Outlook can’t rename categories.", {
+        reason: "categoryRename",
+      });
+    if (parentId !== undefined && parentId !== null) throw notAFolder(parentId);
+    const category = await this.#category(name, signal);
+    const updated =
+      color === undefined
+        ? category
+        : await this.#http.patch<GraphCategory>(
+            `me/outlook/masterCategories/${enc(category.id)}`,
+            { color: presetOf(color) },
+            signal,
+          );
+    return toCategory(updated, undefined);
+  }
+
+  /** The category with a name. */
+  async #category(
+    name: string,
+    signal: AbortSignal | undefined,
+  ): Promise<GraphCategory> {
+    const { value = [] } = await this.#http.get<GraphPage<GraphCategory>>(
+      "me/outlook/masterCategories",
+      undefined,
+      signal,
+    );
+    const found = value.find((category) => category.displayName === name);
+    if (!found) throw notACategory(name);
+    return found;
   }
 
   oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void> {
@@ -985,9 +1176,12 @@ export class GraphProvider implements MailProvider {
       }),
     ]);
     const flaggedOnly = mailboxId === FLAGGED_VIEW_ID;
+    // A category: only mail that has it (searches can't filter on the server).
+    const category = categoryName(mailboxId) !== undefined;
     return (message) =>
       !message.mailboxIds.some((id) => hidden.has(id)) &&
-      (!flaggedOnly || message.flags.flagged);
+      (!flaggedOnly || message.flags.flagged) &&
+      (!category || message.mailboxIds.includes(mailboxId));
   }
 
   /** Every search match the mailbox shows (up to {@link MAX_SORTED_RESULTS}). */
@@ -1088,6 +1282,7 @@ export class GraphProvider implements MailProvider {
     select: string,
     top: number,
   ): URL {
+    const filter = viewFilterOf(mailboxId);
     return this.#http.url(
       isViewId(mailboxId)
         ? "me/messages"
@@ -1097,12 +1292,11 @@ export class GraphProvider implements MailProvider {
         $top: top,
         $orderby: `receivedDateTime ${order === "oldest" ? "asc" : "desc"}`,
         // Graph wants the $orderby property in $filter too, and first.
-        ...(mailboxId === FLAGGED_VIEW_ID
-          ? {
-              $filter:
-                "receivedDateTime ge 1900-01-01T00:00:00Z and flag/flagStatus eq 'flagged'",
-            }
-          : {}),
+        ...(filter === undefined
+          ? {}
+          : {
+              $filter: `receivedDateTime ge 1900-01-01T00:00:00Z and ${filter}`,
+            }),
       },
     );
   }
@@ -1504,6 +1698,25 @@ function conversationOf(message: MessageSummary): string {
 /** `$filter` for the messages of a conversation. */
 function conversationFilter(id: string): string {
   return `conversationId eq '${id.replace(/'/g, "''")}'`;
+}
+
+function notACategory(name: string): MailError {
+  return new MailError("provider", `“${name}” is not a category.`, {
+    reason: "notACategory",
+    params: { name },
+  });
+}
+
+/** What Graph filters a view's listing by (none for All mail). */
+function viewFilterOf(mailboxId: MailboxId): string | undefined {
+  if (mailboxId === FLAGGED_VIEW_ID) return "flag/flagStatus eq 'flagged'";
+  const category = categoryName(mailboxId);
+  return category === undefined ? undefined : categoryFilter(category);
+}
+
+/** The OData filter for mail with a category. */
+function categoryFilter(name: string): string {
+  return `categories/any(c:c eq '${name.replace(/'/g, "''")}')`;
 }
 
 function notAFolder(id: string): MailError {

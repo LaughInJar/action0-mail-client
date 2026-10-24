@@ -19,6 +19,14 @@ export interface GraphRecipient {
   readonly emailAddress?: { readonly name?: string; readonly address?: string };
 }
 
+/** One of the user's Outlook categories (`me/outlook/masterCategories`). */
+export interface GraphCategory {
+  readonly id: string;
+  readonly displayName: string;
+  /** `preset0` … `preset24`, or `none`. */
+  readonly color?: string;
+}
+
 export interface GraphMailFolder {
   readonly id: string;
   readonly displayName?: string;
@@ -60,6 +68,8 @@ export interface GraphMessage {
   readonly createdDateTime?: string;
   readonly isRead?: boolean;
   readonly isDraft?: boolean;
+  /** Names of its categories. */
+  readonly categories?: readonly string[];
   readonly hasAttachments?: boolean;
   readonly flag?: {
     readonly flagStatus?: "notFlagged" | "flagged" | "complete";

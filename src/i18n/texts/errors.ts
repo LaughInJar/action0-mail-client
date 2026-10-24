@@ -44,6 +44,10 @@ const enReasons: Reasons = {
   noArchiveFolder: () =>
     "This mailbox has no Archive folder. Archive a message once in Outlook to create it.",
   notAFolder: (p) => `“${p.name ?? ""}” is not a folder.`,
+  notACategory: (p) => `“${p.name ?? ""}” is not a category.`,
+  categoryRename: () => "Outlook can’t rename categories.",
+  categoryExists: (p) => `There’s already a category called “${p.name ?? ""}”.`,
+  categoryNeedsName: () => "A category needs a name.",
   folderNeedsName: () => "A folder needs a name.",
   folderExists: (p) =>
     `There’s already a folder called “${p.name ?? ""}” here.`,
@@ -110,6 +114,10 @@ const deReasons: Reasons = {
   noArchiveFolder: () =>
     "Dieses Postfach hat keinen Archivordner. Archiviere einmal eine Nachricht in Outlook, dann gibt es ihn.",
   notAFolder: (p) => `„${p.name ?? ""}“ ist kein Ordner.`,
+  notACategory: (p) => `„${p.name ?? ""}“ ist keine Kategorie.`,
+  categoryRename: () => "Outlook kann Kategorien nicht umbenennen.",
+  categoryExists: (p) => `Es gibt schon eine Kategorie „${p.name ?? ""}“.`,
+  categoryNeedsName: () => "Eine Kategorie braucht einen Namen.",
   folderNeedsName: () => "Ein Ordner braucht einen Namen.",
   folderExists: (p) => `Hier gibt es schon einen Ordner „${p.name ?? ""}“.`,
   folderInsideItself: () => "Ein Ordner kann nicht in sich selbst liegen.",
