@@ -251,7 +251,6 @@ export class GmailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
-    editSignatures: true,
     signatureStore: "provider",
   };
   readonly #http: GmailHttp;

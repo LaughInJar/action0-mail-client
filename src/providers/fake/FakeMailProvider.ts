@@ -111,7 +111,6 @@ export class FakeMailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
-    editSignatures: true,
     signatureStore: "provider",
   };
   /** Set to make writes fail with a provider error. */

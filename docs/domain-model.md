@@ -37,7 +37,7 @@ _Opaque_ means only the provider that issued an id may look inside it. The UI an
 
 Account ids have a fixed shape, though nothing parses them either: modules build them as `<type>:<lowercased email>` (`src/providers/gmail/module.ts`, `src/providers/microsoft/module.ts`, and the desktop app's vault keys in `src-tauri/src/oauth/mod.rs`). The demo accounts are `demo:demo@example.com` and `demo:demo@work.example` (`src/providers/fake/module.ts`). Query keys start with `["acct", accountId]` (`src/data/keys.ts`), so removing an account drops all of its cached data in one call (`src/app/services.ts`).
 
-`MutationResult.idMap` (`src/core/provider.ts`) is where a provider reports message ids that changed because of a write (IMAP UIDs are per folder). Gmail ids never change, and Graph is asked for immutable ids, so neither returns one today.
+Message ids stay the same across writes: Gmail's never change, Graph is asked for immutable ids, and a provider whose native ids change when a message moves (IMAP UIDs are per folder) has to keep a stable one itself, for example RFC 8474's `EMAILID` or its own mapping. So `MutationResult` (`src/core/provider.ts`) carries nothing, and the data layer never re-keys caches, selections or URLs.
 
 ### Message keys
 
@@ -234,7 +234,6 @@ The UI asks what a provider can do instead of which provider it is. `ProviderCap
 | `mailboxEditing`     | `Partial<Record<MailboxKind, MailboxEditing>>` | What can be changed about own mailboxes, per kind. Kinds that are missing can't be created or changed. | `label`           | `folder`, `label`                    |
 | `threads`            | `boolean`                                      | `listThreads` and `getThread` work: the conversation switch applies                                    | yes               | yes                                  |
 | `senders`            | `boolean`                                      | `listSenders` works (From field, signatures)                                                           | yes               | yes                                  |
-| `editSignatures`     | `boolean`                                      | `updateSignature` works (it may still reject as `unavailable` while a permission is missing)           | yes               | yes                                  |
 | `signatureStore`     | `"provider" \| "browser"`                      | Where `updateSignature` keeps signatures: with the provider, or only in this browser                   | `provider`        | `browser`                            |
 
 `MailboxEditing` describes one kind:
