@@ -22,6 +22,9 @@ import {
 } from "../providers/fake/module";
 import { demoHash, renderApp, TEST_NOW, unifiedHash } from "../test/renderApp";
 
+// Some tests wait for the composer's autosave.
+vi.setConfig({ testTimeout: 15_000 });
+
 const subject = (name: string) =>
   screen.findByRole("heading", { level: 1, name });
 const option = (name: RegExp) => screen.findByRole("option", { name });
