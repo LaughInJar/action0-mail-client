@@ -16,8 +16,10 @@ import { markReadDelayMs } from "../../state/settings";
 import { errorMessage } from "../common/errorMessage";
 import { IconButton } from "../common/IconButton";
 import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
-import type { Breakpoint } from "../layout/useBreakpoint";
-import { MailActionButtons } from "../actions/MailActionButtons";
+import { useBreakpoint, type Breakpoint } from "../layout/useBreakpoint";
+import { mailActionItems } from "../actions/mailActionItems";
+import { OverflowToolbar } from "../common/OverflowToolbar";
+import { answerItems } from "./answerItems";
 import { useMailActions } from "../actions/useMailActions";
 import {
   keyOfRoute,
@@ -180,6 +182,7 @@ function MessageView({
   onBack,
 }: MessageViewProps) {
   const t = useT();
+  const breakpoint = useBreakpoint();
   const subjectId = useId();
   const { data: message, error, refetch } = useMessage(accountId, messageId);
   const { data: mailboxes } = useMailboxList(accountId);
@@ -258,72 +261,40 @@ function MessageView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        role="group"
-        aria-label={t.reader.messageActions}
-        className="flex min-h-12 items-center gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800"
-      >
-        {onBack && (
-          <IconButton
-            label={t.reader.backToMessages}
-            icon="arrow-left"
-            onClick={onBack}
-          />
-        )}
-        <div className="flex-1" />
-        {message && canWrite && (
-          <>
-            {isDraft ? (
-              <IconButton
-                label={t.reader.editDraft}
-                icon="pencil"
-                onClick={() => {
-                  compose.editDraft({ accountId, messageId: message.id });
-                }}
-              />
-            ) : (
-              <>
+      <OverflowToolbar
+        label={t.reader.messageActions}
+        moreLabel={t.reader.moreActions}
+        {...(onBack
+          ? {
+              leading: (
                 <IconButton
-                  label={t.actions.replyButton}
-                  icon="reply"
-                  onClick={() => {
-                    compose.reply(
+                  label={t.reader.backToMessages}
+                  icon="arrow-left"
+                  onClick={onBack}
+                />
+              ),
+            }
+          : {})}
+        items={
+          message
+            ? [
+                ...(canWrite
+                  ? answerItems(
+                      compose,
                       { accountId, messageId: message.id },
-                      "reply",
-                    );
-                  }}
-                />
-                <IconButton
-                  label={t.actions.replyAllButton}
-                  icon="reply-all"
-                  onClick={() => {
-                    compose.reply(
-                      { accountId, messageId: message.id },
-                      "reply-all",
-                    );
-                  }}
-                />
-                <IconButton
-                  label={t.actions.forwardButton}
-                  icon="forward"
-                  onClick={() => {
-                    compose.forward({ accountId, messageId: message.id });
-                  }}
-                />
-              </>
-            )}
-            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-          </>
-        )}
-        {message && (
-          <MailActionButtons
-            actions={actions}
-            message={message}
-            accountId={accountId}
-            archivable={inInbox}
-          />
-        )}
-      </div>
+                      { isDraft, phone: breakpoint === "narrow" },
+                      t,
+                    )
+                  : []),
+                ...mailActionItems(
+                  actions,
+                  { message, accountId, archivable: inInbox },
+                  t.actions,
+                ),
+              ]
+            : []
+        }
+      />
       <div
         id={READER_SCROLL_ID}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"

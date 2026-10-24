@@ -3,6 +3,7 @@ const en = {
   clearSelectionHint: { before: "Press", after: " to clear the selection." },
   noMessageSelected: "No message selected",
   inAccount: (email: string) => `In ${email}`,
+  moreActions: "More actions",
   navigationHint: {
     before: "Use",
     and: "and",
@@ -56,6 +57,7 @@ const de: typeof en = {
   },
   noMessageSelected: "Keine Nachricht ausgewählt",
   inAccount: (email) => `Im Konto ${email}`,
+  moreActions: "Weitere Aktionen",
   navigationHint: {
     before: "Mit",
     and: "und",
