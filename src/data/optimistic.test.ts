@@ -57,8 +57,9 @@ const labels: ProviderCapabilities = {
   contacts: false,
   maxAttachmentBytes: 25 * 1024 * 1024,
   manageMailboxes: true,
-  mailboxColors: [],
-  hideMailboxes: true,
+  mailboxEditing: {
+    label: { rename: true, colors: [], nest: true, hide: true },
+  },
   threads: true,
   senders: true,
   editSignatures: true,

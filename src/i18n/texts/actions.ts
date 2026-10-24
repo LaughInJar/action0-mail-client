@@ -25,6 +25,12 @@ const en = {
     `Removed label ${label} from ${what}`,
   labelsChanged: (what: string) => `Changed labels of ${what}`,
   couldntChangeLabels: "Couldn’t change labels",
+  categoryAdded: (category: string, what: string) =>
+    `Added category ${category} to ${what}`,
+  categoryRemoved: (category: string, what: string) =>
+    `Removed category ${category} from ${what}`,
+  categoriesChanged: (what: string) => `Changed categories of ${what}`,
+  couldntChangeCategories: "Couldn’t change categories",
   restored: (what: string) => `Restored ${what}`,
   couldntRestore: "Couldn’t restore",
   notSpamMoved: (what: string) => `Not spam: moved ${what} to the Inbox`,
@@ -53,6 +59,7 @@ const en = {
   spamButton: "Report spam (Shift+S)",
   moveButton: "Move to… (v)",
   labelsButton: "Labels… (l)",
+  categoriesButton: "Categories… (l)",
   starButton: "Star (s)",
   unstarButton: "Unstar (s)",
   starOrUnstarButton: "Star or unstar (s)",
@@ -88,6 +95,12 @@ const de: typeof en = {
   labelRemoved: (label, what) => `Label „${label}“ von ${what} entfernt`,
   labelsChanged: (what) => `Labels von ${what} geändert`,
   couldntChangeLabels: "Ändern der Labels fehlgeschlagen",
+  categoryAdded: (category, what) =>
+    `Kategorie „${category}“ zu ${what} hinzugefügt`,
+  categoryRemoved: (category, what) =>
+    `Kategorie „${category}“ von ${what} entfernt`,
+  categoriesChanged: (what) => `Kategorien von ${what} geändert`,
+  couldntChangeCategories: "Ändern der Kategorien fehlgeschlagen",
   restored: (what) => `${what} wiederhergestellt`,
   couldntRestore: "Wiederherstellen fehlgeschlagen",
   notSpamMoved: (what) => `Kein Spam: ${what} in den Posteingang verschoben`,
@@ -115,6 +128,7 @@ const de: typeof en = {
   spamButton: "Als Spam melden (Umschalt+S)",
   moveButton: "Verschieben nach … (v)",
   labelsButton: "Labels … (l)",
+  categoriesButton: "Kategorien … (l)",
   starButton: "Mit Stern markieren (s)",
   unstarButton: "Stern entfernen (s)",
   starOrUnstarButton: "Stern setzen oder entfernen (s)",

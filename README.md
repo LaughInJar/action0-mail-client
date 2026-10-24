@@ -2,11 +2,11 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly. The same app also comes as a desktop app for Linux, Windows and macOS (see [Desktop app](#desktop-app)).
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events.
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders, and categories as labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
 - Several accounts side by side, Gmail and Microsoft mixed.
-- Microsoft accounts work with folders: drag or move mail into a folder (it leaves the one it was in), create folders right from **Move to…**, and archive, delete and spam move mail into Archive, Deleted Items and Junk Email. Undo puts it back into the folder it came from. The star is Outlook's flag, and **Flagged** lists flagged mail of every folder.
+- Microsoft accounts work with folders: drag or move mail into a folder (it leaves the one it was in), create folders right from **Move to…**, and archive, delete and spam move mail into Archive, Deleted Items and Junk Email. Undo puts it back into the folder it came from. The star is Outlook's flag, and **Flagged** lists flagged mail of every folder. Outlook's categories work like labels: they're listed under **Categories** in their colours (a category lists its mail from every folder), <kbd>l</kbd> adds or removes them, dropping mail on one adds it, and the reader shows them as coloured chips. Categories can be created, recoloured and deleted (Outlook can't rename them).
 - New mail and changes made elsewhere (on your phone, in Gmail web) show up by themselves: every minute while the app is in front, every five minutes in the background, and right away when you come back to the tab. The tab title shows the unread count of all inboxes, and desktop notifications (if you turn them on) tell you about new Inbox mail while you're in another tab or app. Phones only allow notifications for installed apps, so they aren't offered there yet.
 - Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
@@ -97,7 +97,7 @@ Microsoft accounts use [MSAL.js](https://github.com/AzureAD/microsoft-authentica
    - **Name:** e.g. action0.
    - **Supported account types:** **Accounts in any organizational directory and personal Microsoft accounts** (work, school and Outlook.com accounts).
    - **Redirect URI:** platform **Single-page application (SPA)**, `http://localhost:5173/redirect.html`. Add the same path on any deployment later (`https://…/redirect.html`).
-2. Open **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add `Mail.ReadWrite`, `Mail.Send`, `People.Read` and `Calendars.ReadWrite` (`User.Read` is already there). No client secret, no certificate.
+2. Open **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add `Mail.ReadWrite`, `Mail.Send`, `People.Read`, `Calendars.ReadWrite` and `MailboxSettings.ReadWrite` (for Outlook's categories; `User.Read` is already there). No client secret, no certificate.
 3. Copy the **Application (client) ID** from the app's **Overview** and give it to the app: in **Add account → Microsoft** (saved as a setting in that browser), or as `VITE_MICROSOFT_CLIENT_ID` in `.env.local` (takes precedence).
 4. **Add account → Microsoft → Continue with Microsoft**, choose your account and allow access.
 

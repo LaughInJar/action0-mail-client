@@ -36,7 +36,10 @@ export interface ProviderCapabilities {
   readonly settableFlags: readonly (keyof MessageFlags)[];
   /** Supports {@link MailProvider.move}. */
   readonly move: boolean;
-  /** Supports {@link MailProvider.setLabels}: memberships can be added and removed freely. */
+  /**
+   * Supports {@link MailProvider.setLabels}: label memberships can be added
+   * and removed freely (Gmail labels; Outlook categories, next to folders).
+   */
   readonly labels: boolean;
   /** Supports {@link MailProvider.trash} and {@link MailProvider.untrash}. */
   readonly trash: boolean;
@@ -56,14 +59,12 @@ export interface ProviderCapabilities {
    * (assignable ones without a role).
    */
   readonly manageMailboxes: boolean;
-  /** Colours a mailbox may get; empty if colours can't be set. */
-  readonly mailboxColors: readonly MailboxColor[];
   /**
-   * {@link MailboxChange.hidden} and {@link NewMailbox.hidden} work: the
-   * user's mailboxes can be hidden from the folder list (Gmail yes; Graph
-   * can't change it after a folder exists).
+   * What can be changed about the user's own mailboxes, per kind (an
+   * Outlook account has folders and categories, which differ). Kinds that
+   * are missing can't be created or changed.
    */
-  readonly hideMailboxes: boolean;
+  readonly mailboxEditing: Partial<Record<MailboxKind, MailboxEditing>>;
   /** Supports {@link MailProvider.listThreads} and {@link MailProvider.getThread}. */
   readonly threads: boolean;
   /** Supports {@link MailProvider.listSenders}. */
@@ -122,13 +123,33 @@ export interface ChangeSet {
   readonly changes: readonly MailChange[];
 }
 
+/** What can be changed about the user's own mailboxes of one kind. */
+export interface MailboxEditing {
+  /** {@link MailboxChange.name} works (Outlook categories can't be renamed). */
+  readonly rename: boolean;
+  /** Colours one may get; empty if colours can't be set. */
+  readonly colors: readonly MailboxColor[];
+  /** They can be nested ({@link MailboxChange.parentId}). */
+  readonly nest: boolean;
+  /**
+   * They can be hidden from the folder list ({@link MailboxChange.hidden};
+   * Gmail yes, Graph can't change it after a folder exists).
+   */
+  readonly hide: boolean;
+}
+
 /** A new mailbox, for {@link MailProvider.createMailbox}. */
 export interface NewMailbox {
   /** Leaf name, e.g. "Clients" (never a path). */
   readonly name: string;
+  /**
+   * What to create, among {@link ProviderCapabilities.mailboxEditing};
+   * defaults to the account's own kind (Outlook: a folder, not a category).
+   */
+  readonly kind?: MailboxKind;
   /** Mailbox to nest it in; omit for the top level. */
   readonly parentId?: MailboxId;
-  /** One of {@link ProviderCapabilities.mailboxColors}. */
+  /** One of the kind's {@link MailboxEditing.colors}. */
   readonly color?: MailboxColor;
   /** Hide it from the folder list. */
   readonly hidden?: boolean;

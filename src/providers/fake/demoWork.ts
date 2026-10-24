@@ -10,6 +10,7 @@ import type {
   MailboxRole,
   Message,
 } from "../../core/model";
+import { OUTLOOK_CATEGORY_COLORS } from "../microsoft/folders";
 import type { FakeMailData } from "./FakeMailProvider";
 
 /** The second demo account's address: a work account that works like Outlook. */
@@ -29,7 +30,32 @@ export const WORK_MAILBOX = {
   projects: asMailboxId("w-projects"),
   website: asMailboxId("w-website"),
   clients: asMailboxId("w-clients"),
+  categories: asMailboxId("w-categories"),
+  followUp: asMailboxId("w-cat-follow-up"),
+  important: asMailboxId("w-cat-important"),
+  team: asMailboxId("w-cat-team"),
 } as const;
+
+/** Outlook's colour for a category preset (`preset<n>`). */
+const preset = (n: number) => {
+  const color = OUTLOOK_CATEGORY_COLORS[n];
+  if (!color) throw new Error(`No category preset ${String(n)}`);
+  return color;
+};
+
+/** A category: a label in the categories' group, like Outlook's in action0. */
+function category(id: MailboxId, name: string, color: number): Mailbox {
+  return {
+    id,
+    name,
+    kind: "label",
+    parentId: asMailboxId("w-categories"),
+    selectable: true,
+    hidden: false,
+    assignable: true,
+    color: preset(color),
+  };
+}
 
 const W = WORK_MAILBOX;
 
@@ -70,6 +96,18 @@ const MAILBOXES: readonly Mailbox[] = [
   folder(W.projects, "Projects"),
   folder(W.website, "Website relaunch", undefined, W.projects),
   folder(W.clients, "Clients"),
+  {
+    id: W.categories,
+    standard: "categories",
+    name: "Categories",
+    kind: "view",
+    selectable: false,
+    hidden: false,
+    assignable: false,
+  },
+  category(W.followUp, "Follow up", 1),
+  category(W.important, "Important client", 0),
+  category(W.team, "Team", 7),
 ];
 
 const COLLEAGUES: readonly EmailAddress[] = [
@@ -107,13 +145,14 @@ interface Seed {
   readonly seen?: boolean;
   readonly flagged?: boolean;
   readonly thread?: string;
+  readonly categories?: readonly MailboxId[];
 }
 
 function buildMessage(seed: Seed, now: number): Message {
   return {
     id: asMessageId(seed.key),
     threadId: asThreadId(`wt-${seed.thread ?? seed.key}`),
-    mailboxIds: [seed.mailboxId],
+    mailboxIds: [seed.mailboxId, ...(seed.categories ?? [])],
     from: seed.from,
     to: seed.to ?? [ME],
     cc: [],
@@ -152,6 +191,11 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
       mailboxId,
       seen: index > 2,
       flagged: index === 5,
+      ...(index % 7 === 1
+        ? { categories: [W.followUp] }
+        : index % 9 === 6
+          ? { categories: [W.team] }
+          : {}),
     };
   });
   const specials: Seed[] = [
@@ -164,6 +208,7 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
       snippet: "Let's collect the topics for the planning session",
       minutesAgo: 600,
       mailboxId: W.inbox,
+      categories: [W.team],
     },
     {
       key: "w-plan-2",
@@ -184,6 +229,7 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
       minutesAgo: 30,
       mailboxId: W.inbox,
       seen: false,
+      categories: [W.team, W.important],
     },
     {
       key: "w-old",
@@ -202,6 +248,7 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
       buildMessage(seed, now),
     ),
     contacts: COLLEAGUES,
+    mailboxColors: OUTLOOK_CATEGORY_COLORS,
   };
 }
 

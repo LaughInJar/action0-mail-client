@@ -13,6 +13,7 @@ const en = {
   noMatchingFolders: "No matching folders.",
   signedOut: "signed out",
   addLabelHere: "Add label",
+  addCategoryHere: "Add category",
   moveHere: "Move here",
   otherAccount: "Other account",
   allInboxes: "All inboxes",
@@ -108,7 +109,7 @@ const en = {
       "In the <entra>Microsoft Entra admin center</entra>, open <registrations>App registrations</registrations> and choose <em>New registration</em>. Name it, e.g. action0.",
       "Under <em>Supported account types</em>, choose <em>Accounts in any organizational directory and personal Microsoft accounts</em>.",
       "Under <em>Redirect URI</em>, choose <em>Single-page application (SPA)</em> and enter exactly:<redirect/>",
-      "After registering, open <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em> and add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> and <code>Calendars.ReadWrite</code> (<code>User.Read</code> is already there).",
+      "After registering, open <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em> and add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> and <code>MailboxSettings.ReadWrite</code> (<code>User.Read</code> is already there).",
       "On the <em>Overview</em> page, copy the <em>Application (client) ID</em> and paste it here.",
     ],
     problems: {
@@ -198,7 +199,7 @@ const en = {
       "In the <entra>Microsoft Entra admin center</entra>, open <registrations>App registrations</registrations> and choose <em>New registration</em>. Name it, e.g. action0. (Registered it for the web version already? Open it and continue with the next step but one.)",
       "Under <em>Supported account types</em>, choose <em>Accounts in any organizational directory and personal Microsoft accounts</em>.",
       "Under <em>Authentication</em> → <em>Add a platform</em>, choose <em>Mobile and desktop applications</em> and add exactly this custom redirect URI:<redirect/>",
-      "Under <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em>, add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> and <code>Calendars.ReadWrite</code> (<code>User.Read</code> is already there).",
+      "Under <em>API permissions</em> → <em>Add a permission</em> → <em>Microsoft Graph</em> → <em>Delegated permissions</em>, add <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> and <code>MailboxSettings.ReadWrite</code> (<code>User.Read</code> is already there).",
       "On the <em>Overview</em> page, copy the <em>Application (client) ID</em> and paste it here.",
     ],
     problems: {
@@ -262,6 +263,7 @@ const de: typeof en = {
   noMatchingFolders: "Keine passenden Ordner.",
   signedOut: "abgemeldet",
   addLabelHere: "Label hinzufügen",
+  addCategoryHere: "Kategorie hinzufügen",
   moveHere: "Hierher verschieben",
   otherAccount: "Anderes Konto",
   allInboxes: "Alle Posteingänge",
@@ -356,7 +358,7 @@ const de: typeof en = {
       "Öffne im <entra>Microsoft Entra Admin Center</entra> die <registrations>App-Registrierungen</registrations> und wähl <em>Neue Registrierung</em>. Gib ihr einen Namen, z. B. action0.",
       "Wähl unter <em>Unterstützte Kontotypen</em> <em>Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten</em>.",
       "Wähl unter <em>Umleitungs-URI</em> <em>Single-Page-Webanwendung (SPA)</em> und trag genau das ein:<redirect/>",
-      "Öffne nach dem Registrieren <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> und füge <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> und <code>Calendars.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
+      "Öffne nach dem Registrieren <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> und füge <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> und <code>MailboxSettings.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
       "Kopier auf der Seite <em>Übersicht</em> die <em>Anwendungs-ID (Client)</em> und füge sie hier ein.",
     ],
     problems: {
@@ -445,7 +447,7 @@ const de: typeof en = {
       "Öffne im <entra>Microsoft Entra Admin Center</entra> die <registrations>App-Registrierungen</registrations> und wähle <em>Neue Registrierung</em>. Gib ihr einen Namen, z. B. action0. (Schon für die Web-Version registriert? Öffne sie und mach beim übernächsten Schritt weiter.)",
       "Wähle unter <em>Unterstützte Kontotypen</em> <em>Konten in allen Organisationsverzeichnissen und persönliche Microsoft-Konten</em>.",
       "Wähle unter <em>Authentifizierung</em> → <em>Plattform hinzufügen</em> <em>Mobile und Desktopanwendungen</em> und füge genau diesen benutzerdefinierten Umleitungs-URI hinzu:<redirect/>",
-      "Füge unter <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code> und <code>Calendars.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
+      "Füge unter <em>API-Berechtigungen</em> → <em>Berechtigung hinzufügen</em> → <em>Microsoft Graph</em> → <em>Delegierte Berechtigungen</em> <code>Mail.ReadWrite</code>, <code>Mail.Send</code>, <code>People.Read</code>, <code>Calendars.ReadWrite</code> und <code>MailboxSettings.ReadWrite</code> hinzu (<code>User.Read</code> ist schon da).",
       "Kopiere auf der Seite <em>Übersicht</em> die <em>Anwendungs-ID (Client)</em> und füge sie hier ein.",
     ],
     problems: {

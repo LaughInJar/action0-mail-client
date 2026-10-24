@@ -141,7 +141,9 @@ export function MailActionButtons({
       )}
       {actions.canLabel && (
         <IconButton
-          label={a.labelsButton}
+          label={
+            actions.labelsAreCategories ? a.categoriesButton : a.labelsButton
+          }
           icon="tag"
           onClick={() => {
             actions.openPicker("labels", ids);

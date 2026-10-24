@@ -86,10 +86,14 @@ describe("an account with folders (Outlook)", () => {
     });
   });
 
-  it("moves with v, offers to create a folder there, and has no Labels picker", async () => {
+  it("moves with v and offers to create a folder there; l picks categories", async () => {
     const { user } = renderApp({ data });
     await subject("Quarterly numbers");
     await user.keyboard("l");
+    expect(
+      await screen.findByRole("dialog", { name: /Categories/ }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await user.keyboard("v");

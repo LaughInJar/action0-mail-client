@@ -27,6 +27,8 @@ export interface BatchRequest {
   /** Path below {@link GRAPH_BASE}, e.g. `me/messages/{id}/move`. */
   readonly path: string;
   readonly body?: unknown;
+  /** Extra headers (e.g. `ConsistencyLevel` for counts). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /** Answer to one {@link BatchRequest}: the parsed body, or the error. */
@@ -251,6 +253,7 @@ export class GraphHttp {
                 ...(request.body === undefined
                   ? {}
                   : { "Content-Type": "application/json" }),
+                ...request.headers,
               },
               ...(request.body === undefined ? {} : { body: request.body }),
             })),

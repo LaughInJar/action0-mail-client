@@ -63,6 +63,8 @@ export interface MailActions {
   readonly canStar: boolean;
   readonly canMove: boolean;
   readonly canLabel: boolean;
+  /** The list's labels are Outlook categories (all its accounts use folders). */
+  readonly labelsAreCategories: boolean;
   /** The selection (in list order), or else the focused message. */
   readonly targets: () => MessageKey[];
   /** Archives `keys`, or the targets. */
@@ -203,7 +205,9 @@ export function useMailActions(): MailActions {
       if (!source.conversations) return [...ids];
       const all = threadMessageIds(queryClient, accountId, ids);
       const folder = source.scope;
-      if (kind === "set-flags" || folder?.kind !== "folder") return all;
+      // Flags and labels (categories) go on every message of it.
+      if (kind === "set-flags" || kind === "set-labels") return all;
+      if (folder?.kind !== "folder") return all;
       const inFolder = new Set(
         cachedSummaries(queryClient, accountId, all)
           .filter((message) => message.mailboxIds.includes(folder.id))
@@ -333,9 +337,16 @@ export function useMailActions(): MailActions {
       if (!options.done) return;
       const steps = planned.flatMap(
         ({ group, intent, changes }): UndoStep[] => {
-          const inverse = inverseOf(intent, changes, {
-            labels: capabilitiesOf(group.accountId)?.labels ?? false,
-          });
+          const inverse = inverseOf(
+            intent,
+            changes,
+            capabilitiesOf(group.accountId)?.mailboxKinds.includes("folder")
+              ? {
+                  isFolder: (id) =>
+                    mailboxOf(group.accountId, id)?.kind === "folder",
+                }
+              : {},
+          );
           // Permanent deletion has nothing to undo.
           return inverse.length > 0
             ? [
@@ -447,6 +458,10 @@ export function useMailActions(): MailActions {
       canStar: anyCan((c) => c.settableFlags.includes("flagged")),
       canMove: anyCan((c) => c.move),
       canLabel: anyCan((c) => c.labels),
+      labelsAreCategories: [...sources.keys()].every(
+        (accountId) =>
+          capabilitiesOf(accountId)?.mailboxKinds.includes("folder") === true,
+      ),
       targets,
 
       archive: (explicit) => {
@@ -528,15 +543,30 @@ export function useMailActions(): MailActions {
         const { accountId } = group;
         const [onlyAdded] = add;
         const [onlyRemoved] = remove;
+        // Outlook's labels are its categories.
+        const categories =
+          capabilitiesOf(accountId)?.mailboxKinds.includes("folder") === true;
         perform(keys, ({ ids }) => ({ kind: "set-labels", ids, add, remove }), {
           done: (n) => {
-            if (add.length === 1 && remove.length === 0 && onlyAdded)
-              return a.labelAdded(nameOf(accountId, onlyAdded), count(n));
-            if (remove.length === 1 && add.length === 0 && onlyRemoved)
-              return a.labelRemoved(nameOf(accountId, onlyRemoved), count(n));
-            return a.labelsChanged(count(n));
+            if (add.length === 1 && remove.length === 0 && onlyAdded) {
+              const name = nameOf(accountId, onlyAdded);
+              return categories
+                ? a.categoryAdded(name, count(n))
+                : a.labelAdded(name, count(n));
+            }
+            if (remove.length === 1 && add.length === 0 && onlyRemoved) {
+              const name = nameOf(accountId, onlyRemoved);
+              return categories
+                ? a.categoryRemoved(name, count(n))
+                : a.labelRemoved(name, count(n));
+            }
+            return categories
+              ? a.categoriesChanged(count(n))
+              : a.labelsChanged(count(n));
           },
-          failure: a.couldntChangeLabels,
+          failure: categories
+            ? a.couldntChangeCategories
+            : a.couldntChangeLabels,
         });
       },
 

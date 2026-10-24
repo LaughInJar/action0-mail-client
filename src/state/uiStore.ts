@@ -13,7 +13,7 @@ import type {
   MessageKey,
 } from "../core/ids";
 import type { MailIntent } from "../core/intents";
-import type { MessageSummary, Unsubscribe } from "../core/model";
+import type { MailboxKind, MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
 import { liveMarks, type ReminderMark } from "../core/reminders";
 import type { EventFormState, QuestionState } from "./eventForm";
@@ -133,6 +133,8 @@ export type LabelDialogState =
       readonly mode: "create";
       readonly accountId: AccountId;
       readonly parentId?: MailboxId;
+      /** What to create; defaults to the account's own kind (an Outlook folder). */
+      readonly kind?: MailboxKind;
     }
   | {
       readonly mode: "edit";

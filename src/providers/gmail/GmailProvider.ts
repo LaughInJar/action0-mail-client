@@ -241,8 +241,14 @@ export class GmailProvider implements MailProvider {
     contacts: false,
     maxAttachmentBytes: 25 * 1024 * 1024,
     manageMailboxes: true,
-    mailboxColors: GMAIL_LABEL_COLORS,
-    hideMailboxes: true,
+    mailboxEditing: {
+      label: {
+        rename: true,
+        colors: GMAIL_LABEL_COLORS,
+        nest: true,
+        hide: true,
+      },
+    },
     threads: true,
     senders: true,
     editSignatures: true,
