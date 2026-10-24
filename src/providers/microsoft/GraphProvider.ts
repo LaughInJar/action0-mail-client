@@ -240,7 +240,6 @@ export class GraphProvider implements MailProvider {
       },
       threads: true,
       senders: true,
-      editSignatures: true,
       signatureStore: "browser",
     };
   }

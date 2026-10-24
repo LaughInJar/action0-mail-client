@@ -72,11 +72,6 @@ export interface ProviderCapabilities {
   /** Supports {@link MailProvider.listSenders}. */
   readonly senders: boolean;
   /**
-   * Supports {@link MailProvider.updateSignature} (it may still be refused
-   * as `unavailable` while the permission for it is missing).
-   */
-  readonly editSignatures: boolean;
-  /**
    * Where {@link MailProvider.updateSignature} keeps signatures: with the
    * provider (Gmail), or only in this browser (Graph can't read Outlook's).
    */
@@ -168,14 +163,11 @@ export interface MailboxChange {
   readonly hidden?: boolean;
 }
 
-/** Result of a write operation. */
-export interface MutationResult {
-  /**
-   * Messages whose id changed because they moved (IMAP UIDs are per
-   * folder). Callers replace old ids with new ones. Absent for Gmail.
-   */
-  readonly idMap?: ReadonlyMap<MessageId, MessageId>;
-}
+/**
+ * Result of a write operation; nothing for now. Message ids stay the same
+ * across writes (see {@link MessageId}), so callers never re-key.
+ */
+export type MutationResult = Readonly<Record<string, never>>;
 
 /**
  * Provider-agnostic access to one account's mail.

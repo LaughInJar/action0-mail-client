@@ -17,8 +17,10 @@ export type AccountId = Brand<string, "AccountId">;
 export type MailboxId = Brand<string, "MailboxId">;
 
 /**
- * Identifies a message within one account. Opaque, and not guaranteed to be
- * stable across moves (IMAP UIDs change when a message changes folders).
+ * Identifies a message within one account. Opaque, and stable across moves
+ * and label changes: a provider whose native ids change when a message
+ * changes folders (IMAP UIDs) keeps a stable one itself, e.g. RFC 8474's
+ * `EMAILID` or its own mapping.
  */
 export type MessageId = Brand<string, "MessageId">;
 

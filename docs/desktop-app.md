@@ -92,17 +92,17 @@ Besides these commands the UI uses Tauri's plugins directly from `index.ts`: win
 
 `src-tauri/capabilities/main.json` grants the `main` window exactly what the UI calls:
 
-| Permission                                                     | For                                                                                                                                                           |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core:default`                                                 | Tauri's core defaults (events, window and app basics)                                                                                                         |
-| `core:window:allow-show`, `-hide`, `-set-focus`, `-unminimize` | Bringing the window forward on notification clicks (`allow-hide` is granted too, though only the native side hides the window)                                |
-| `opener:default`                                               | `openUrl` for `http(s):`, `mailto:` and `tel:` (the plugin's default scope, which also allows revealing a file in its folder); no opening of paths            |
-| `dialog:allow-save`                                            | The Save dialog for attachments                                                                                                                               |
-| `fs:allow-write-file`                                          | Writing the attachment. There's no fs scope, so only paths the user just picked in the Save dialog (which the dialog plugin adds to the scope) can be written |
-| `notification:default`                                         | Permission, sending, click actions                                                                                                                            |
-| `autostart:default`                                            | Enable, disable, query                                                                                                                                        |
-| `updater:default`                                              | Check, download, install                                                                                                                                      |
-| `process:allow-restart`                                        | Relaunch after an update                                                                                                                                      |
+| Permission                                            | For                                                                                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core:default`                                        | Tauri's core defaults (events, window and app basics)                                                                                                         |
+| `core:window:allow-show`, `-set-focus`, `-unminimize` | Bringing the window forward on notification clicks (hiding it into the tray happens on the native side)                                                       |
+| `opener:default`                                      | `openUrl` for `http(s):`, `mailto:` and `tel:` (the plugin's default scope, which also allows revealing a file in its folder); no opening of paths            |
+| `dialog:allow-save`                                   | The Save dialog for attachments                                                                                                                               |
+| `fs:allow-write-file`                                 | Writing the attachment. There's no fs scope, so only paths the user just picked in the Save dialog (which the dialog plugin adds to the scope) can be written |
+| `notification:default`                                | Permission, sending, click actions                                                                                                                            |
+| `autostart:default`                                   | Enable, disable, query                                                                                                                                        |
+| `updater:default`                                     | Check, download, install                                                                                                                                      |
+| `process:allow-restart`                               | Relaunch after an update                                                                                                                                      |
 
 The app's own commands (`net_*`, `auth_*`, `shell_*`) need no entry here: `src-tauri/build.rs` defines no app manifest, and Tauri then allows registered commands to the app's own pages (never to remote ones). Opening downloaded files with another app isn't a plugin permission at all: `shell_open_file` writes them on the native side into its own folder and opens that path.
 
