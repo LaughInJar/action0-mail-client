@@ -466,7 +466,10 @@ export class FakeGraph {
       return { status: 201, body: attachment };
     }
     if (
-      (match = /^me\/messages\/([^/]+)\/(move|createReply|send)$/.exec(path))
+      (match =
+        /^me\/messages\/([^/]+)\/(move|createReply|createForward|send)$/.exec(
+          path,
+        ))
     ) {
       const message = this.#message(match[1] ?? "");
       if (!message) return notFound;
@@ -484,6 +487,19 @@ export class FakeGraph {
         this.change(message.id, { parentFolderId: destination });
         return { status: 201, body: message };
       }
+      if (match[2] === "createForward")
+        return {
+          status: 201,
+          // Like Outlook: the forward carries copies of the attachments.
+          body: this.#createDraft({
+            subject: `FW: ${message.subject ?? ""}`,
+            conversationId: message.conversationId,
+            attachments: (message.attachments ?? []).map((attachment) => ({
+              ...attachment,
+              id: `att-${String(this.#nextId++)}`,
+            })),
+          }),
+        };
       if (match[2] === "createReply")
         return {
           status: 201,

@@ -312,7 +312,7 @@ One of `source` and `content` is always set. `content` holds the bytes: the `Fil
 
 ### Threading and reply rules
 
-`Threading` keeps a reply or forward in its conversation: the provider's `threadId`, `inReplyTo` (the original's `Message-ID`) and `references` (oldest first). `threadingFor(original)` builds it for replies and forwards: the original's references plus its own `Message-ID`, without duplicates.
+`Threading` keeps a reply or forward in its conversation: the provider's `threadId`, `inReplyTo` (the original's `Message-ID`) and `references` (oldest first). `threadingFor(original)` builds it for replies and forwards: the original's references plus its own `Message-ID`, without duplicates. Forwards also set `forward: true`, so a provider that distinguishes them (Graph's `createForward`) can record a forward rather than a reply.
 
 The reply rules follow Gmail:
 

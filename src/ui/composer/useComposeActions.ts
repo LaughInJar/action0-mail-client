@@ -396,7 +396,7 @@ export function useComposeActions(): ComposeActions {
                   const { contentId, ...file } = attachment;
                   return file;
                 }),
-              threading: threadingFor(message),
+              threading: { ...threadingFor(message), forward: true },
               focus: "to",
             });
           },

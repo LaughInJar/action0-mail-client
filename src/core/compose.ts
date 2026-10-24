@@ -64,6 +64,11 @@ export interface Threading {
   readonly inReplyTo?: string;
   /** `References` header: the conversation's Message-IDs, oldest first. */
   readonly references: readonly string[];
+  /**
+   * The draft forwards the message `inReplyTo` names, rather than answering
+   * it (Outlook then records it as forwarded).
+   */
+  readonly forward?: true;
 }
 
 /** The content of a draft, as the composer edits it. */
