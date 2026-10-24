@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { MessageId } from "../../core/ids";
+import { messageRef, type MessageRef } from "../../core/ids";
 import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import { useRouter, useUiStore } from "../../state/context";
@@ -15,20 +15,25 @@ export function useComposeCommands(actions: ComposeActions): void {
     const group = "writing";
     /**
      * The message to answer: the one at the open conversation's cursor, else
-     * the one shown in the reader (or under the cursor).
+     * the one shown in the reader (or under the cursor), of its account.
      */
-    const current = (): MessageId | undefined => {
+    const current = (): MessageRef | undefined => {
       const { readerCursor, focusedId } = store.getState();
-      return readerCursor ?? focusedId ?? router.getRoute()?.messageId;
+      const route = router.getRoute();
+      const focused = focusedId === null ? undefined : messageRef(focusedId);
+      const accountId = focused?.accountId ?? route?.accountId;
+      const messageId = readerCursor ?? focused?.messageId ?? route?.messageId;
+      return accountId === undefined || messageId === undefined
+        ? undefined
+        : { accountId, messageId };
     };
-    const withMessage = (run: (id: MessageId) => void) => () => {
-      const id = current();
-      if (id !== undefined) run(id);
+    const withMessage = (run: (message: MessageRef) => void) => () => {
+      const message = current();
+      if (message !== undefined) run(message);
     };
     // In the calendar, `c` makes an event and there's no message to answer.
     const inMail = () => router.getCalendarRoute() === null;
-    const canAnswer = () =>
-      inMail() && actions.canCompose && current() !== undefined;
+    const canAnswer = () => inMail() && current() !== undefined;
     return [
       {
         id: "compose.new",
@@ -44,8 +49,8 @@ export function useComposeCommands(actions: ComposeActions): void {
         description: t.shortcuts.reply,
         keys: ["r"],
         when: canAnswer,
-        run: withMessage((id) => {
-          actions.reply(id, "reply");
+        run: withMessage((message) => {
+          actions.reply(message, "reply");
         }),
       },
       {
@@ -54,8 +59,8 @@ export function useComposeCommands(actions: ComposeActions): void {
         description: t.shortcuts.replyAll,
         keys: ["shift+r"],
         when: canAnswer,
-        run: withMessage((id) => {
-          actions.reply(id, "reply-all");
+        run: withMessage((message) => {
+          actions.reply(message, "reply-all");
         }),
       },
       {

@@ -101,6 +101,20 @@ export class AccountRegistry {
     return handle;
   }
 
+  /**
+   * Adds an account whose session its module restores without signing in
+   * (the demo's second account). A known account is left as it is.
+   */
+  addKnown(account: Account): AccountHandle | undefined {
+    const known = this.get(account.id);
+    if (known) return known;
+    const [handle] = this.#load(account);
+    if (!handle) return undefined;
+    this.#handles = [...this.#handles, handle];
+    this.#persist();
+    return handle;
+  }
+
   /** Signs out (revoking the token where possible) and forgets the account. */
   async remove(id: AccountId): Promise<void> {
     const handle = this.get(id);

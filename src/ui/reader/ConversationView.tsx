@@ -1,7 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAccountHandle } from "../../accounts/context";
 import { useSenders } from "../../data/senders";
-import type { AccountId, MessageId, ThreadId } from "../../core/ids";
+import {
+  messageKey,
+  type AccountId,
+  type MessageId,
+  type ThreadId,
+} from "../../core/ids";
 import { isMailError } from "../../core/errors";
 import type { Mailbox, Message, MessageSummary } from "../../core/model";
 import { useThread } from "../../data/hooks";
@@ -26,6 +31,7 @@ import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useUnsubscribe } from "./useUnsubscribe";
+import { AccountLine } from "./AccountLine";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
 
@@ -37,6 +43,8 @@ export interface ConversationViewProps {
   readonly threadId: ThreadId;
   /** The mailbox being listed (decides which messages show). */
   readonly mailbox: Mailbox | undefined;
+  /** Name the account (All inboxes). */
+  readonly inAccount?: boolean;
   readonly onBack?: () => void;
 }
 
@@ -51,6 +59,7 @@ export function ConversationView({
   rowId,
   threadId,
   mailbox,
+  inAccount = false,
   onBack,
 }: ConversationViewProps) {
   const { data: thread, error, refetch } = useThread(accountId, threadId);
@@ -72,8 +81,11 @@ export function ConversationView({
   const inbox = mailboxes?.find((m) => m.role === "inbox");
   const store = useUiStore();
   /** The message the toolbar answers: the one at the cursor, else the newest. */
-  const answering = () =>
-    store.getState().readerCursor ?? messages?.at(-1)?.id ?? rowId;
+  const answering = () => ({
+    accountId,
+    messageId: store.getState().readerCursor ?? messages?.at(-1)?.id ?? rowId,
+  });
+  const canWrite = compose.canWriteFrom(accountId);
   // The conversation as one item for the toolbar: read if all are, starred if any is.
   const newest = messages?.at(-1);
   const summary: MessageSummary | undefined = newest && {
@@ -90,6 +102,7 @@ export function ConversationView({
     content = (
       <ConversationBody
         key={thread.id}
+        inAccount={inAccount}
         accountId={accountId}
         messages={messages}
         mailboxes={mailboxes}
@@ -141,7 +154,7 @@ export function ConversationView({
           />
         )}
         <div className="flex-1" />
-        {summary && compose.canCompose && (
+        {summary && canWrite && (
           <>
             <IconButton
               label={t.actions.replyButton}
@@ -171,6 +184,7 @@ export function ConversationView({
           <MailActionButtons
             actions={actions}
             message={summary}
+            accountId={accountId}
             archivable={
               inbox !== undefined &&
               (messages ?? []).some((m) => m.mailboxIds.includes(inbox.id))
@@ -190,6 +204,7 @@ export function ConversationView({
 
 interface ConversationBodyProps {
   readonly accountId: AccountId;
+  readonly inAccount: boolean;
   /** The messages that show, oldest first. */
   readonly messages: readonly Message[];
   readonly mailboxes: readonly Mailbox[] | undefined;
@@ -199,6 +214,7 @@ interface ConversationBodyProps {
 
 function ConversationBody({
   accountId,
+  inAccount,
   messages,
   mailboxes,
   actions,
@@ -284,7 +300,11 @@ function ConversationBody({
     const timer = setTimeout(() => {
       const ids = latestUnread.current;
       if (ids.length > 0)
-        actions.setSeen(true, { ids, silent: true, exact: true });
+        actions.setSeen(true, {
+          keys: ids.map((id) => messageKey(accountId, id)),
+          silent: true,
+          exact: true,
+        });
     }, delay);
     return () => {
       clearTimeout(timer);
@@ -348,6 +368,7 @@ function ConversationBody({
 
   return (
     <article aria-labelledby={subjectId}>
+      {inAccount && <AccountLine accountId={accountId} />}
       <div className="space-y-2 border-b border-zinc-200 px-4 py-4 sm:px-6 dark:border-zinc-800">
         <h1
           id={subjectId}
@@ -514,7 +535,9 @@ function OpenMessage({
                 icon="star"
                 pressed={message.flags.flagged}
                 onClick={() => {
-                  actions.toggleStar([message.id], { exact: true });
+                  actions.toggleStar([messageKey(accountId, message.id)], {
+                    exact: true,
+                  });
                 }}
               />
             )}
@@ -541,7 +564,7 @@ function OpenMessage({
       <InvitationBar accountId={accountId} message={message} />
       <MessageBody accountId={accountId} message={message} />
       <AttachmentList accountId={accountId} message={message} />
-      {compose.canCompose && (
+      {compose.canWriteFrom(accountId) && (
         <div className="flex flex-wrap gap-2 px-4 pt-1 pb-4 sm:px-6">
           {draft ? (
             <>
@@ -552,7 +575,7 @@ function OpenMessage({
                 type="button"
                 className={button}
                 onClick={() => {
-                  compose.editDraft(message.id);
+                  compose.editDraft({ accountId, messageId: message.id });
                 }}
               >
                 <Icon name="pencil" className="size-4" />
@@ -565,7 +588,7 @@ function OpenMessage({
                 type="button"
                 className={button}
                 onClick={() => {
-                  compose.reply(message.id, "reply");
+                  compose.reply({ accountId, messageId: message.id }, "reply");
                 }}
               >
                 <Icon name="reply" className="size-4" />
@@ -575,7 +598,10 @@ function OpenMessage({
                 type="button"
                 className={button}
                 onClick={() => {
-                  compose.reply(message.id, "reply-all");
+                  compose.reply(
+                    { accountId, messageId: message.id },
+                    "reply-all",
+                  );
                 }}
               >
                 <Icon name="reply-all" className="size-4" />
@@ -585,7 +611,7 @@ function OpenMessage({
                 type="button"
                 className={button}
                 onClick={() => {
-                  compose.forward(message.id);
+                  compose.forward({ accountId, messageId: message.id });
                 }}
               >
                 <Icon name="forward" className="size-4" />

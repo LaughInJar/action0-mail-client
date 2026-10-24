@@ -2,6 +2,8 @@ const en = {
   archived: (what: string) => `Archived ${what}`,
   couldntArchive: "Couldn’t archive",
   notInInbox: "Not in the Inbox, nothing to archive.",
+  oneAccountOnly:
+    "Moving and labels work within one account: select messages of one account.",
   marked: (what: string, read: boolean) =>
     `Marked ${what} as ${read ? "read" : "unread"}`,
   couldntMark: (read: boolean) =>
@@ -64,6 +66,8 @@ const de: typeof en = {
   archived: (what) => `${what} archiviert`,
   couldntArchive: "Archivieren fehlgeschlagen",
   notInInbox: "Nicht im Posteingang, nichts zu archivieren.",
+  oneAccountOnly:
+    "Verschieben und Labels gehen nur innerhalb eines Kontos: Wähle Nachrichten aus einem Konto.",
   marked: (what, read) =>
     `${what} als ${read ? "gelesen" : "ungelesen"} markiert`,
   couldntMark: (read) =>

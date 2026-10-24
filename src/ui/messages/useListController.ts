@@ -1,13 +1,19 @@
 import { useEffect, useMemo } from "react";
-import type { MessageId } from "../../core/ids";
+import type { AccountId, MessageKey } from "../../core/ids";
 import type { ListRow } from "../../data/listRows";
+import type { ListSource } from "../../data/unified";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
 import { useRouter, useUi, useUiStore } from "../../state/context";
 import { listRoute, type HashRouter } from "../../state/router";
 import type { UiStore } from "../../state/uiStore";
 import type { Breakpoint } from "../layout/useBreakpoint";
-import { listKeyOf, useCurrentList } from "./useCurrentList";
+import {
+  keyOfRoute,
+  listKeyOf,
+  routeOfRow,
+  useCurrentList,
+} from "./useCurrentList";
 import { useT, type I18n } from "../../i18n/context";
 
 const EMPTY: readonly ListRow[] = [];
@@ -21,24 +27,21 @@ const EMPTY: readonly ListRow[] = [];
  * - registers the list's keyboard commands.
  */
 export function useListController(breakpoint: Breakpoint): void {
-  const { route, list, rows, listKey } = useCurrentList();
+  const { route, list, rows, listKey, sources } = useCurrentList();
   const t = useT();
   const router = useRouter();
   const store = useUiStore();
   const items = rows ?? EMPTY;
-  const ids = useMemo(() => items.map((item) => item.id), [items]);
+  const ids = useMemo(() => items.map((item) => item.key), [items]);
 
   // URL → store: switching lists resets the selection; a message in the URL gets focus.
   useEffect(() => {
     if (!route || listKey === null) return;
     const state = store.getState();
-    if (state.listKey !== listKey)
-      state.enterList(listKey, route.messageId ?? null);
-    else if (
-      route.messageId !== undefined &&
-      route.messageId !== state.focusedId
-    ) {
-      state.focusOnly(route.messageId);
+    const opened = keyOfRoute(route);
+    if (state.listKey !== listKey) state.enterList(listKey, opened);
+    else if (opened !== null && opened !== state.focusedId) {
+      state.focusOnly(opened);
     }
   }, [route, listKey, store]);
 
@@ -60,17 +63,16 @@ export function useListController(breakpoint: Breakpoint): void {
           router.navigate(listRoute(current), { replace: true });
         return;
       }
-      if (current.messageId === state.focusedId) return;
-      router.navigate(
-        { ...current, messageId: state.focusedId },
-        { replace: true },
-      );
+      if (keyOfRoute(current) === state.focusedId) return;
+      router.navigate(routeOfRow(current, state.focusedId, sources), {
+        replace: true,
+      });
     };
     sync();
     return store.subscribe((state, previous) => {
       if (state.focusedId !== previous.focusedId) sync();
     });
-  }, [breakpoint, router, store]);
+  }, [breakpoint, router, store, sources]);
 
   // Focus the newest message once the list has loaded (not after "back to
   // the list", which leaves an anchor to continue from).
@@ -109,17 +111,18 @@ export function useListController(breakpoint: Breakpoint): void {
   ]);
 
   const commands = useMemo(
-    () => createListCommands({ breakpoint, ids, router, store, t }),
-    [breakpoint, ids, router, store, t],
+    () => createListCommands({ breakpoint, ids, router, store, sources, t }),
+    [breakpoint, ids, router, store, sources, t],
   );
   useCommands(commands);
 }
 
 interface ListCommandContext {
   readonly breakpoint: Breakpoint;
-  readonly ids: readonly MessageId[];
+  readonly ids: readonly MessageKey[];
   readonly router: HashRouter;
   readonly store: UiStore;
+  readonly sources: ReadonlyMap<AccountId, ListSource>;
   readonly t: I18n;
 }
 
@@ -128,6 +131,7 @@ function createListCommands({
   ids,
   router,
   store,
+  sources,
   t,
 }: ListCommandContext): Command[] {
   const group = "list";
@@ -140,7 +144,9 @@ function createListCommands({
     const current = router.getRoute();
     const focusedId = store.getState().focusedId;
     if (readerOpenOnPhone() && current && focusedId !== null) {
-      router.navigate({ ...current, messageId: focusedId }, { replace: true });
+      router.navigate(routeOfRow(current, focusedId, sources), {
+        replace: true,
+      });
     }
   };
 
@@ -243,7 +249,7 @@ function createListCommands({
         const current = router.getRoute();
         const focusedId = store.getState().focusedId;
         if (current && focusedId !== null)
-          router.navigate({ ...current, messageId: focusedId });
+          router.navigate(routeOfRow(current, focusedId, sources));
       },
     },
     {

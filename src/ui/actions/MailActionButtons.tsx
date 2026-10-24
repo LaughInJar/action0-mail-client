@@ -1,4 +1,4 @@
-import type { MessageId } from "../../core/ids";
+import { messageKey, type AccountId, type MessageKey } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
 import { IconButton } from "../common/IconButton";
 import type { MailActions } from "./useMailActions";
@@ -12,6 +12,8 @@ export interface MailActionButtonsProps {
    * for the selection bar: then the buttons act on the selection.
    */
   readonly message?: MessageSummary;
+  /** The account of `message`. */
+  readonly accountId?: AccountId;
   /** Whether Archive applies (the message is in the Inbox). */
   readonly archivable?: boolean;
 }
@@ -23,11 +25,13 @@ export interface MailActionButtonsProps {
 export function MailActionButtons({
   actions,
   message,
+  accountId,
   archivable = true,
 }: MailActionButtonsProps) {
-  const ids: readonly MessageId[] | undefined = message
-    ? [message.id]
-    : undefined;
+  const ids: readonly MessageKey[] | undefined =
+    message && accountId !== undefined
+      ? [messageKey(accountId, message.id)]
+      : undefined;
   const quarantined = actions.view === "trash" || actions.view === "junk";
   const a = useT().actions;
 
@@ -38,7 +42,7 @@ export function MailActionButtons({
         label={message.flags.seen ? a.markUnreadButton : a.markReadButton}
         icon={message.flags.seen ? "mail" : "mail-open"}
         onClick={() => {
-          actions.setSeen(!message.flags.seen, { ids: [message.id] });
+          actions.setSeen(!message.flags.seen, ids ? { keys: ids } : {});
         }}
       />
     ) : (

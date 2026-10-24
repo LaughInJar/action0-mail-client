@@ -7,23 +7,25 @@ import {
   type DragEvent,
   type MouseEvent,
 } from "react";
-import { useAccountHandle } from "../../accounts/context";
-import type { AccountId, MailboxId, MessageId } from "../../core/ids";
+import { useAccounts } from "../../accounts/context";
+import type { AccountId, MessageKey } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import type { ListRow } from "../../data/listRows";
-import { useSenders } from "../../data/senders";
+import { useSendersOf } from "../../data/senders";
+import type { ListSource } from "../../data/unified";
 import { useUi, useUiStore } from "../../state/context";
+import { useAccountColors } from "../accounts/accountColors";
 import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
-import { rowView } from "./rowView";
+import { rowView, type RowContext } from "./rowView";
 import { useLongPress } from "./useLongPress";
 import { useT } from "../../i18n/context";
 
-/** The row of a message (ids are opaque, so no CSS selector built from them). */
-function rowOf(list: HTMLElement, id: MessageId): HTMLElement | undefined {
-  return Array.from(
-    list.querySelectorAll<HTMLElement>("[data-message-id]"),
-  ).find((row) => row.dataset.messageId === id);
+/** The row with a key (keys hold opaque ids, so no CSS selector built from them). */
+function rowOf(list: HTMLElement, key: MessageKey): HTMLElement | undefined {
+  return Array.from(list.querySelectorAll<HTMLElement>("[data-row-key]")).find(
+    (row) => row.dataset.rowKey === key,
+  );
 }
 
 /** DOM id of the listbox (focused after a search). */
@@ -34,16 +36,16 @@ const rowDomId = (index: number) => `message-row-${index}`;
 
 /** Props of {@link MessageList}. */
 export interface MessageListProps {
-  readonly accountId: AccountId;
   /** Rows can be dragged onto the tree (not inside Trash/Spam). */
   readonly allowDrag: boolean;
-  /** Messages, or conversations. */
+  /** Messages, or conversations (All inboxes: of several accounts). */
   readonly rows: readonly ListRow[];
+  /** Each account in the list: what's listed of it (mailbox, Spam and Trash, Drafts). */
+  readonly sources: ReadonlyMap<AccountId, ListSource>;
+  /** All inboxes: rows show their account. */
+  readonly showAccounts: boolean;
+  /** The mailbox in the default accessible name. */
   readonly mailbox: Mailbox | undefined;
-  /** Spam and Trash: their messages show only there. */
-  readonly isolating: ReadonlySet<MailboxId>;
-  /** The drafts mailbox (a conversation's drafts show as "Draft"). */
-  readonly drafts: MailboxId | undefined;
   /** Accessible name; defaults to "Messages in <mailbox>". */
   readonly label?: string;
   /** Identifies the list (see `listKeyOf`), exposed as `data-list-key`. */
@@ -52,14 +54,14 @@ export interface MessageListProps {
   readonly isFetchingNextPage: boolean;
   readonly fetchNextPage: () => void;
   /** Shows a message (plain click or tap). */
-  readonly onOpen: (id: MessageId) => void;
+  readonly onOpen: (key: MessageKey) => void;
   /**
    * Enter opens the row too (phones, Drafts); elsewhere the row is open
    * already and Enter goes to the app's shortcuts (e.g. a conversation).
    */
   readonly enterOpens: boolean;
   /** Toggles the star of one message (click on a row's star). Omit if starring isn't supported. */
-  readonly onToggleStar?: (id: MessageId) => void;
+  readonly onToggleStar?: (key: MessageKey) => void;
 }
 
 /** A small badge as drag image ("3 messages"); removed right after the drag starts. */
@@ -87,12 +89,11 @@ function dragBadge(text: string): HTMLElement {
  *   selected row drags the whole selection.
  */
 export function MessageList({
-  accountId,
   allowDrag,
   rows,
+  sources,
+  showAccounts,
   mailbox,
-  isolating,
-  drafts,
   label,
   listKey,
   hasNextPage,
@@ -108,31 +109,59 @@ export function MessageList({
   const compact = useUi((state) => state.settings.density === "compact");
   const t = useT();
   const selectedIds = useUi((state) => state.selectedIds);
-  const ids = useMemo(() => rows.map((row) => row.id), [rows]);
-  // "me" in a conversation's senders: the account's addresses.
-  const email = useAccountHandle(accountId)?.account.email;
-  const { data: senders } = useSenders(accountId);
+  const ids = useMemo(() => rows.map((row) => row.key), [rows]);
+  const accounts = useAccounts();
+  const accountIds = useMemo(() => [...sources.keys()], [sources]);
+  const senders = useSendersOf(accountIds);
+  const colors = useAccountColors();
   const views = useMemo(() => {
-    const mine = new Set(
-      [email ?? "", ...(senders ?? []).map((sender) => sender.address)].map(
-        (address) => address.toLowerCase(),
-      ),
+    const contexts = new Map(
+      [...sources].map(([accountId, source]) => {
+        const email = accounts.find((h) => h.account.id === accountId)?.account
+          .email;
+        // "me" in a conversation's senders: the account's addresses.
+        const mine = new Set(
+          [
+            email ?? "",
+            ...(senders.get(accountId) ?? []).map((sender) => sender.address),
+          ].map((address) => address.toLowerCase()),
+        );
+        const role = source.scope?.role;
+        const context: RowContext = {
+          mailbox: source.scope,
+          isolating: source.isolating,
+          mine,
+          showRecipients: role === "sent" || role === "drafts",
+          drafts: source.mailboxes?.find((m) => m.role === "drafts")?.id,
+          t,
+        };
+        return [accountId, { context, email }] as const;
+      }),
     );
-    const showRecipients =
-      mailbox?.role === "sent" || mailbox?.role === "drafts";
-    return rows.map((row) =>
-      rowView(row, { mailbox, isolating, mine, showRecipients, drafts, t }),
-    );
-  }, [rows, mailbox, isolating, email, senders, drafts, t]);
+    return rows.flatMap((row) => {
+      const found = contexts.get(row.accountId);
+      if (!found) return [];
+      const color = colors.get(row.accountId);
+      return [
+        rowView(
+          row,
+          found.context,
+          showAccounts && found.email !== undefined && color !== undefined
+            ? { email: found.email, color }
+            : undefined,
+        ),
+      ];
+    });
+  }, [rows, sources, accounts, senders, colors, showAccounts, t]);
   const pointerType = useRef("mouse");
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // New mail arriving above what you see: keep the visible rows in place
   // (by hand: Safari has no scroll anchoring) and offer a jump to the top.
-  const anchor = useRef<{ id: MessageId; offset: number } | null>(null);
-  const [anchorId, setAnchorId] = useState<MessageId | null>(null);
-  const [seen, setSeen] = useState<ReadonlySet<MessageId>>(() => new Set(ids));
+  const anchor = useRef<{ id: MessageKey; offset: number } | null>(null);
+  const [anchorId, setAnchorId] = useState<MessageKey | null>(null);
+  const [seen, setSeen] = useState<ReadonlySet<MessageKey>>(() => new Set(ids));
   const onScroll = () => {
     const list = listRef.current;
     if (!list) return;
@@ -143,9 +172,9 @@ export function MessageList({
       return;
     }
     const first = Array.from(
-      list.querySelectorAll<HTMLElement>("[data-message-id]"),
+      list.querySelectorAll<HTMLElement>("[data-row-key]"),
     ).find((row) => row.offsetTop + row.offsetHeight > list.scrollTop);
-    const id = first?.dataset.messageId as MessageId | undefined;
+    const id = first?.dataset.rowKey as MessageKey | undefined;
     anchor.current =
       first && id !== undefined
         ? { id, offset: first.offsetTop - list.scrollTop }
@@ -167,11 +196,11 @@ export function MessageList({
       ? ids.slice(0, anchorIndex).filter((id) => !seen.has(id)).length
       : 0;
 
-  const idFromTarget = (target: EventTarget | null): MessageId | undefined => {
+  const idFromTarget = (target: EventTarget | null): MessageKey | undefined => {
     const row = (target as HTMLElement | null)?.closest<HTMLElement>(
-      "[data-message-id]",
+      "[data-row-key]",
     );
-    return row?.dataset.messageId as MessageId | undefined;
+    return row?.dataset.rowKey as MessageKey | undefined;
   };
 
   const longPress = useLongPress((target) => {
@@ -202,7 +231,7 @@ export function MessageList({
     const dragged = state.selectedIds.has(id)
       ? ids.filter((candidate) => state.selectedIds.has(candidate))
       : [id];
-    state.setDragging({ accountId, ids: dragged });
+    state.setDragging({ keys: dragged });
     const label = t.common.messages(dragged.length);
     event.dataTransfer.effectAllowed = "copyMove";
     // Firefox only starts a drag with some data set.
@@ -302,14 +331,14 @@ export function MessageList({
         className="relative h-full overflow-y-auto overscroll-contain [overflow-anchor:none] focus:outline-none"
       >
         {views.map((view, index) => {
-          const focused = view.id === focusedId;
+          const focused = view.key === focusedId;
           return (
             <MessageRow
-              key={view.id}
+              key={view.key}
               domId={rowDomId(index)}
               view={view}
               focused={focused}
-              selected={selectionMode ? selectedIds.has(view.id) : focused}
+              selected={selectionMode ? selectedIds.has(view.key) : focused}
               selectionMode={selectionMode}
               draggable={allowDrag && !coarse}
               starrable={onToggleStar !== undefined}

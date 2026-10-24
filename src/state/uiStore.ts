@@ -5,7 +5,13 @@ import {
 } from "zustand/middleware";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ComposerContent } from "../compose/session";
-import type { AccountId, DraftId, MailboxId, MessageId } from "../core/ids";
+import type {
+  AccountId,
+  DraftId,
+  MailboxId,
+  MessageId,
+  MessageKey,
+} from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
@@ -29,23 +35,26 @@ export interface Toast {
   readonly tone: "info" | "error";
   /** A discarded draft that "Undo" brings back. */
   readonly restoreDraft?: ComposerSession;
-  /** Intents that revert the action the toast reports. */
-  readonly undo?: {
-    readonly accountId: AccountId;
-    readonly intents: readonly MailIntent[];
-    /** The messages as the action left them, for messages that left every cached list. */
-    readonly known: readonly MessageSummary[];
-  };
+  /** Intents that revert the action the toast reports, per account. */
+  readonly undo?: readonly UndoStep[];
   /** Reverts the action the toast reports (changes that aren't mail intents). */
   readonly revert?: () => void;
   /** A link the toast offers, opened in a new tab. */
   readonly link?: { readonly label: string; readonly href: string };
 }
 
+/** What undoes a mail action in one account. */
+export interface UndoStep {
+  readonly accountId: AccountId;
+  readonly intents: readonly MailIntent[];
+  /** The messages as the action left them, for messages that left every cached list. */
+  readonly known: readonly MessageSummary[];
+}
+
 /** Messages being dragged (`dragover` handlers can't read the drag data). */
 export interface DragState {
-  readonly accountId: AccountId;
-  readonly ids: readonly MessageId[];
+  /** Rows of the list (All inboxes: possibly of several accounts). */
+  readonly keys: readonly MessageKey[];
 }
 
 /** The open mailbox picker and the messages it acts on (captured when it opened). */
@@ -223,6 +232,11 @@ export interface UiState extends selection.SelectionState {
    * content: ids and times), dropped once their event is over.
    */
   readonly reminderMarks: Readonly<Record<string, ReminderMark>>;
+  /**
+   * Each account's colour (All inboxes), as an index into the palette, by
+   * account id. Persisted, so colours stay when accounts come and go.
+   */
+  readonly accountColors: Readonly<Record<string, number>>;
   /** The event editor's values, while it's open. Memory only. */
   readonly eventForm: EventFormState | null;
 }
@@ -230,24 +244,27 @@ export interface UiState extends selection.SelectionState {
 /** State transitions. */
 export interface UiActions {
   /** Switches to another list; resets the selection and focuses `focusedId`. */
-  readonly enterList: (listKey: string, focusedId: MessageId | null) => void;
-  readonly focusOnly: (id: MessageId) => void;
-  readonly moveFocus: (orderedIds: readonly MessageId[], delta: number) => void;
-  readonly focusAt: (orderedIds: readonly MessageId[], index: number) => void;
-  readonly toggle: (id: MessageId) => void;
+  readonly enterList: (listKey: string, focusedId: MessageKey | null) => void;
+  readonly focusOnly: (id: MessageKey) => void;
+  readonly moveFocus: (
+    orderedIds: readonly MessageKey[],
+    delta: number,
+  ) => void;
+  readonly focusAt: (orderedIds: readonly MessageKey[], index: number) => void;
+  readonly toggle: (id: MessageKey) => void;
   readonly selectRange: (
-    orderedIds: readonly MessageId[],
-    id: MessageId,
+    orderedIds: readonly MessageKey[],
+    id: MessageKey,
   ) => void;
   readonly extendFocus: (
-    orderedIds: readonly MessageId[],
+    orderedIds: readonly MessageKey[],
     delta: number,
   ) => void;
   readonly clearSelection: () => void;
   /** Messages left the list (moved, archived): see {@link selection.removeFromList}. */
   readonly removeFromList: (
-    removed: ReadonlySet<MessageId>,
-    next: MessageId | null,
+    removed: ReadonlySet<MessageKey>,
+    next: MessageKey | null,
     options?: { readonly open?: boolean },
   ) => void;
   readonly allowRemoteContent: (id: MessageId) => void;
@@ -286,8 +303,13 @@ export interface UiActions {
   ) => void;
   readonly markComposerSaving: (key: number) => void;
   /** A save of `revision` finished (or failed, with `error`). */
+  /**
+   * Records how saving to `accountId` went. Ignored once the composer
+   * moved to another account (From changed meanwhile).
+   */
   readonly markComposerSaved: (
     key: number,
+    accountId: AccountId,
     result: { revision: number; draftId: DraftId } | { error: string },
   ) => void;
   /** Closes the composer (if it is still the one with `key`). */
@@ -303,6 +325,7 @@ export interface UiActions {
   readonly setQuestion: (question: QuestionState | null) => void;
   /** Dismisses or snoozes a reminder (`null` forgets the mark again). */
   readonly markReminder: (key: string, mark: ReminderMark | null) => void;
+  readonly setAccountColors: (colors: Readonly<Record<string, number>>) => void;
   readonly setEventForm: (form: EventFormState | null) => void;
 }
 
@@ -337,6 +360,18 @@ interface PersistedUi {
   listOrder?: unknown;
   settings?: unknown;
   reminderMarks?: unknown;
+  accountColors?: unknown;
+}
+
+/** Stored account colours that are well-formed. */
+function parseColors(value: unknown): Record<string, number> {
+  if (typeof value !== "object" || value === null) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, number] =>
+        Number.isInteger(entry[1]) && (entry[1] as number) >= 0,
+    ),
+  );
 }
 
 /** Stored reminder marks that are well-formed. */
@@ -404,6 +439,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           question: null,
           eventForm: null,
           reminderMarks: {},
+          accountColors: {},
 
           enterList: (listKey, focusedId) => {
             set({
@@ -565,9 +601,10 @@ export function createUiStore(storage: Storage | undefined): UiStore {
                 : {},
             );
           },
-          markComposerSaved: (key, result) => {
+          markComposerSaved: (key, accountId, result) => {
             set((s) => {
-              if (s.composer?.key !== key) return {};
+              if (s.composer?.key !== key || s.composer.accountId !== accountId)
+                return {};
               const { saveError, ...rest } = s.composer;
               return {
                 composer:
@@ -636,6 +673,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setEventForm: (eventForm) => {
             set({ eventForm });
           },
+          setAccountColors: (accountColors) => {
+            set({ accountColors });
+          },
         };
       },
       {
@@ -648,6 +688,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           listOrder: state.listOrder,
           settings: state.settings,
           reminderMarks: state.reminderMarks,
+          accountColors: state.accountColors,
         }),
         merge: (persisted, current) => {
           const {
@@ -656,6 +697,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             listOrder,
             settings,
             reminderMarks,
+            accountColors,
           } = (persisted ?? {}) as PersistedUi;
           const widths =
             Array.isArray(columnWidths) &&
@@ -678,6 +720,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             listOrder: listOrder === "oldest" ? "oldest" : "newest",
             settings: parseSettings(settings),
             reminderMarks: liveMarks(parseMarks(reminderMarks), Date.now()),
+            accountColors: parseColors(accountColors),
           };
         },
       },

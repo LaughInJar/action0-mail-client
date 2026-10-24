@@ -1,13 +1,22 @@
-import type { MailboxId, MessageId } from "../../core/ids";
+import type { MailboxId, MessageKey } from "../../core/ids";
 import type { EmailAddress, Mailbox, MessageSummary } from "../../core/model";
 import type { ListRow } from "../../data/listRows";
 import { visibleMessages } from "../../data/optimistic";
 import { displayName, displayNames } from "../common/format";
 import type { I18n } from "../../i18n/context";
 
+/** The account a row belongs to, shown in All inboxes. */
+export interface RowAccount {
+  readonly email: string;
+  /** CSS colour. */
+  readonly color: string;
+}
+
 /** What a row of the message list shows. */
 export interface RowView {
-  readonly id: MessageId;
+  readonly key: MessageKey;
+  /** All inboxes: the row's account. */
+  readonly account?: RowAccount;
   /** Sender, recipients (Sent, Drafts) or a conversation's senders. */
   readonly who: string;
   /** Messages in the conversation, when more than one. */
@@ -64,11 +73,16 @@ function senders(
 }
 
 /** The display of one row: a message, or a conversation. */
-export function rowView(row: ListRow, context: RowContext): RowView {
+export function rowView(
+  row: ListRow,
+  context: RowContext,
+  account?: RowAccount,
+): RowView {
   const { thread, summary } = row;
+  const identity = { key: row.key, ...(account ? { account } : {}) };
   if (!thread) {
     return {
-      id: row.id,
+      ...identity,
       who: context.showRecipients
         ? `${context.t.common.to}: ${displayNames(summary.to) || context.t.common.noRecipients}`
         : displayName(summary.from, context.t.common.unknownSender),
@@ -91,7 +105,7 @@ export function rowView(row: ListRow, context: RowContext): RowView {
   const sent = messages.filter((message) => !isDraft(message));
   const first = messages[0] ?? summary;
   return {
-    id: row.id,
+    ...identity,
     who: senders(sent.length > 0 ? sent : messages, context.mine, context.t),
     ...(messages.length > 1 ? { count: messages.length } : {}),
     draft: messages.some(isDraft),

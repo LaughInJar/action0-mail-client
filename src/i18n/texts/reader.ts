@@ -2,6 +2,7 @@ const en = {
   selectedCount: (n: number) => `${n} messages selected`,
   clearSelectionHint: { before: "Press", after: " to clear the selection." },
   noMessageSelected: "No message selected",
+  inAccount: (email: string) => `In ${email}`,
   navigationHint: {
     before: "Use",
     and: "and",
@@ -54,6 +55,7 @@ const de: typeof en = {
     after: ", um die Auswahl aufzuheben.",
   },
   noMessageSelected: "Keine Nachricht ausgewählt",
+  inAccount: (email) => `Im Konto ${email}`,
   navigationHint: {
     before: "Mit",
     and: "und",

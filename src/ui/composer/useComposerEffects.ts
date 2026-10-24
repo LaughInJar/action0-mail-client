@@ -22,7 +22,7 @@ export const LARGE_AUTOSAVE_DELAY_MS = 30_000;
 const LARGE_DRAFT_BYTES = 1_000_000;
 
 const withoutCompose = (route: NonNullable<Route>): NonNullable<Route> => {
-  const { compose, ...rest } = route;
+  const { compose, composeAccount, ...rest } = route;
   return rest;
 };
 
@@ -102,6 +102,7 @@ export function useComposerEffects(
   const routeCompose = useRoute()?.compose;
   const key = composer?.key;
   const draftId = composer?.draftId;
+  const composerAccount = composer?.accountId;
   const url = useRef<{ key: number | null; started: boolean }>({
     key: null,
     started: false,
@@ -115,7 +116,11 @@ export function useComposerEffects(
       if (current?.compose !== undefined && key === undefined) {
         if (current.compose === "new")
           router.navigate(withoutCompose(current), { replace: true });
-        else actions.resumeDraft(asDraftId(current.compose));
+        else
+          actions.resumeDraft(
+            current.composeAccount ?? current.accountId,
+            asDraftId(current.compose),
+          );
         return;
       }
     }
@@ -138,14 +143,30 @@ export function useComposerEffects(
     }
     if (!fullScreen) return;
     const value = draftId ?? "new";
+    // The draft's account, when it isn't the one in context (a reload resumes it there).
+    const composing = {
+      ...withoutCompose(current),
+      compose: value,
+      ...(composerAccount !== undefined && composerAccount !== current.accountId
+        ? { composeAccount: composerAccount }
+        : {}),
+    };
     if (state.key !== key) {
       state.key = key;
-      router.navigate(
-        { ...current, compose: value },
-        { replace: current.compose !== undefined },
-      );
-    } else if (current.compose !== value) {
-      router.navigate({ ...current, compose: value }, { replace: true });
+      router.navigate(composing, { replace: current.compose !== undefined });
+    } else if (
+      current.compose !== value ||
+      current.composeAccount !== composing.composeAccount
+    ) {
+      router.navigate(composing, { replace: true });
     }
-  }, [key, draftId, routeCompose, fullScreen, router, actions]);
+  }, [
+    key,
+    draftId,
+    composerAccount,
+    routeCompose,
+    fullScreen,
+    router,
+    actions,
+  ]);
 }

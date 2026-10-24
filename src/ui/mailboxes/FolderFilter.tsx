@@ -42,14 +42,19 @@ export function FolderFilter() {
       case "Enter": {
         if (!filtering) return;
         const match = items('[data-match="true"][data-selectable="true"]')[0];
-        const { accountId, mailboxId } = match?.dataset ?? {};
-        if (!match || accountId === undefined || mailboxId === undefined) break;
+        const {
+          accountId = "",
+          mailboxId = "",
+          unified,
+        } = match?.dataset ?? {};
+        if (!match || (unified !== "true" && (!accountId || !mailboxId))) break;
         match.click();
         // Continue in the folder's messages (once they're shown), so j/k work.
         const key = listKeyOf(
           {
             accountId: asAccountId(accountId),
             mailboxId: asMailboxId(mailboxId),
+            ...(unified === "true" ? { unified: true } : {}),
           },
           store.getState().listOrder,
           store.getState().settings.conversations,

@@ -143,12 +143,12 @@ describe("live updates", () => {
     // jsdom has no layout: rows are 60px each.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
       function (this: HTMLElement) {
-        return this.dataset.messageId ? 60 : 0;
+        return this.dataset.rowKey ? 60 : 0;
       },
     );
     vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(
       function (this: HTMLElement) {
-        if (!this.dataset.messageId || !this.parentElement) return 0;
+        if (!this.dataset.rowKey || !this.parentElement) return 0;
         return Array.from(this.parentElement.children).indexOf(this) * 60;
       },
     );

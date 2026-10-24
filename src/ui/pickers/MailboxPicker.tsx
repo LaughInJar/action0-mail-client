@@ -1,13 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useAccountHandle } from "../../accounts/context";
-import type { MailboxId } from "../../core/ids";
+import { messageKey, type MailboxId } from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import { mailboxPath } from "../../data/mailboxActions";
 import { cachedSummaries, threadMessageIds } from "../../data/mutations";
 import { useRoute, useUi } from "../../state/context";
 import type { PickerState } from "../../state/uiStore";
 import { useMailActions } from "../actions/useMailActions";
+import { useCurrentList } from "../messages/useCurrentList";
 import { errorMessage } from "../common/errorMessage";
 import { Icon } from "../common/Icon";
 import { Sheet } from "../common/Sheet";
@@ -43,6 +44,13 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const setPicker = useUi((state) => state.setPicker);
   const route = useRoute();
   const actions = useMailActions();
+  const { sources } = useCurrentList();
+  // The mailbox the messages are listed in (no target for moving).
+  const listed = route?.unified
+    ? sources.get(picker.accountId)?.scope?.id
+    : route?.accountId === picker.accountId
+      ? route.mailboxId
+      : undefined;
   const t = useT();
   const capabilities = useAccountHandle(picker.accountId)?.provider
     .capabilities;
@@ -65,6 +73,8 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const close = () => {
     setPicker(null);
   };
+  // The rows, as the actions take them.
+  const keys = picker.ids.map((id) => messageKey(picker.accountId, id));
   // On touch devices, focusing the filter would cover the sheet with the keyboard.
   const coarse = useCoarsePointer();
 
@@ -75,9 +85,9 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           isTarget(mailbox) &&
           (labelsMode
             ? mailbox.kind === "label" && mailbox.role === undefined
-            : mailbox.id !== route?.mailboxId),
+            : mailbox.id !== listed),
       ),
-    [mailboxes, labelsMode, route?.mailboxId],
+    [mailboxes, labelsMode, listed],
   );
   const visible = candidates
     .map((mailbox) => ({
@@ -158,7 +168,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
       if (!on && before !== "off") remove.push(id);
     }
     if (add.length > 0 || remove.length > 0)
-      actions.setLabels(add, remove, picker.ids);
+      actions.setLabels(add, remove, keys);
     close();
   };
 
@@ -174,7 +184,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
           setFilter(typed.join(" / "));
           setActive(0);
         } else {
-          actions.moveTo(mailbox.id, picker.ids);
+          actions.moveTo(mailbox.id, keys);
           close();
         }
       },
@@ -190,7 +200,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
       toggle(mailbox.id);
       return;
     }
-    actions.moveTo(mailbox.id, picker.ids);
+    actions.moveTo(mailbox.id, keys);
     close();
   };
 

@@ -20,13 +20,19 @@ export interface ListToolbarProps {
   readonly mailbox: Mailbox | undefined;
   /** The mailbox that "Everywhere" searches; undefined if the account has none. */
   readonly everywhere: Mailbox | undefined;
+  /** All inboxes: searches every account's Inbox, or every whole account. */
+  readonly unified: boolean;
 }
 
 /**
  * Below the list header: the mail search field and the sort order, plus the
  * "search in" switch while a search is shown.
  */
-export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
+export function ListToolbar({
+  mailbox,
+  everywhere,
+  unified,
+}: ListToolbarProps) {
   const t = useT();
   const route = useRoute();
   const router = useRouter();
@@ -35,9 +41,11 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
   const setListOrder = useUi((state) => state.setListOrder);
   const canSwitch =
     search !== undefined &&
-    everywhere !== undefined &&
-    mailbox !== undefined &&
-    mailbox.id !== everywhere.id;
+    (unified ||
+      (everywhere !== undefined &&
+        mailbox !== undefined &&
+        mailbox.id !== everywhere.id));
+  const here = unified ? t.list.allInboxes : mailbox?.name;
 
   const searchIn = (all: boolean) => {
     const current = router.getRoute();
@@ -45,6 +53,7 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
     router.navigate({
       accountId: current.accountId,
       mailboxId: current.mailboxId,
+      ...(current.unified ? { unified: true } : {}),
       search: { text: current.search.text, everywhere: all },
     });
   };
@@ -54,9 +63,9 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
       <div className="flex items-center gap-1">
         <SearchField
           placeholder={
-            search?.everywhere || !mailbox
+            search?.everywhere || here === undefined
               ? t.list.searchAll
-              : t.list.searchIn(mailbox.name)
+              : t.list.searchIn(here)
           }
         />
         <button
@@ -87,7 +96,7 @@ export function ListToolbar({ mailbox, everywhere }: ListToolbarProps) {
               searchIn(false);
             }}
           >
-            {mailbox.name}
+            {here ?? ""}
           </ScopeButton>
           <ScopeButton
             pressed={search.everywhere}
@@ -142,10 +151,12 @@ function SearchField({ placeholder }: { placeholder: string }) {
   const router = useRouter();
   const store = useUiStore();
   const routeText = route?.search?.text.trim() ?? "";
-  const listId = JSON.stringify([
-    route?.accountId ?? null,
-    route?.mailboxId ?? null,
-  ]);
+  // All inboxes stays one list while the account in context changes.
+  const listId = JSON.stringify(
+    route?.unified
+      ? ["all"]
+      : [route?.accountId ?? null, route?.mailboxId ?? null],
+  );
   const [text, setText] = useState(routeText);
   // What the field last followed, and what it last wrote to the URL itself.
   const [shown, setShown] = useState({ listId, routeText });
@@ -171,6 +182,7 @@ function SearchField({ placeholder }: { placeholder: string }) {
       const list = {
         accountId: current.accountId,
         mailboxId: current.mailboxId,
+        ...(current.unified ? { unified: true as const } : {}),
       };
       const searched = next
         ? {
