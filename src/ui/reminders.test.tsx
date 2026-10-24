@@ -34,7 +34,11 @@ function calendarWith(
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const templates = events.map((spec): FakeEventTemplate => {
-    const start = new Date(now + spec.startsIn * 60_000);
+    // Events start on a full minute (HH:MM): round up, so one due "in half
+    // a minute" isn't due already when the clock's seconds are past 30.
+    const start = new Date(
+      Math.ceil((now + spec.startsIn * 60_000) / 60_000) * 60_000,
+    );
     const end = new Date(start.getTime() + 30 * 60_000);
     const midnight = new Date(start);
     midnight.setHours(0, 0, 0, 0);
@@ -75,7 +79,7 @@ describe("event reminders", () => {
       ]),
     });
     const review = await item("Sprint review");
-    expect(review).toHaveTextContent(/In [45] minutes/);
+    expect(review).toHaveTextContent(/In [56] minutes/);
     expect(
       within(await panel()).queryByRole("listitem", { name: "Planning" }),
     ).not.toBeInTheDocument();
@@ -143,7 +147,7 @@ describe("event reminders", () => {
     renderApp({
       reminders: true,
       platform: desktop.platform,
-      // Due in about half a minute.
+      // Due in half a minute to a minute and a half.
       calendar: calendarWith([
         {
           key: "call",
@@ -161,7 +165,7 @@ describe("event reminders", () => {
       screen.queryByRole("region", { name: "Reminders" }),
     ).not.toBeInTheDocument();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(65_000);
+      await vi.advanceTimersByTimeAsync(110_000);
     });
     expect(await item("Call with Anna")).toBeInTheDocument();
     expect(desktop.platform.notifications.show).toHaveBeenCalledWith(
