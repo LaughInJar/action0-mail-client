@@ -179,6 +179,9 @@ function changed(
         : shiftTime(cached.end, endShift),
     ...(place ? { location: place } : {}),
     ...(text ? { description: text } : {}),
+    ...(changes.reminders !== undefined
+      ? { reminders: changes.reminders }
+      : {}),
     ...(changes.guests !== undefined
       ? {
           attendees: changes.guests.map((address) => ({
@@ -214,6 +217,7 @@ function provisional(draft: EventDraft): CalendarEvent {
     status: "confirmed",
     recurring: draft.repeat !== null,
     organizedByMe: true,
+    ...(draft.reminders.length > 0 ? { reminders: draft.reminders } : {}),
   };
 }
 
@@ -252,6 +256,9 @@ function inverse(event: CalendarEvent, changes: EventChanges): EventChanges {
       : {}),
     ...(changes.descriptionHtml !== undefined
       ? { descriptionHtml: event.description?.html ?? "" }
+      : {}),
+    ...(changes.reminders !== undefined
+      ? { reminders: event.reminders ?? [] }
       : {}),
     ...(changes.guests !== undefined
       ? {

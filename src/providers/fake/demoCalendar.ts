@@ -41,6 +41,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         shownByDefault: true,
         readOnly: false,
         videoCall: "googleMeet",
+        defaultReminders: [10],
       },
       {
         id: personal,
@@ -49,6 +50,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         primary: false,
         shownByDefault: true,
         readOnly: false,
+        defaultReminders: [30],
       },
       {
         id: holidays,
@@ -70,6 +72,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         meetingUrl: "https://meet.example/standup",
         organizer: ME,
         attendees: [ANNA, JONAS, MIA],
+        reminders: [5],
       },
       {
         key: "team",
@@ -83,6 +86,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         attendees: [JONAS, MIA],
         invited: "accepted",
         description: "Weekly status, then one topic in depth.",
+        reminders: [10],
       },
       {
         key: "design-review",
@@ -97,6 +101,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         invited: "needsAction",
         description: "Let's go through the new logo and the website drafts.",
         uid: DEMO_INVITATION_UID,
+        reminders: [10],
       },
       {
         key: "one-on-one",
@@ -119,6 +124,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         attendees: [ANNA, MIA],
         invited: "needsAction",
         meetingUrl: "https://meet.example/planning",
+        reminders: [15],
       },
       {
         key: "conference",
@@ -127,6 +133,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         day: 9,
         days: 3,
         location: "Austria Center Vienna",
+        reminders: [900],
       },
       {
         key: "lunch",
@@ -136,6 +143,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         start: "12:30",
         end: "13:30",
         location: "Café Central",
+        reminders: [30],
       },
       {
         key: "gym",

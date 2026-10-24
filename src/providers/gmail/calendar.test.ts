@@ -373,6 +373,7 @@ describe("GoogleCalendarProvider changes", () => {
     guests: [{ name: "Anna", address: "anna@example.org" }],
     videoCall: true,
     repeat: { kind: "weekly" as const },
+    reminders: [10],
   };
 
   it("creates an event with its own id, a Meet, a repeat rule and guests; undo deletes it", async () => {
@@ -562,6 +563,17 @@ describe("GoogleCalendarProvider changes", () => {
 
   it("reads an event for the editor with its series' rule", async () => {
     serve([master, third]);
+    server.use(
+      http.get(url("users/me/calendarList/:id"), () =>
+        HttpResponse.json({
+          id: CAL,
+          defaultReminders: [
+            { method: "popup", minutes: 10 },
+            { method: "email", minutes: 60 },
+          ],
+        }),
+      ),
+    );
     const editable = await setup().provider.loadForEdit(
       toCalendarEvent(CAL, third),
     );
@@ -582,9 +594,95 @@ describe("GoogleCalendarProvider changes", () => {
         guests: [{ address: "anna@example.org" }],
         videoCall: false,
         repeat: { kind: "custom" },
+        // The calendar's default, on screen (email reminders aren't shown).
+        reminders: [10],
       },
       videoCallFixed: false,
       firstOccurrence: false,
+    });
+  });
+});
+
+describe("Google reminders", () => {
+  it("reads on-screen reminders, the calendar's defaults where the event uses them", async () => {
+    server.use(
+      http.get(url("calendars/:id/events"), () =>
+        HttpResponse.json({
+          defaultReminders: [{ method: "popup", minutes: 30 }],
+          items: [
+            { ...designReview, id: "d", reminders: { useDefault: true } },
+            {
+              ...designReview,
+              id: "own",
+              reminders: {
+                useDefault: false,
+                overrides: [
+                  { method: "email", minutes: 1440 },
+                  { method: "popup", minutes: 5 },
+                ],
+              },
+            },
+            {
+              ...designReview,
+              id: "none",
+              reminders: { useDefault: false },
+            },
+          ],
+        }),
+      ),
+    );
+    const events = await setup().provider.listEvents(
+      [asCalendarId("me@example.com")],
+      { from: "2026-10-12T00:00:00Z", to: "2026-10-19T00:00:00Z" },
+    );
+    expect(events.map((event) => event.reminders)).toEqual([
+      [30],
+      [5],
+      undefined,
+    ]);
+  });
+
+  it("writes on-screen reminders and keeps the email ones", async () => {
+    let body: Record<string, unknown> | undefined;
+    const CAL = "me@example.com";
+    const own = {
+      ...designReview,
+      organizer: { email: CAL, self: true },
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: "email", minutes: 1440 },
+          { method: "popup", minutes: 5 },
+        ],
+      },
+    };
+    server.use(
+      http.get(url(`calendars/${encodeURIComponent(CAL)}/events/ev1`), () =>
+        HttpResponse.json(own),
+      ),
+      http.patch(
+        url(`calendars/${encodeURIComponent(CAL)}/events/ev1`),
+        async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(own);
+        },
+      ),
+    );
+    await setup().provider.updateEvent(
+      toCalendarEvent(CAL, own),
+      { reminders: [10, 60] },
+      "all",
+      { notify: false },
+    );
+    expect(body).toEqual({
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: "popup", minutes: 10 },
+          { method: "popup", minutes: 60 },
+          { method: "email", minutes: 1440 },
+        ],
+      },
     });
   });
 });

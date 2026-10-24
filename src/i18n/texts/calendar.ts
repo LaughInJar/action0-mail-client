@@ -192,6 +192,48 @@ const en = {
   deleted: (title: string) => `Deleted “${title}”`,
   couldntSave: "Couldn’t save the event",
   couldntDelete: "Couldn’t delete the event",
+
+  // Reminders.
+  reminders: {
+    label: "Reminders",
+    numbered: (n: number) => `Reminder ${String(n)}`,
+    add: "Add reminder",
+    remove: (what: string) => `Remove the reminder “${what}”`,
+    none: "No reminders",
+    atStart: "At the start",
+    minutesBefore: (n: number) =>
+      n === 1 ? "1 minute before" : `${String(n)} minutes before`,
+    hoursBefore: (n: number) =>
+      n === 1 ? "1 hour before" : `${String(n)} hours before`,
+    daysBefore: (n: number) =>
+      n === 1 ? "1 day before" : `${String(n)} days before`,
+    onTheDay: "On the day",
+    dayBeforeAt: (time: string) => `The day before at ${time}`,
+    daysBeforeAt: (n: number, time: string) =>
+      `${String(n)} days before at ${time}`,
+    weekBeforeAt: (time: string) => `A week before at ${time}`,
+    panel: "Reminders",
+    inMinutes: (n: number) =>
+      n <= 0 ? "Now" : n === 1 ? "In 1 minute" : `In ${String(n)} minutes`,
+    startedAgo: (n: number) =>
+      n === 1 ? "Started 1 minute ago" : `Started ${String(n)} minutes ago`,
+    tomorrow: "Tomorrow",
+    join: "Join",
+    open: "Open",
+    snooze: "Snooze",
+    snoozeFor: (what: string) => `Snooze ${what}`,
+    snoozeChoices: {
+      5: "5 minutes",
+      10: "10 minutes",
+      60: "1 hour",
+    } satisfies Record<5 | 10 | 60, string>,
+    untilStart: "Until it starts",
+    dismiss: "Dismiss",
+    dismissAll: "Dismiss all",
+    notifyBody: (when: string, where: string | undefined) =>
+      where ? `${when} · ${where}` : when,
+    couldntUpdate: "Couldn’t update the reminder",
+  },
 };
 
 const de: typeof en = {
@@ -373,6 +415,46 @@ const de: typeof en = {
   deleted: (title) => `„${title}“ gelöscht`,
   couldntSave: "Der Termin konnte nicht gespeichert werden",
   couldntDelete: "Der Termin konnte nicht gelöscht werden",
+
+  reminders: {
+    label: "Erinnerungen",
+    numbered: (n) => `Erinnerung ${String(n)}`,
+    add: "Erinnerung hinzufügen",
+    remove: (what) => `Erinnerung „${what}“ entfernen`,
+    none: "Keine Erinnerungen",
+    atStart: "Zu Beginn",
+    minutesBefore: (n) =>
+      n === 1 ? "1 Minute vorher" : `${String(n)} Minuten vorher`,
+    hoursBefore: (n) =>
+      n === 1 ? "1 Stunde vorher" : `${String(n)} Stunden vorher`,
+    daysBefore: (n) => (n === 1 ? "1 Tag vorher" : `${String(n)} Tage vorher`),
+    onTheDay: "Am selben Tag",
+    dayBeforeAt: (time) => `Am Vortag um ${time}`,
+    daysBeforeAt: (n, time) => `${String(n)} Tage vorher um ${time}`,
+    weekBeforeAt: (time) => `Eine Woche vorher um ${time}`,
+    panel: "Erinnerungen",
+    inMinutes: (n) =>
+      n <= 0 ? "Jetzt" : n === 1 ? "In 1 Minute" : `In ${String(n)} Minuten`,
+    startedAgo: (n) =>
+      n === 1
+        ? "Hat vor 1 Minute begonnen"
+        : `Hat vor ${String(n)} Minuten begonnen`,
+    tomorrow: "Morgen",
+    join: "Teilnehmen",
+    open: "Öffnen",
+    snooze: "Später erinnern",
+    snoozeFor: (what) => `In ${what} erinnern`,
+    snoozeChoices: {
+      5: "5 Minuten",
+      10: "10 Minuten",
+      60: "1 Stunde",
+    },
+    untilStart: "Zu Beginn",
+    dismiss: "Schließen",
+    dismissAll: "Alle schließen",
+    notifyBody: (when, where) => (where ? `${when} · ${where}` : when),
+    couldntUpdate: "Die Erinnerung konnte nicht geändert werden",
+  },
 };
 
 /** The calendar: switch, toolbar, column, views, event details, invitations. */

@@ -117,3 +117,48 @@ describe("IcsCalendarProvider", () => {
     ).toEqual(["icsUnreadable", {}]);
   });
 });
+
+describe("iCal alarms", () => {
+  it("become reminders: relative to the start or end, or at a fixed time", async () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:alarms@example.org",
+      "DTSTART:20261022T090000Z",
+      "DTEND:20261022T100000Z",
+      "SUMMARY:Board meeting",
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      "TRIGGER:-PT15M",
+      "DESCRIPTION:Reminder",
+      "END:VALARM",
+      "BEGIN:VALARM",
+      "ACTION:AUDIO",
+      "TRIGGER;RELATED=END:-PT2H",
+      "END:VALARM",
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      "TRIGGER;VALUE=DATE-TIME:20261021T090000Z",
+      "DESCRIPTION:A day before",
+      "END:VALARM",
+      "BEGIN:VALARM",
+      "ACTION:EMAIL",
+      "TRIGGER:-PT5M",
+      "END:VALARM",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const provider = new IcsCalendarProvider(subscription, {
+      fetch: () => Promise.resolve(new Response(ics)),
+    });
+    const [event] = await provider.listEvents([CALENDAR], {
+      from: "2026-10-22T00:00:00Z",
+      to: "2026-10-23T00:00:00Z",
+    });
+    // 15 min before; 2 h before the end is an hour before the start; a day
+    // before; email alarms aren't on-screen reminders.
+    expect(event?.reminders).toEqual([15, 60, 1440]);
+    expect(provider.maxReminders).toBe(0);
+  });
+});

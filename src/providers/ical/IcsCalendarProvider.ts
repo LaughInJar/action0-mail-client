@@ -117,6 +117,7 @@ export class IcsCalendarProvider implements CalendarProvider {
   readonly canRespond = false;
   readonly canEdit = false;
   readonly guestNotices = "always";
+  readonly maxReminders = 0;
   readonly #subscription: IcsSubscription;
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
@@ -319,6 +320,7 @@ export class IcsCalendarProvider implements CalendarProvider {
     ).toUpperCase();
     const url = component.getFirstPropertyValue("url");
     const description = absent(event.description)?.trim();
+    const reminders = alarms(component, start, end);
     return {
       id: asEventId(`${event.uid}/${start.toICALString()}`),
       calendarId,
@@ -329,6 +331,7 @@ export class IcsCalendarProvider implements CalendarProvider {
       ...(description ? { description: { text: description } } : {}),
       ...(organizer ? { organizer } : {}),
       attendees,
+      ...(reminders.length > 0 ? { reminders } : {}),
       status:
         status === "CANCELLED"
           ? "cancelled"
@@ -343,6 +346,41 @@ export class IcsCalendarProvider implements CalendarProvider {
         : {}),
     };
   }
+}
+
+/**
+ * An event's on-screen alarms (`VALARM` with `ACTION:DISPLAY` or `AUDIO`)
+ * as minutes before its start: triggers relative to the start or the end,
+ * or at a fixed time. Alarms after the start count as "at the start".
+ */
+function alarms(
+  component: IcalComponent,
+  start: IcalTime,
+  end: IcalTime,
+): number[] {
+  const startMs = start.toJSDate().getTime();
+  const minutes = component.getAllSubcomponents("valarm").flatMap((alarm) => {
+    const action = String(
+      alarm.getFirstPropertyValue("action") ?? "",
+    ).toUpperCase();
+    if (action !== "DISPLAY" && action !== "AUDIO") return [];
+    const trigger = alarm.getFirstProperty("trigger");
+    const value = absent(trigger?.getFirstValue()) as
+      { toSeconds?: () => number; toJSDate?: () => Date } | null | undefined;
+    if (!value || !trigger) return [];
+    let at: number;
+    if (typeof value.toSeconds === "function") {
+      const fromEnd =
+        String(absent(trigger.getParameter("related")) ?? "").toUpperCase() ===
+        "END";
+      const base = fromEnd ? end.toJSDate().getTime() : startMs;
+      at = base + value.toSeconds() * 1000;
+    } else if (typeof value.toJSDate === "function") {
+      at = value.toJSDate().getTime();
+    } else return [];
+    return [Math.max(0, Math.round((startMs - at) / 60_000))];
+  });
+  return [...new Set(minutes)];
 }
 
 function overlaps(event: CalendarEvent, from: number, to: number): boolean {

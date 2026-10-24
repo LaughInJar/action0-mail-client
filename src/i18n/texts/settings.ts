@@ -72,6 +72,9 @@ const en = {
   desktopNotifications: "Desktop notifications for new mail",
   desktopNotificationsHint:
     "Only new unread Inbox mail, and only while action0 isn't in front.",
+  eventReminders: "Event reminders",
+  eventRemindersHint:
+    "The reminders set on your events, while action0 is open (the desktop app reminds from the tray too).",
 };
 
 const de: typeof en = {
@@ -150,6 +153,9 @@ const de: typeof en = {
   desktopNotifications: "Desktop-Benachrichtigungen bei neuen Mails",
   desktopNotificationsHint:
     "Nur neue ungelesene Mails im Posteingang, und nur, solange action0 nicht im Vordergrund ist.",
+  eventReminders: "Erinnerungen an Termine",
+  eventRemindersHint:
+    "Die Erinnerungen deiner Termine, solange action0 offen ist (die Desktop-App erinnert auch aus dem Infobereich).",
 };
 
 /** The Settings dialog. */

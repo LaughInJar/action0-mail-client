@@ -24,6 +24,8 @@ export interface EventFormValues {
   readonly repeat: "none" | Repeat["kind"];
   /** Last day of the repeats, "YYYY-MM-DD"; "" for never. */
   readonly until: string;
+  /** Reminders, minutes before the start. */
+  readonly reminders: readonly number[];
 }
 
 /** The open editor's values. */

@@ -89,6 +89,19 @@ export interface GoogleEvent {
   readonly htmlLink?: string;
   readonly hangoutLink?: string;
   readonly conferenceData?: GoogleConference;
+  readonly reminders?: GoogleReminders;
+}
+
+/** A reminder: `popup` (on screen) or `email`. */
+interface GoogleReminder {
+  readonly method?: string;
+  readonly minutes?: number;
+}
+
+/** An event's reminders: the calendar's defaults, or its own. */
+interface GoogleReminders {
+  readonly useDefault?: boolean;
+  readonly overrides?: readonly GoogleReminder[];
 }
 
 interface GoogleCalendarListEntry {
@@ -102,11 +115,54 @@ interface GoogleCalendarListEntry {
   readonly conferenceProperties?: {
     readonly allowedConferenceSolutionTypes?: readonly string[];
   };
+  readonly defaultReminders?: readonly GoogleReminder[];
 }
 
 interface GooglePage<T> {
   readonly items?: readonly T[];
   readonly nextPageToken?: string;
+  /** Event lists: the calendar's default reminders. */
+  readonly defaultReminders?: readonly GoogleReminder[];
+}
+
+/** Minutes of the on-screen reminders among `reminders`. */
+function popups(reminders: readonly GoogleReminder[] | undefined): number[] {
+  return (reminders ?? [])
+    .filter((reminder) => reminder.method === "popup")
+    .flatMap((reminder) =>
+      reminder.minutes === undefined ? [] : [reminder.minutes],
+    );
+}
+
+/** An event's on-screen reminders, with the calendar's `defaults`. */
+function remindersOf(
+  event: GoogleEvent,
+  defaults: readonly GoogleReminder[] | undefined,
+): number[] {
+  const reminders = event.reminders;
+  return reminders === undefined || reminders.useDefault === true
+    ? popups(defaults)
+    : popups(reminders.overrides);
+}
+
+/** Reminders to store: these on-screen ones, and the email ones the event had. */
+function reminderBody(
+  minutes: readonly number[],
+  current?: GoogleEvent,
+): GoogleReminders {
+  const email =
+    current?.reminders?.useDefault === false
+      ? (current.reminders.overrides ?? []).filter(
+          (reminder) => reminder.method === "email",
+        )
+      : [];
+  return {
+    useDefault: false,
+    overrides: [
+      ...[...new Set(minutes)].map((m) => ({ method: "popup", minutes: m })),
+      ...email,
+    ],
+  };
 }
 
 const enc = encodeURIComponent;
@@ -144,11 +200,16 @@ function time(value: GoogleTime | undefined): EventTime {
   };
 }
 
-/** A Google event as a {@link CalendarEvent}. */
+/**
+ * A Google event as a {@link CalendarEvent}; `defaults` are its calendar's
+ * default reminders (what `useDefault` means).
+ */
 export function toCalendarEvent(
   calendarId: string,
   event: GoogleEvent,
+  defaults?: readonly GoogleReminder[],
 ): CalendarEvent {
+  const reminders = remindersOf(event, defaults);
   const attendees: Attendee[] = (event.attendees ?? []).flatMap((attendee) => {
     const address = person(attendee);
     return address
@@ -194,6 +255,7 @@ export function toCalendarEvent(
       event.recurringEventId !== undefined || event.recurrence !== undefined,
     ...(event.recurringEventId ? { seriesId: event.recurringEventId } : {}),
     organizedByMe: !event.organizer || event.organizer.self === true,
+    ...(reminders.length > 0 ? { reminders } : {}),
     ...(event.iCalUID ? { uid: event.iCalUID } : {}),
     ...(event.htmlLink ? { webLink: event.htmlLink } : {}),
   };
@@ -215,6 +277,7 @@ function copyOf(event: GoogleEvent): Record<string, unknown> {
     ...(event.attendees ? { attendees: event.attendees } : {}),
     ...(event.recurrence ? { recurrence: event.recurrence } : {}),
     ...(event.conferenceData ? { conferenceData: event.conferenceData } : {}),
+    ...(event.reminders ? { reminders: event.reminders } : {}),
   };
 }
 
@@ -296,6 +359,7 @@ function snapshotOf(event: GoogleEvent): Record<string, unknown> {
     attendees: event.attendees ?? [],
     recurrence: event.recurrence ?? null,
     conferenceData: event.conferenceData ?? null,
+    reminders: event.reminders ?? { useDefault: true },
   };
 }
 
@@ -324,6 +388,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   readonly canRespond = true;
   readonly canEdit = true;
   readonly guestNotices = "ask";
+  readonly maxReminders = 5;
   readonly #http: GmailHttp;
   readonly #session: ScopedSession;
 
@@ -365,6 +430,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
         )
           ? { videoCall: "googleMeet" as const }
           : {}),
+        ...(popups(entry.defaultReminders).length > 0
+          ? { defaultReminders: popups(entry.defaultReminders) }
+          : {}),
       }))
       .sort((a, b) => Number(b.primary) - Number(a.primary));
   }
@@ -377,6 +445,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     this.#checkAccess();
     const lists = await Promise.all(
       calendarIds.map(async (calendarId) => {
+        let defaults: readonly GoogleReminder[] | undefined;
         const events = await this.#all<GoogleEvent>(
           `calendars/${enc(calendarId)}/events`,
           {
@@ -387,10 +456,13 @@ export class GoogleCalendarProvider implements CalendarProvider {
             maxResults: 2500,
           },
           signal,
+          (page) => {
+            defaults ??= page.defaultReminders;
+          },
         );
         return events
           .filter((event) => event.status !== "cancelled")
-          .map((event) => toCalendarEvent(calendarId, event));
+          .map((event) => toCalendarEvent(calendarId, event, defaults));
       }),
     );
     return lists.flat();
@@ -436,7 +508,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
         signal,
       );
       const found = page.items?.find((event) => event.status !== "cancelled");
-      return found ? toCalendarEvent("primary", found) : undefined;
+      return found
+        ? toCalendarEvent("primary", found, page.defaultReminders)
+        : undefined;
     } catch (error) {
       throw accessError(error);
     }
@@ -453,6 +527,17 @@ export class GoogleCalendarProvider implements CalendarProvider {
         ? await this.#event(calendarId, current.recurringEventId, signal)
         : current;
       const description = current.description?.trim() ?? "";
+      // "The calendar's defaults": ask the calendar what they are.
+      const defaults =
+        current.reminders?.useDefault === false
+          ? undefined
+          : (
+              await this.#http.get<GoogleCalendarListEntry>(
+                `users/me/calendarList/${enc(calendarId)}`,
+                undefined,
+                signal,
+              )
+            ).defaultReminders;
       return {
         draft: {
           calendarId: asCalendarId(calendarId),
@@ -466,6 +551,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
             .flatMap((attendee) => person(attendee) ?? []),
           videoCall: hasConference(current),
           repeat: repeatOf(master.recurrence, time(master.start)),
+          reminders: remindersOf(current, defaults),
         },
         videoCallFixed: false,
         firstOccurrence:
@@ -496,6 +582,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
         ? { recurrence: [ruleOf(draft.repeat, draft.start)] }
         : {}),
       ...(draft.videoCall ? { conferenceData: meetRequest() } : {}),
+      reminders: reminderBody(draft.reminders),
     };
     try {
       const created = await this.#insert(calendarId, body, options);
@@ -636,6 +723,8 @@ export class GoogleCalendarProvider implements CalendarProvider {
       body.description = changes.descriptionHtml;
     if (changes.guests !== undefined)
       body.attendees = attendeesFor(changes.guests, current.attendees);
+    if (changes.reminders !== undefined)
+      body.reminders = reminderBody(changes.reminders, current);
     if (
       changes.videoCall !== undefined &&
       changes.videoCall !== hasConference(current)
@@ -714,6 +803,10 @@ export class GoogleCalendarProvider implements CalendarProvider {
           ? (master.attendees ?? [])
           : attendeesFor(changes.guests, master.attendees),
       ...(recurrence ? { recurrence } : {}),
+      reminders:
+        changes.reminders === undefined
+          ? (master.reminders ?? { useDefault: true })
+          : reminderBody(changes.reminders, master),
       ...((changes.videoCall ?? hasConference(master))
         ? { conferenceData: master.conferenceData ?? meetRequest() }
         : {}),
@@ -795,6 +888,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     path: string,
     params: Readonly<Record<string, string | number | boolean>>,
     signal: AbortSignal | undefined,
+    onPage?: (page: GooglePage<T>) => void,
   ): Promise<T[]> {
     const items: T[] = [];
     let pageToken: string | undefined;
@@ -805,6 +899,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
           { ...params, ...(pageToken ? { pageToken } : {}) },
           signal,
         );
+        onPage?.(page);
         items.push(...(page.items ?? []));
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);

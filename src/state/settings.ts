@@ -42,6 +42,8 @@ export interface AppSettings {
   readonly lastSendAccount: string;
   /** Desktop app: closing the window keeps it running in the tray. */
   readonly closeToTray: boolean;
+  /** Event reminders show (notifications and the reminders panel). */
+  readonly eventReminders: boolean;
 }
 
 /** The settings of a browser that never changed any. */
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastEventCalendar: "",
   lastSendAccount: "",
   closeToTray: true,
+  eventReminders: true,
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -151,6 +154,10 @@ export function parseSettings(value: unknown): AppSettings {
         : d.lastSendAccount,
     closeToTray:
       typeof raw.closeToTray === "boolean" ? raw.closeToTray : d.closeToTray,
+    eventReminders:
+      typeof raw.eventReminders === "boolean"
+        ? raw.eventReminders
+        : d.eventReminders,
   };
 }
 

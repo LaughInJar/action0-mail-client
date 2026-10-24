@@ -4,7 +4,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MicrosoftAuthSession } from "../../auth/microsoft/MicrosoftAuthSession";
 import { StaticAuthSession } from "../../auth/staticSession";
-import { asCalendarId } from "../../core/calendar";
+import { asCalendarId, asEventId } from "../../core/calendar";
 import {
   GraphCalendarProvider,
   toCalendarEvent,
@@ -50,7 +50,7 @@ function setup() {
   return { provider, tokens };
 }
 
-const event = {
+const event: GraphEvent = {
   id: "AAMk-1",
   subject: "Quarterly planning",
   start: { dateTime: "2026-10-19T08:00:00.0000000", timeZone: "UTC" },
@@ -113,6 +113,8 @@ describe("GraphCalendarProvider", () => {
         primary: true,
         shownByDefault: true,
         readOnly: false,
+        // Outlook's default for new events.
+        defaultReminders: [15],
       },
       {
         id: "birthdays",
@@ -121,6 +123,7 @@ describe("GraphCalendarProvider", () => {
         primary: false,
         shownByDefault: true,
         readOnly: true,
+        defaultReminders: [15],
       },
     ]);
     // Calendar requests use the calendar token.
@@ -371,6 +374,7 @@ describe("GraphCalendarProvider changes", () => {
         guests: [{ name: "Anna", address: "anna@contoso.com" }],
         videoCall: true,
         repeat: { kind: "weekly", until: "2026-12-31" },
+        reminders: [],
       },
       { notify: false },
     );
@@ -571,5 +575,80 @@ describe("GraphCalendarProvider changes", () => {
         recurrence: null,
       },
     });
+  });
+});
+
+describe("Outlook reminders", () => {
+  it("reads and writes Outlook's one reminder per event", () => {
+    const { provider } = setup();
+    expect(
+      toCalendarEvent("cal", {
+        ...event,
+        isReminderOn: true,
+        reminderMinutesBeforeStart: 30,
+      }).reminders,
+    ).toEqual([30]);
+    expect(
+      toCalendarEvent("cal", { ...event, isReminderOn: false }).reminders,
+    ).toBeUndefined();
+    expect(provider.maxReminders).toBe(1);
+  });
+
+  it("lists Outlook's reminders in UTC, and dismisses and snoozes them there", async () => {
+    const calls: { path: string; prefer: string | null; body: unknown }[] = [];
+    server.use(
+      http.get(url("me/reminderView(*"), ({ request }) => {
+        calls.push({
+          path: decodeURIComponent(new URL(request.url).pathname),
+          prefer: request.headers.get("Prefer"),
+          body: undefined,
+        });
+        return HttpResponse.json({
+          value: [
+            {
+              eventId: "AAMk-1",
+              reminderFireTime: {
+                dateTime: "2026-10-22T07:50:00.0000000",
+                timeZone: "UTC",
+              },
+            },
+          ],
+        });
+      }),
+      http.post(url("me/events/:id/:action"), async ({ request, params }) => {
+        const text = await request.text();
+        calls.push({
+          path: `${String(params.id)}/${String(params.action)}`,
+          prefer: null,
+          body: text ? (JSON.parse(text) as unknown) : undefined,
+        });
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+    const sync = setup().provider.reminderSync;
+    const reminders = await sync.list({
+      from: "2026-10-21T22:00:00.000Z",
+      to: "2026-10-31T23:00:00.000Z",
+    });
+    expect(reminders).toEqual([
+      { eventId: "AAMk-1", fireAt: "2026-10-22T07:50:00.000Z" },
+    ]);
+    expect(calls[0]?.path).toContain(
+      "reminderView(startDateTime='2026-10-21T22:00:00',endDateTime='2026-10-31T23:00:00')",
+    );
+    expect(calls[0]?.prefer).toContain('outlook.timezone="UTC"');
+
+    await sync.dismiss(asEventId("AAMk-1"));
+    await sync.snooze(asEventId("AAMk-2"), "2026-10-22T08:05:00.000Z");
+    expect(calls.slice(1)).toEqual([
+      { path: "AAMk-1/dismissReminder", prefer: null, body: undefined },
+      {
+        path: "AAMk-2/snoozeReminder",
+        prefer: null,
+        body: {
+          newReminderTime: { dateTime: "2026-10-22T08:05:00", timeZone: "UTC" },
+        },
+      },
+    ]);
   });
 });

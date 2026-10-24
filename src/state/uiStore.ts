@@ -9,6 +9,7 @@ import type { AccountId, DraftId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
+import { liveMarks, type ReminderMark } from "../core/reminders";
 import type { EventFormState, QuestionState } from "./eventForm";
 import * as selection from "./selection";
 import { readTheme, saveTheme, type ThemeMode } from "./theme";
@@ -217,6 +218,11 @@ export interface UiState extends selection.SelectionState {
   readonly manageLabels: AccountId | null;
   /** The question being asked (scope of a change, notifying guests, …). */
   readonly question: QuestionState | null;
+  /**
+   * Dismissed and snoozed event reminders, by reminder key. Persisted (no
+   * content: ids and times), dropped once their event is over.
+   */
+  readonly reminderMarks: Readonly<Record<string, ReminderMark>>;
   /** The event editor's values, while it's open. Memory only. */
   readonly eventForm: EventFormState | null;
 }
@@ -295,6 +301,8 @@ export interface UiActions {
   readonly setLabelDialog: (dialog: LabelDialogState | null) => void;
   readonly setManageLabels: (accountId: AccountId | null) => void;
   readonly setQuestion: (question: QuestionState | null) => void;
+  /** Dismisses or snoozes a reminder (`null` forgets the mark again). */
+  readonly markReminder: (key: string, mark: ReminderMark | null) => void;
   readonly setEventForm: (form: EventFormState | null) => void;
 }
 
@@ -328,6 +336,29 @@ interface PersistedUi {
   toggledNodes?: unknown;
   listOrder?: unknown;
   settings?: unknown;
+  reminderMarks?: unknown;
+}
+
+/** Stored reminder marks that are well-formed. */
+function parseMarks(value: unknown): Record<string, ReminderMark> {
+  if (typeof value !== "object" || value === null) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(([key, raw]) => {
+      if (typeof raw !== "object" || raw === null) return [];
+      const { dismissed, snoozedUntil, ends } = raw as Record<string, unknown>;
+      if (typeof ends !== "number") return [];
+      return [
+        [
+          key,
+          {
+            ends,
+            ...(dismissed === true ? { dismissed: true as const } : {}),
+            ...(typeof snoozedUntil === "number" ? { snoozedUntil } : {}),
+          },
+        ],
+      ];
+    }),
+  );
 }
 
 /**
@@ -372,6 +403,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           manageLabels: null,
           question: null,
           eventForm: null,
+          reminderMarks: {},
 
           enterList: (listKey, focusedId) => {
             set({
@@ -592,6 +624,15 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setQuestion: (question) => {
             set({ question });
           },
+          markReminder: (key, mark) => {
+            const { [key]: _old, ...rest } = get().reminderMarks;
+            set({
+              reminderMarks: liveMarks(
+                mark ? { ...rest, [key]: mark } : rest,
+                Date.now(),
+              ),
+            });
+          },
           setEventForm: (eventForm) => {
             set({ eventForm });
           },
@@ -606,10 +647,16 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           toggledNodes: [...state.toggledNodes],
           listOrder: state.listOrder,
           settings: state.settings,
+          reminderMarks: state.reminderMarks,
         }),
         merge: (persisted, current) => {
-          const { columnWidths, toggledNodes, listOrder, settings } =
-            (persisted ?? {}) as PersistedUi;
+          const {
+            columnWidths,
+            toggledNodes,
+            listOrder,
+            settings,
+            reminderMarks,
+          } = (persisted ?? {}) as PersistedUi;
           const widths =
             Array.isArray(columnWidths) &&
             columnWidths.length === 2 &&
@@ -630,6 +677,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
             toggledNodes: new Set(toggledKeys),
             listOrder: listOrder === "oldest" ? "oldest" : "newest",
             settings: parseSettings(settings),
+            reminderMarks: liveMarks(parseMarks(reminderMarks), Date.now()),
           };
         },
       },

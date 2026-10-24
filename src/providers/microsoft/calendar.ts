@@ -12,6 +12,8 @@ import {
   type DateRange,
   type EditableEvent,
   type EventChange,
+  type EventId,
+  type ReminderSync,
   type EventChanges,
   type EventDraft,
   type EventTime,
@@ -34,6 +36,12 @@ import {
 } from "./recurrence";
 import type { GraphPage, GraphRecipient } from "./types";
 import { ianaZone, loadZones, usableZone, windowsZone } from "./zones";
+
+/** An entry of Outlook's reminder list (`reminderView`). */
+interface GraphReminder {
+  readonly eventId?: string;
+  readonly reminderFireTime?: { readonly dateTime?: string };
+}
 
 /** The fields of Graph's event resource that action0 reads. */
 export interface GraphEvent {
@@ -64,6 +72,8 @@ export interface GraphEvent {
   readonly webLink?: string;
   readonly calendar?: { readonly id?: string };
   readonly seriesMasterId?: string | null;
+  readonly isReminderOn?: boolean;
+  readonly reminderMinutesBeforeStart?: number;
   readonly isOnlineMeeting?: boolean;
   readonly recurrence?: GraphRecurrence | null;
   /** When an occurrence was planned to start (ISO with offset). */
@@ -82,7 +92,7 @@ interface GraphCalendar {
 
 /** `$select` of events. */
 export const EVENT_SELECT =
-  "id,subject,start,end,originalStartTimeZone,isAllDay,isCancelled,isOrganizer,type,seriesMasterId,location,body,onlineMeeting,onlineMeetingUrl,organizer,attendees,responseStatus,iCalUId,webLink";
+  "id,subject,start,end,originalStartTimeZone,isAllDay,isCancelled,isOrganizer,type,seriesMasterId,location,body,onlineMeeting,onlineMeetingUrl,organizer,attendees,responseStatus,iCalUId,webLink,isReminderOn,reminderMinutesBeforeStart";
 
 /** `$select` of an event about to be edited. */
 const EDIT_SELECT = `${EVENT_SELECT},isOnlineMeeting,recurrence,originalStart`;
@@ -210,6 +220,9 @@ export function toCalendarEvent(
       event.type === "seriesMaster",
     ...(event.seriesMasterId ? { seriesId: event.seriesMasterId } : {}),
     organizedByMe: event.isOrganizer !== false,
+    ...(event.isReminderOn === true
+      ? { reminders: [event.reminderMinutesBeforeStart ?? 15] }
+      : {}),
     ...(event.iCalUId ? { uid: event.iCalUId } : {}),
     ...(event.webLink ? { webLink: event.webLink } : {}),
   };
@@ -308,6 +321,20 @@ function copyOf(
       type,
     })),
     ...(event.recurrence ? { recurrence: event.recurrence } : {}),
+    isReminderOn: event.isReminderOn === true,
+    reminderMinutesBeforeStart: event.reminderMinutesBeforeStart ?? 15,
+  };
+}
+
+/** Outlook's reminder fields for these reminders (it keeps the first). */
+function reminderFields(minutes: readonly number[]): {
+  isReminderOn: boolean;
+  reminderMinutesBeforeStart: number;
+} {
+  const [first] = minutes;
+  return {
+    isReminderOn: first !== undefined,
+    reminderMinutesBeforeStart: first ?? 15,
   };
 }
 
@@ -326,6 +353,8 @@ export class GraphCalendarProvider implements CalendarProvider {
   readonly canRespond = true;
   readonly canEdit = true;
   readonly guestNotices = "always";
+  /** Outlook keeps one reminder per event. */
+  readonly maxReminders = 1;
   readonly #http: GraphHttp;
   readonly #session: ScopedSession & { readonly loginHint: string };
 
@@ -343,6 +372,44 @@ export class GraphCalendarProvider implements CalendarProvider {
 
   readonly access = (): CalendarAccess =>
     this.#session.hasScopes(CALENDAR_SCOPES) ? "granted" : "missing";
+
+  /** Outlook's reminders: what's snoozed or dismissed anywhere shows here too. */
+  readonly reminderSync: ReminderSync = {
+    list: async (range, signal) => {
+      const reminders: { eventId: EventId; fireAt: string }[] = [];
+      let next: URL | undefined = this.#http.url(
+        `me/reminderView(startDateTime='${range.from.slice(0, 19)}',endDateTime='${range.to.slice(0, 19)}')`,
+      );
+      while (next) {
+        const page: GraphPage<GraphReminder> = await this.#http.get<
+          GraphPage<GraphReminder>
+        >(next, undefined, signal, UTC);
+        for (const reminder of page.value ?? [])
+          if (reminder.eventId && reminder.reminderFireTime?.dateTime)
+            reminders.push({
+              eventId: asEventId(reminder.eventId),
+              fireAt: utc(reminder.reminderFireTime.dateTime),
+            });
+        const link = page["@odata.nextLink"];
+        next = link ? new URL(link) : undefined;
+      }
+      return reminders;
+    },
+    dismiss: async (eventId) => {
+      await this.#http.post(
+        `me/events/${enc(eventId)}/dismissReminder`,
+        undefined,
+      );
+    },
+    snooze: async (eventId, until) => {
+      await this.#http.post(`me/events/${enc(eventId)}/snoozeReminder`, {
+        newReminderTime: {
+          dateTime: new Date(until).toISOString().slice(0, 19),
+          timeZone: "UTC",
+        },
+      });
+    },
+  };
 
   readonly requestAccess = (): Promise<void> =>
     this.#session.requestScopes(CALENDAR_SCOPES);
@@ -372,6 +439,8 @@ export class GraphCalendarProvider implements CalendarProvider {
         ...(calendar.allowedOnlineMeetingProviders?.includes("teamsForBusiness")
           ? { videoCall: "teams" as const }
           : {}),
+        // Outlook's default for new events.
+        defaultReminders: [15],
       }))
       .sort((a, b) => Number(b.primary) - Number(a.primary));
   }
@@ -490,6 +559,7 @@ export class GraphCalendarProvider implements CalendarProvider {
           .flatMap((attendee) => person(attendee) ?? [])
           .filter((address) => address.address.toLowerCase() !== me),
         videoCall: current.isOnlineMeeting === true,
+        reminders: mapped.reminders ?? [],
         repeat: repeatOfGraph(
           master.recurrence,
           dayOf(toCalendarEvent(event.calendarId, master).start),
@@ -533,6 +603,7 @@ export class GraphCalendarProvider implements CalendarProvider {
       ...(draft.videoCall
         ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }
         : {}),
+      ...reminderFields(draft.reminders),
     };
     const created = await this.#create(draft.calendarId, body, options);
     return {
@@ -674,6 +745,13 @@ export class GraphCalendarProvider implements CalendarProvider {
           current.attendees,
         ),
       );
+    if (changes.reminders !== undefined) {
+      const before = reminderFields(mapped.reminders ?? []);
+      for (const [key, value] of Object.entries(
+        reminderFields(changes.reminders),
+      ))
+        set(key, value, before[key as keyof typeof before]);
+    }
     // Teams meetings can't be taken off again.
     if (changes.videoCall === true && current.isOnlineMeeting !== true) {
       body.isOnlineMeeting = true;
@@ -759,6 +837,12 @@ export class GraphCalendarProvider implements CalendarProvider {
             }))
           : attendeesFor(changes.guests, master.attendees),
       ...(next ? { recurrence: next } : {}),
+      ...(changes.reminders === undefined
+        ? {
+            isReminderOn: master.isReminderOn === true,
+            reminderMinutesBeforeStart: master.reminderMinutesBeforeStart ?? 15,
+          }
+        : reminderFields(changes.reminders)),
       ...((changes.videoCall ?? master.isOnlineMeeting)
         ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }
         : {}),

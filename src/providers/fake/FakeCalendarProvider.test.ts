@@ -109,6 +109,7 @@ describe("FakeCalendarProvider", () => {
         guests: [],
         videoCall: false,
         repeat: { kind: "weekly", until: "2026-11-10" },
+        reminders: [],
       },
       { notify: false },
     );

@@ -28,6 +28,12 @@ import {
   valuesOf,
   withStart,
 } from "./formValues";
+import {
+  ALL_DAY_REMINDERS,
+  reminderChoices,
+  reminderLabel,
+  TIMED_REMINDERS,
+} from "./reminderLabels";
 import { useEventActions } from "./useEventActions";
 
 const calendarKey = ({ source, calendar }: WritableCalendar) =>
@@ -70,7 +76,15 @@ export function EventEditor({
         : "";
   const initial =
     mode.kind === "new"
-      ? newValues(mode.from, mode.to, ownKey)
+      ? newValues(
+          mode.from,
+          mode.to,
+          ownKey,
+          fallback?.calendar.defaultReminders?.slice(
+            0,
+            fallback.source.provider.maxReminders,
+          ),
+        )
       : loaded.data
         ? valuesOf(loaded.data.draft, ownKey)
         : undefined;
@@ -385,7 +399,26 @@ function Form({
               type="checkbox"
               checked={values.allDay}
               onChange={(event) => {
-                update({ allDay: event.target.checked });
+                const allDay = event.target.checked;
+                // A timed event's default reminders don't fit all day.
+                const defaults = (calendar?.defaultReminders ?? [])
+                  .slice(0, source?.provider.maxReminders ?? 0)
+                  .join();
+                update({
+                  allDay,
+                  ...(allDay && values.reminders.join() === defaults
+                    ? { reminders: [] }
+                    : !allDay &&
+                        mode.kind === "new" &&
+                        values.reminders.length === 0
+                      ? {
+                          reminders: (calendar?.defaultReminders ?? []).slice(
+                            0,
+                            source?.provider.maxReminders ?? 0,
+                          ),
+                        }
+                      : {}),
+                });
               }}
               className="size-4"
             />
@@ -535,6 +568,68 @@ function Form({
           )}
         </Row>
 
+        {(source?.provider.maxReminders ?? 0) > 0 && (
+          <Row icon="bell">
+            {values.reminders.length === 0 && (
+              <p className="py-1.5 text-zinc-500">{c.reminders.none}</p>
+            )}
+            {values.reminders.map((minutes, index) => {
+              const label = reminderLabel(minutes, values.allDay, t);
+              return (
+                <div key={index} className="flex items-center gap-1">
+                  <select
+                    aria-label={c.reminders.numbered(index + 1)}
+                    value={minutes}
+                    onChange={(event) => {
+                      const next = [...values.reminders];
+                      next[index] = Number(event.target.value);
+                      update({ reminders: next });
+                    }}
+                    className={`${field} max-w-full`}
+                  >
+                    {reminderChoices(minutes, values.allDay).map((choice) => (
+                      <option key={choice} value={choice}>
+                        {reminderLabel(choice, values.allDay, t)}
+                      </option>
+                    ))}
+                  </select>
+                  <IconButton
+                    label={c.reminders.remove(label)}
+                    icon="x"
+                    onClick={() => {
+                      update({
+                        reminders: values.reminders.filter(
+                          (_, other) => other !== index,
+                        ),
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
+            {values.reminders.length < (source?.provider.maxReminders ?? 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const presets = values.allDay
+                    ? ALL_DAY_REMINDERS
+                    : TIMED_REMINDERS;
+                  const fresh =
+                    presets.find(
+                      (minutes) =>
+                        minutes !== 0 && !values.reminders.includes(minutes),
+                    ) ?? 0;
+                  update({ reminders: [...values.reminders, fresh] });
+                }}
+                className="flex items-center gap-1 rounded-md px-1 py-1 text-blue-700 hover:underline dark:text-blue-300 pointer-coarse:min-h-11"
+              >
+                <Icon name="plus" className="size-3.5" />
+                {c.reminders.add}
+              </button>
+            )}
+          </Row>
+        )}
+
         <Row icon="calendar">
           {mode.kind === "new" ? (
             <>
@@ -545,7 +640,27 @@ function Form({
                 id={ids.calendar}
                 value={chosen ? calendarKey(chosen) : ""}
                 onChange={(event) => {
-                  update({ calendar: event.target.value });
+                  const next = calendars.find(
+                    (entry) => calendarKey(entry) === event.target.value,
+                  );
+                  const defaults = (entry: WritableCalendar | undefined) =>
+                    (entry?.calendar.defaultReminders ?? [])
+                      .slice(0, entry?.source.provider.maxReminders ?? 0)
+                      .join();
+                  // Reminders follow the calendar's defaults until changed.
+                  const untouched =
+                    values.allDay ||
+                    values.reminders.join() === defaults(chosen);
+                  update({
+                    calendar: event.target.value,
+                    ...(untouched && !values.allDay
+                      ? {
+                          reminders: (
+                            next?.calendar.defaultReminders ?? []
+                          ).slice(0, next?.source.provider.maxReminders ?? 0),
+                        }
+                      : {}),
+                  });
                 }}
                 className={`${field} max-w-full`}
               >

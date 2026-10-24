@@ -20,6 +20,7 @@ import { NotificationsBar } from "../sync/NotificationsBar";
 import { notifyArrivals } from "../sync/notifications";
 import { usePlatform } from "../../platform/context";
 import { DesktopIntegration } from "../desktop/DesktopIntegration";
+import { Reminders } from "../reminders/Reminders";
 import { useDocumentTitle } from "../sync/useDocumentTitle";
 import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
@@ -194,6 +195,7 @@ function MailApp() {
           {t.layout.dropToCompose}
         </div>
       )}
+      <Reminders />
       <ToastHost onUndo={undo.undo} />
     </div>
   );
