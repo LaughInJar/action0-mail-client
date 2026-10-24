@@ -1,9 +1,10 @@
 name: Release
 
-# Pushing a tag like v0.2.0 (matching "version" in package.json) builds the
-# desktop app for Linux, Windows and macOS into a draft GitHub Release, with
-# the signed `latest.json` the app's updater reads once the release is
-# published.
+# Pushing a tag like v0.2.0 builds the desktop app for Linux, Windows and
+# macOS into a draft GitHub Release, with the signed `latest.json` the app's
+# updater reads once the release is published. First it checks that the tag
+# matches the versions (package.json, Cargo.toml, Cargo.lock), that the
+# commit is on main, and everything CI checks.
 on:
   push:
     tags: ["v*"]
@@ -12,7 +13,32 @@ permissions:
   contents: write
 
 jobs:
+  # The tag matches every version, and the commit is on main.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Tag matches package.json, Cargo.toml and Cargo.lock
+        run: node scripts/check-release.ts "$GITHUB_REF_NAME"
+      - name: The tagged commit is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME points at a commit that isn't on main. Release from main."
+            exit 1
+          }
+
+  # Everything CI checks, before any installer is built.
+  checks:
+    uses: ./.github/workflows/ci.yml
+
   desktop:
+    needs: [verify, checks]
     strategy:
       fail-fast: false
       matrix:

@@ -33,14 +33,16 @@ npm version 0.2.0 --no-git-tag-version      # package.json and package-lock.json
 
 CI runs `cargo clippy` and `cargo test` with `--locked`, which fails when `Cargo.lock` would have to change, so commit the updated lock file with the bump.
 
-Versions must be valid semver and only go up: the updater installs a release only if its version is greater than the running one (the default comparison of `tauri-plugin-updater`). The tag is `v` plus the version (`v0.2.0`). Nothing checks that tag and version match; the release is named after the tag, while the installers and `latest.json` carry the version from `package.json`.
+Versions must be valid semver and only go up: the updater installs a release only if its version is greater than the running one (the default comparison of `tauri-plugin-updater`). The tag is `v` plus the version (`v0.2.0`). The release workflow checks that the tag matches all three files before building (`node scripts/check-release.ts v0.2.0` runs the same check locally); the release is named after the tag, while the installers and `latest.json` carry the version from `package.json`.
 
 ## The release workflow
 
 `.github/workflows/release.yml`, step by step:
 
-1. **Trigger:** a pushed tag matching `v*`. The job has `permissions: contents: write`, so the built-in `GITHUB_TOKEN` can create the release and upload files.
-2. **Matrix** (`fail-fast: false`, so one failing system doesn't cancel the others; 60-minute timeout each):
+1. **Trigger:** a pushed tag matching `v*`. The workflow has `permissions: contents: write`, so the built-in `GITHUB_TOKEN` can create the release and upload files.
+2. **`verify`** (a few seconds): `scripts/check-release.ts` checks that the tag equals the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`, and `git merge-base --is-ancestor` checks that the tagged commit is on `main`. Either failure names the problem in the run's annotations.
+3. **`checks`**: CI's `check` job, reused from `.github/workflows/ci.yml` (`workflow_call`): typecheck, lint, format, tests, build, `cargo fmt`, `clippy` and `cargo test`.
+4. **Matrix** (`desktop`, only once `verify` and `checks` passed) (`fail-fast: false`, so one failing system doesn't cancel the others; 60-minute timeout each):
 
    | Runner           | Extra args                        | Why                                                                    |
    | ---------------- | --------------------------------- | ---------------------------------------------------------------------- |
@@ -48,10 +50,10 @@ Versions must be valid semver and only go up: the updater installs a release onl
    | `windows-latest` | —                                 |                                                                        |
    | `macos-latest`   | `--target universal-apple-darwin` | One build for Apple silicon and Intel Macs                             |
 
-3. **Setup:** checkout; Node from `.nvmrc` with the npm cache; on Ubuntu the WebKitGTK, AppIndicator, librsvg, libxdo, OpenSSL, `patchelf` and `xdg-utils` packages; stable Rust (on macOS with the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets); `Swatinem/rust-cache` for `src-tauri`; `npm ci`.
-4. **Build and upload:** `tauri-apps/tauri-action@v1` runs the Tauri build with `--config src-tauri/tauri.release.conf.json` (plus the matrix args). That build runs `npm run build` first, with the `VITE_*` values from the step's environment compiled in. The action then finds or creates the release for `tagName` (the pushed tag) as a **draft** named `action0 <tag>`, with a fixed body ("Download the installer for your system below. Installed apps update themselves."), not marked as prerelease, and uploads the bundles. With its default settings it also uploads the `.sig` signature files and the updater's `latest.json`.
+5. **Setup:** checkout; Node from `.nvmrc` with the npm cache; on Ubuntu the WebKitGTK, AppIndicator, librsvg, libxdo, OpenSSL, `patchelf` and `xdg-utils` packages; stable Rust (on macOS with the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets); `Swatinem/rust-cache` for `src-tauri`; `npm ci`.
+6. **Build and upload:** `tauri-apps/tauri-action@v1` runs the Tauri build with `--config src-tauri/tauri.release.conf.json` (plus the matrix args). That build runs `npm run build` first, with the `VITE_*` values from the step's environment compiled in. The action then finds or creates the release for `tagName` (the pushed tag) as a **draft** named `action0 <tag>`, with a fixed body ("Download the installer for your system below. Installed apps update themselves."), not marked as prerelease, and uploads the bundles. With its default settings it also uploads the `.sig` signature files and the updater's `latest.json`.
 
-The workflow doesn't run tests or lint; it relies on the commit having passed CI's `check` job on `main`.
+Nothing is built, and no draft appears, when `verify` or `checks` fails.
 
 What ends up in the draft:
 
@@ -132,7 +134,7 @@ Updates through the updater don't depend on this: they're checked with the updat
    git push origin v0.2.0
    ```
 
-5. Watch the **Release** workflow: all three jobs must succeed.
+5. Watch the **Release** workflow: `verify` and `checks` first, then the three builds; all must succeed.
 6. Check the draft release: every installer from the table above, a `.sig` next to each update file, and `latest.json` with the right version and an entry for each platform. Replace the generic body with the notes.
 7. Try at least the installer for your own system.
 8. Publish the draft. From now on `releases/latest/download/latest.json` serves this version.
@@ -153,6 +155,8 @@ Things to know:
 - Deploying the web app doesn't touch installed desktop apps; they carry their own copy of `dist/` and change only through a desktop release.
 
 ## When something goes wrong
+
+**`verify` or `checks` fails.** Nothing was built. Fix the cause on `main` (usually a version that wasn't bumped everywhere, or a tag on an unmerged commit), then move the tag: delete it as below and tag the right commit again.
 
 **A build job fails.** The other systems keep building (`fail-fast: false`). Fix the cause; if it was a flaky runner, re-run the failed job from the Actions page, and the action uploads into the same draft (it finds the release by tag). If the fix needs a code change, start over as below.
 
