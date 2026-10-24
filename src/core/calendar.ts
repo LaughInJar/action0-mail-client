@@ -6,6 +6,7 @@
  * All values are plain, JSON-serializable data so the cache layer can
  * persist them unchanged.
  */
+import { MailError } from "./errors";
 import type { Brand } from "./ids";
 import type { EmailAddress } from "./model";
 
@@ -38,7 +39,12 @@ export interface Calendar {
   readonly shownByDefault: boolean;
   /** Its events can't be changed (holidays, subscriptions, shared read-only). */
   readonly readOnly: boolean;
+  /** The video call new events here can get, if any. */
+  readonly videoCall?: VideoCall;
 }
+
+/** A video call a provider adds to an event: Google Meet or a Teams meeting. */
+export type VideoCall = "googleMeet" | "teams";
 
 /**
  * When an event starts or ends: an instant for timed events (ISO 8601 with
@@ -77,6 +83,10 @@ export interface CalendarEvent {
   readonly status: "confirmed" | "tentative" | "cancelled";
   /** Part of a series. */
   readonly recurring: boolean;
+  /** The series an occurrence belongs to (opaque), to change them together. */
+  readonly seriesId?: string;
+  /** You organize it, or nobody does: it's yours to change (where its calendar allows). */
+  readonly organizedByMe: boolean;
   /** The iCalendar UID, which links invitation mails to the event. */
   readonly uid?: string;
   /** The event in the provider's own calendar app. */
@@ -106,6 +116,71 @@ export interface DateRange {
 export type CalendarAccess = "granted" | "missing";
 
 /**
+ * How an event repeats: the rules action0 creates (weekly on the start's
+ * weekday, monthly on its day of the month, yearly on its date), ending
+ * never or after `until` (a "YYYY-MM-DD" day, inclusive). Any other rule is
+ * `custom`: it can't be shown in detail and stays as it is.
+ */
+export type Repeat =
+  | {
+      readonly kind: "daily" | "weekdays" | "weekly" | "monthly" | "yearly";
+      readonly until?: string;
+    }
+  | { readonly kind: "custom" };
+
+/**
+ * An event as the editor has it: a new one, or every field of an existing
+ * one. Timed events' `start` and `end` carry the zone they're planned in.
+ */
+export interface EventDraft {
+  readonly calendarId: CalendarId;
+  readonly title: string;
+  readonly start: EventTime;
+  readonly end: EventTime;
+  readonly location: string;
+  /** The description as HTML (empty for none). */
+  readonly descriptionHtml: string;
+  /** Who's invited, apart from you. */
+  readonly guests: readonly EmailAddress[];
+  /** It has a video call (of its calendar's {@link Calendar.videoCall} kind). */
+  readonly videoCall: boolean;
+  /** `null`: it doesn't repeat. */
+  readonly repeat: Repeat | null;
+}
+
+/** The fields of an event that change; the calendar can't. */
+export type EventChanges = Partial<Omit<EventDraft, "calendarId">>;
+
+/** Which occurrences of a repeating event a change is for. */
+export type SeriesScope = "this" | "following" | "all";
+
+/** How a change is made. */
+export interface WriteOptions {
+  /**
+   * Tell the guests (invitations, updates, cancellations). Ignored by
+   * providers whose {@link CalendarProvider.guestNotices} is `always`.
+   */
+  readonly notify: boolean;
+  readonly signal?: AbortSignal;
+}
+
+/** An existing event, read fresh for the editor. */
+export interface EditableEvent {
+  /** The occurrence's fields, with its series' rule. */
+  readonly draft: EventDraft;
+  /** Its video call can't be taken off again (Teams). */
+  readonly videoCallFixed: boolean;
+  /** The first occurrence of its series ("this and following" is everything). */
+  readonly firstOccurrence: boolean;
+}
+
+/** A change that went through, and how to take it back. */
+export interface EventChange {
+  /** Takes the change back (Undo); rejects with a `MailError`. */
+  readonly undo: (options: WriteOptions) => Promise<void>;
+}
+
+/**
  * The calendars of one source (an account, or an iCal subscription).
  *
  * Implementations translate between the provider's API and this model, do
@@ -115,6 +190,13 @@ export type CalendarAccess = "granted" | "missing";
 export interface CalendarProvider {
   /** Invitations can be answered ({@link respond}). */
   readonly canRespond: boolean;
+  /** Events can be created, changed and deleted (in calendars that aren't read-only). */
+  readonly canEdit: boolean;
+  /**
+   * Whether guests hear about changes only when asked to (`ask`, Google),
+   * or always (`always`: Microsoft sends updates whatever you do).
+   */
+  readonly guestNotices: "ask" | "always";
   /** Current access; changes are announced through {@link subscribe}. */
   readonly access: () => CalendarAccess;
   /** Asks the user for calendar access (a popup): call it from a click. */
@@ -146,6 +228,44 @@ export interface CalendarProvider {
     uid: string,
     signal?: AbortSignal,
   ): Promise<CalendarEvent | undefined>;
+
+  /** An event's fields for the editor, with its series' rule. */
+  loadForEdit(
+    event: CalendarEvent,
+    signal?: AbortSignal,
+  ): Promise<EditableEvent>;
+
+  /** Creates an event; resolves to it (its first occurrence) and its undo. */
+  createEvent(
+    draft: EventDraft,
+    options: WriteOptions,
+  ): Promise<EventChange & { readonly event: CalendarEvent }>;
+
+  /**
+   * Changes an event, or its series from this occurrence on, or all of it.
+   * Time changes move a series by the same amount; "this and following"
+   * ends the series before the occurrence and starts a new one.
+   */
+  updateEvent(
+    event: CalendarEvent,
+    changes: EventChanges,
+    scope: SeriesScope,
+    options: WriteOptions,
+  ): Promise<EventChange>;
+
+  /** Deletes an occurrence, the series from it on, or all of it. */
+  deleteEvent(
+    event: CalendarEvent,
+    scope: SeriesScope,
+    options: WriteOptions,
+  ): Promise<EventChange>;
+}
+
+/** Can't be changed: the change methods of read-only sources reject with this. */
+export function readOnlyError(): MailError {
+  return new MailError("unavailable", "These events can't be changed.", {
+    reason: "calendarReadOnly",
+  });
 }
 
 /** Start of an event time as epoch ms (all-day dates at local midnight). */

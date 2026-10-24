@@ -139,17 +139,26 @@ export class GraphHttp {
   post<T = undefined>(
     path: string,
     body: unknown,
-    { retry = true, signal }: { retry?: boolean; signal?: AbortSignal } = {},
+    {
+      retry = true,
+      signal,
+      prefer,
+    }: { retry?: boolean; signal?: AbortSignal; prefer?: string } = {},
   ): Promise<T> {
     return this.#limit(() =>
-      this.#json<T>(this.url(path), "POST", body, signal, retry),
+      this.#json<T>(this.url(path), "POST", body, signal, retry, prefer),
     );
   }
 
   /** PATCHes a resource with the changed fields and returns it. */
-  patch<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  patch<T>(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+    prefer?: string,
+  ): Promise<T> {
     return this.#limit(() =>
-      this.#json<T>(this.url(path), "PATCH", body, signal, true),
+      this.#json<T>(this.url(path), "PATCH", body, signal, true, prefer),
     );
   }
 

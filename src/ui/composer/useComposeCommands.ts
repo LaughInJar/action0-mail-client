@@ -25,14 +25,17 @@ export function useComposeCommands(actions: ComposeActions): void {
       const id = current();
       if (id !== undefined) run(id);
     };
-    const canAnswer = () => actions.canCompose && current() !== undefined;
+    // In the calendar, `c` makes an event and there's no message to answer.
+    const inMail = () => router.getCalendarRoute() === null;
+    const canAnswer = () =>
+      inMail() && actions.canCompose && current() !== undefined;
     return [
       {
         id: "compose.new",
         group,
         description: t.shortcuts.compose,
         keys: ["c"],
-        when: () => actions.canCompose,
+        when: () => inMail() && actions.canCompose,
         run: actions.compose,
       },
       {

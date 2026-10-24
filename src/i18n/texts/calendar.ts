@@ -1,4 +1,9 @@
-import type { ResponseStatus, Rsvp } from "../../core/calendar";
+import type {
+  Repeat,
+  ResponseStatus,
+  Rsvp,
+  VideoCall,
+} from "../../core/calendar";
 import type { CalendarView } from "../../state/router";
 
 const en = {
@@ -113,6 +118,80 @@ const en = {
   invitationReply: "An answer to an invitation.",
   lookingUp: "Looking up the event…",
   allowToAnswer: "Allow calendar access to answer here.",
+
+  // Creating and editing.
+  newEvent: "New event",
+  editEvent: "Edit event",
+  titleLabel: "Title",
+  titlePlaceholder: "Add a title",
+  starts: "Starts",
+  ends: "Ends",
+  startDate: "Start date",
+  startTime: "Start time",
+  endDate: "End date",
+  endTime: "End time",
+  endsBeforeStart: "The event ends before it starts.",
+  repeatLabel: "Repeat",
+  repeatNone: "Doesn’t repeat",
+  repeatKinds: {
+    daily: () => "Daily",
+    weekdays: () => "Every weekday (Monday to Friday)",
+    weekly: (weekday: string) => `Weekly on ${weekday}`,
+    monthly: (day: number) => `Monthly on day ${String(day)}`,
+    yearly: (date: string) => `Annually on ${date}`,
+    custom: () => "Custom (stays as it is)",
+  } satisfies Record<Repeat["kind"], (value: never) => string>,
+  repeatEnds: "Ends",
+  endsNever: "Never",
+  endsOn: "On a date",
+  untilLabel: "Last day",
+  calendarLabel: "Calendar",
+  videoCalls: {
+    googleMeet: "Add a Google Meet video call",
+    teams: "Add a Teams meeting",
+  } satisfies Record<VideoCall, string>,
+  teamsFixed: "A Teams meeting can’t be removed again.",
+  locationPlaceholder: "Add a location",
+  guestsLabel: "Guests",
+  guestsNotified: "Guests will be notified of changes.",
+  descriptionPlaceholder: "Add a description",
+  loadingEvent: "Loading the event…",
+  couldntLoadEvent: (why: string) => `Couldn’t load the event: ${why}`,
+  noWritableCalendar:
+    "There’s no calendar you can add events to yet. Allow calendar access for a Google or Microsoft account first.",
+  newEventHere: "New event",
+
+  // Questions.
+  scopeTitle: (kind: "change" | "delete"): string =>
+    kind === "change" ? "Change a repeating event" : "Delete a repeating event",
+  scopeThis: "This event",
+  scopeFollowing: "This and following events",
+  scopeFollowingHint:
+    "Later events that were changed on their own lose those changes.",
+  scopeAll: "All events",
+  notifyTitle: (kind: "create" | "change" | "delete"): string =>
+    kind === "create"
+      ? "Send invitations to the guests?"
+      : kind === "change"
+        ? "Send an update to the guests?"
+        : "Send a cancellation to the guests?",
+  notifyMessage: "Guests get an email from Google.",
+  send: "Send",
+  dontSend: "Don’t send",
+  deleteMeetingTitle: (title: string) => `Delete “${title}”?`,
+  deleteMeetingMessage: "The guests get a cancellation. This can’t be undone.",
+  discardTitle: "Discard changes?",
+  discardMessage: "Your changes to this event haven’t been saved.",
+  discard: "Discard",
+  keepEditing: "Keep editing",
+
+  // Toasts.
+  created: (title: string) => `Created “${title}”`,
+  saved: (title: string) => `Saved “${title}”`,
+  moved: (title: string) => `Moved “${title}”`,
+  deleted: (title: string) => `Deleted “${title}”`,
+  couldntSave: "Couldn’t save the event",
+  couldntDelete: "Couldn’t delete the event",
 };
 
 const de: typeof en = {
@@ -219,6 +298,81 @@ const de: typeof en = {
   invitationReply: "Eine Antwort auf eine Einladung.",
   lookingUp: "Termin wird gesucht …",
   allowToAnswer: "Erlaube den Kalenderzugriff, um hier zu antworten.",
+
+  newEvent: "Neuer Termin",
+  editEvent: "Termin bearbeiten",
+  titleLabel: "Titel",
+  titlePlaceholder: "Titel hinzufügen",
+  starts: "Beginn",
+  ends: "Ende",
+  startDate: "Anfangsdatum",
+  startTime: "Anfangszeit",
+  endDate: "Enddatum",
+  endTime: "Endzeit",
+  endsBeforeStart: "Der Termin endet, bevor er beginnt.",
+  repeatLabel: "Wiederholen",
+  repeatNone: "Keine Wiederholung",
+  repeatKinds: {
+    daily: () => "Täglich",
+    weekdays: () => "Jeden Werktag (Montag bis Freitag)",
+    weekly: (weekday: string) => `Wöchentlich am ${weekday}`,
+    monthly: (day: number) => `Monatlich am ${String(day)}.`,
+    yearly: (date: string) => `Jährlich am ${date}`,
+    custom: () => "Benutzerdefiniert (bleibt, wie sie ist)",
+  },
+  repeatEnds: "Endet",
+  endsNever: "Nie",
+  endsOn: "An einem Datum",
+  untilLabel: "Letzter Tag",
+  calendarLabel: "Kalender",
+  videoCalls: {
+    googleMeet: "Google-Meet-Videokonferenz hinzufügen",
+    teams: "Teams-Besprechung hinzufügen",
+  },
+  teamsFixed: "Eine Teams-Besprechung kann nicht mehr entfernt werden.",
+  locationPlaceholder: "Ort hinzufügen",
+  guestsLabel: "Gäste",
+  guestsNotified: "Die Gäste werden über Änderungen informiert.",
+  descriptionPlaceholder: "Beschreibung hinzufügen",
+  loadingEvent: "Termin wird geladen …",
+  couldntLoadEvent: (why) => `Termin konnte nicht geladen werden: ${why}`,
+  noWritableCalendar:
+    "Es gibt noch keinen Kalender, in den du Termine eintragen kannst. Erlaube zuerst den Kalenderzugriff für ein Google- oder Microsoft-Konto.",
+  newEventHere: "Neuer Termin",
+
+  scopeTitle: (kind) =>
+    kind === "change"
+      ? "Wiederkehrenden Termin ändern"
+      : "Wiederkehrenden Termin löschen",
+  scopeThis: "Dieser Termin",
+  scopeFollowing: "Dieser und alle folgenden Termine",
+  scopeFollowingHint:
+    "Spätere Termine, die einzeln geändert wurden, verlieren diese Änderungen.",
+  scopeAll: "Alle Termine",
+  notifyTitle: (kind) =>
+    kind === "create"
+      ? "Einladungen an die Gäste senden?"
+      : kind === "change"
+        ? "Aktualisierung an die Gäste senden?"
+        : "Absage an die Gäste senden?",
+  notifyMessage: "Die Gäste bekommen eine E-Mail von Google.",
+  send: "Senden",
+  dontSend: "Nicht senden",
+  deleteMeetingTitle: (title) => `„${title}“ löschen?`,
+  deleteMeetingMessage:
+    "Die Gäste bekommen eine Absage. Das kann nicht rückgängig gemacht werden.",
+  discardTitle: "Änderungen verwerfen?",
+  discardMessage:
+    "Deine Änderungen an diesem Termin sind noch nicht gespeichert.",
+  discard: "Verwerfen",
+  keepEditing: "Weiter bearbeiten",
+
+  created: (title) => `„${title}“ erstellt`,
+  saved: (title) => `„${title}“ gespeichert`,
+  moved: (title) => `„${title}“ verschoben`,
+  deleted: (title) => `„${title}“ gelöscht`,
+  couldntSave: "Der Termin konnte nicht gespeichert werden",
+  couldntDelete: "Der Termin konnte nicht gelöscht werden",
 };
 
 /** The calendar: switch, toolbar, column, views, event details, invitations. */

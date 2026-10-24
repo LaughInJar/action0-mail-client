@@ -41,34 +41,67 @@ export type CalendarView = "day" | "week" | "month" | "agenda";
 const CALENDAR_VIEWS: readonly string[] = ["day", "week", "month", "agenda"];
 
 /**
- * The calendar in the URL: `#/calendar/<view>/<YYYY-MM-DD>[/<event>]`,
- * where `event` is opaque (it names the open event).
+ * The calendar in the URL: `#/calendar/<view>/<YYYY-MM-DD>` plus
+ * `/<event>` (open), `/<event>/edit` (being edited) or `/new[/<from>/<to>]`
+ * (a new event), where `event` is opaque (it names the event).
  */
 export interface CalendarRoute {
   readonly view: CalendarView;
   /** The date the view shows (local), "YYYY-MM-DD". */
   readonly date: string;
   readonly event?: string;
+  /** The open event is being edited. */
+  readonly edit?: true;
+  /** A new event: its suggested time, local "YYYY-MM-DDTHH:MM" (or days, "YYYY-MM-DD", for all-day ones; `to` exclusive). */
+  readonly create?: { readonly from?: string; readonly to?: string };
 }
+
+const DAY_OR_TIME = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/;
 
 /** Parses a calendar location hash; `null` for any other hash. */
 export function parseCalendarHash(hash: string): CalendarRoute | null {
   const [path] = splitOnce(hash.replace(/^#\/?/, ""), "?");
-  const [prefix, view, date, event, ...rest] = path.split("/").map(safeDecode);
-  if (prefix !== "calendar" || rest.length > 0) return null;
+  const [prefix, view, date, ...more] = path.split("/").map(safeDecode);
+  if (prefix !== "calendar") return null;
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "");
-  return {
+  const base = {
     view: CALENDAR_VIEWS.includes(view ?? "") ? (view as CalendarView) : "week",
     date: valid && date ? date : today(),
-    ...(event ? { event } : {}),
-  };
+  } as const;
+  const [first, from, to, ...rest] = more;
+  if (rest.length > 0) return null;
+  if (first === "new") {
+    const times =
+      from !== undefined &&
+      to !== undefined &&
+      DAY_OR_TIME.test(from) &&
+      DAY_OR_TIME.test(to);
+    return { ...base, create: times ? { from, to } : {} };
+  }
+  if (!first) return base;
+  if (from === undefined) return { ...base, event: first };
+  return from === "edit" && to === undefined
+    ? { ...base, event: first, edit: true }
+    : null;
 }
 
 /** Formats a calendar route as a location hash. */
 export function formatCalendarRoute(route: CalendarRoute): string {
-  const segments = [route.view, route.date, route.event].filter(
-    (segment): segment is string => segment !== undefined,
-  );
+  const { create, event } = route;
+  const segments = [
+    route.view,
+    route.date,
+    ...(create
+      ? [
+          "new",
+          ...(create.from !== undefined && create.to !== undefined
+            ? [create.from, create.to]
+            : []),
+        ]
+      : event !== undefined
+        ? [event, ...(route.edit ? ["edit"] : [])]
+        : []),
+  ];
   return `#/calendar/${segments.map(encodeURIComponent).join("/")}`;
 }
 

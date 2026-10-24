@@ -9,6 +9,7 @@ import type { AccountId, DraftId, MailboxId, MessageId } from "../core/ids";
 import type { MailIntent } from "../core/intents";
 import type { MessageSummary, Unsubscribe } from "../core/model";
 import type { MessageOrder } from "../core/provider";
+import type { EventFormState, QuestionState } from "./eventForm";
 import * as selection from "./selection";
 import { readTheme, saveTheme, type ThemeMode } from "./theme";
 import {
@@ -214,6 +215,10 @@ export interface UiState extends selection.SelectionState {
   readonly labelDialog: LabelDialogState | null;
   /** The account whose labels "Manage labels" shows. */
   readonly manageLabels: AccountId | null;
+  /** The question being asked (scope of a change, notifying guests, …). */
+  readonly question: QuestionState | null;
+  /** The event editor's values, while it's open. Memory only. */
+  readonly eventForm: EventFormState | null;
 }
 
 /** State transitions. */
@@ -289,6 +294,8 @@ export interface UiActions {
   readonly setLabelMenu: (menu: LabelMenuState | null) => void;
   readonly setLabelDialog: (dialog: LabelDialogState | null) => void;
   readonly setManageLabels: (accountId: AccountId | null) => void;
+  readonly setQuestion: (question: QuestionState | null) => void;
+  readonly setEventForm: (form: EventFormState | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -363,6 +370,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           labelMenu: null,
           labelDialog: null,
           manageLabels: null,
+          question: null,
+          eventForm: null,
 
           enterList: (listKey, focusedId) => {
             set({
@@ -579,6 +588,12 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setManageLabels: (manageLabels) => {
             set({ manageLabels });
+          },
+          setQuestion: (question) => {
+            set({ question });
+          },
+          setEventForm: (eventForm) => {
+            set({ eventForm });
           },
         };
       },

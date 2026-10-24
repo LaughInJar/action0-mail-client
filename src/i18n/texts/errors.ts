@@ -62,6 +62,8 @@ const enReasons: Reasons = {
     `There’s no calendar at this address (${p.status ?? ""}). Check the link.`,
   icsUnreadable: () => "This address doesn’t contain a calendar (iCal).",
   icsBadUrl: () => "That isn’t a web address (https:// or webcal://).",
+  calendarReadOnly: () => "Events in this calendar can’t be changed.",
+  eventGone: () => "This event no longer exists.",
 };
 
 const deReasons: Reasons = {
@@ -125,6 +127,9 @@ const deReasons: Reasons = {
     `Unter dieser Adresse gibt es keinen Kalender (${p.status ?? ""}). Prüf den Link.`,
   icsUnreadable: () => "Diese Adresse enthält keinen Kalender (iCal).",
   icsBadUrl: () => "Das ist keine Webadresse (https:// oder webcal://).",
+  calendarReadOnly: () =>
+    "Termine in diesem Kalender können nicht geändert werden.",
+  eventGone: () => "Diesen Termin gibt es nicht mehr.",
 };
 
 const en = {

@@ -1,11 +1,19 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { useCalendarData } from "../../data/calendar";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCalendarData, type PlacedEvent } from "../../data/calendar";
+import { canChange } from "../../data/eventEdits";
 import { useT } from "../../i18n/context";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
-import { useCalendarRoute, useRouter, useUiStore } from "../../state/context";
+import {
+  useCalendarRoute,
+  useRouter,
+  useUi,
+  useUiStore,
+} from "../../state/context";
 import type { CalendarRoute, CalendarView } from "../../state/router";
+import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
+import { useAsk } from "../common/useAsk";
 import { Drawer } from "../layout/Drawer";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { AgendaView } from "./AgendaView";
@@ -21,9 +29,18 @@ import {
   viewDays,
 } from "./dates";
 import { EventDetails } from "./EventDetails";
+import { EventEditor } from "./EventEditor";
 import { eventKey, findEvent, viewTitle } from "./format";
+import {
+  newValues,
+  spanOfValues,
+  suggestedTime,
+  type EditorMode,
+} from "./formValues";
 import { MonthView } from "./MonthView";
-import { WeekView } from "./WeekView";
+import type { EventTimes } from "./moves";
+import { useEventActions } from "./useEventActions";
+import { WeekView, type Ghost } from "./WeekView";
 
 /** Views offered per screen size: phones get day and agenda. */
 const VIEWS: Readonly<Record<Breakpoint, readonly CalendarView[]>> = {
@@ -68,10 +85,33 @@ function Calendar({
   const { statuses, events, pending } = useCalendarData(range);
   const open = findEvent(events, route.event);
 
+  const actions = useEventActions();
+  const ask = useAsk();
+  const form = useUi((state) => state.eventForm);
+  const editorKey = route.create
+    ? "new"
+    : route.edit && route.event !== undefined
+      ? route.event
+      : null;
+
+  /**
+   * Goes somewhere else in the calendar: an open event closes; a new
+   * event being written stays open (and moving around replaces the
+   * history entry, so Back still closes it).
+   */
   const go = (next: Partial<CalendarRoute>, replace = false) => {
-    const { event: _event, ...rest } = route;
-    const target = { ...rest, ...next };
-    router.openCalendar(target, { replace });
+    const { event: _event, edit: _edit, create, ...rest } = route;
+    const keep =
+      create && next.event === undefined && next.create === undefined;
+    router.openCalendar(
+      { ...rest, ...(keep ? { create } : {}), ...next },
+      {
+        replace:
+          replace ||
+          (keep ?? false) ||
+          (create !== undefined && next.create !== undefined),
+      },
+    );
   };
   const goDay = (date: Date, nextView?: CalendarView) => {
     go({ date: dayKey(date), ...(nextView ? { view: nextView } : {}) });
@@ -83,8 +123,83 @@ function Calendar({
   };
   const close = () => {
     if (router.canGoBack()) router.back();
-    else go({});
+    else {
+      const { event: _event, edit: _edit, create: _create, ...rest } = route;
+      router.openCalendar(rest, { replace: true });
+    }
   };
+  const newEvent = (from?: string, to?: string) => {
+    const times =
+      from !== undefined && to !== undefined
+        ? { from, to }
+        : suggestedTime(day, new Date());
+    go({ create: times });
+  };
+  const editEvent = (placed: PlacedEvent) => {
+    router.openCalendar({
+      view: route.view,
+      date: route.date,
+      event: eventKey(placed),
+      edit: true,
+    });
+  };
+  const afterDelete = () => {
+    router.openCalendar(
+      { view: route.view, date: route.date },
+      { replace: true },
+    );
+  };
+  const removeEvent = (placed: PlacedEvent) => {
+    void actions.remove(placed).then((removed) => {
+      if (removed) afterDelete();
+    });
+  };
+  const changeTimes = (placed: PlacedEvent, times: EventTimes) => {
+    void actions.update(placed, times, { moved: true });
+  };
+
+  // Leaving the editor with unsaved changes (Back, or going elsewhere):
+  // back to it, and ask.
+  const left = useRef({ key: editorKey, route });
+  useEffect(() => {
+    const before = left.current;
+    left.current = { key: editorKey, route };
+    if (before.key === null || before.key === editorKey) return;
+    const current = store.getState().eventForm;
+    if (current?.key !== before.key) return;
+    if (!current.dirty) {
+      store.getState().setEventForm(null);
+      return;
+    }
+    router.openCalendar(before.route);
+    void ask({
+      title: t.calendar.discardTitle,
+      message: t.calendar.discardMessage,
+      cancelLabel: t.calendar.keepEditing,
+      options: [
+        { value: "discard", label: t.calendar.discard, tone: "danger" },
+      ],
+    }).then((answer) => {
+      if (answer === null) return;
+      store.getState().setEventForm(null);
+      router.back();
+    });
+    // Only when the editor changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorKey]);
+
+  // Leaving the page asks too.
+  const dirty = form?.dirty === true;
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [dirty]);
 
   useCommands(
     useMemo((): Command[] => {
@@ -121,14 +236,29 @@ function Calendar({
         command("calendar.agenda", s.calAgenda, ["a"], () => {
           setView("agenda");
         }),
+        command("calendar.new", s.calNew, ["c"], () => {
+          newEvent();
+        }),
+        {
+          ...command("calendar.edit", s.calEdit, ["e"], () => {
+            if (open) editEvent(open);
+          }),
+          when: () => open !== undefined && !route.edit && canChange(open),
+        },
+        {
+          ...command("calendar.delete", s.calDelete, ["Delete"], () => {
+            if (open) removeEvent(open);
+          }),
+          when: () => open !== undefined && !route.edit && canChange(open),
+        },
         {
           ...command("calendar.close", s.calClose, ["Escape"], close),
-          when: () => route.event !== undefined,
+          when: () => route.event !== undefined && !route.edit,
         },
       ];
       // Commands follow the route.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [route, view, breakpoint, t]),
+    }, [route, view, breakpoint, t, open]),
   );
 
   const openEvent = (placed: (typeof events)[number]) => {
@@ -143,6 +273,15 @@ function Calendar({
           icon="menu"
           onClick={() => {
             setDrawer(true);
+          }}
+        />
+      )}
+      {breakpoint === "medium" && (
+        <IconButton
+          label={c.newEvent}
+          icon="plus"
+          onClick={() => {
+            newEvent();
           }}
         />
       )}
@@ -204,6 +343,29 @@ function Calendar({
     </div>
   );
 
+  // The new event being written, where it would go.
+  let ghost: Ghost | null = null;
+  if (route.create) {
+    const values =
+      form?.key === "new"
+        ? form.values
+        : route.create.from !== undefined && route.create.to !== undefined
+          ? newValues(route.create.from, route.create.to, "")
+          : undefined;
+    if (values)
+      ghost = {
+        ...spanOfValues(values),
+        allDay: values.allDay,
+        title: values.title,
+      };
+  }
+  const gridProps = {
+    canDrag: canChange,
+    onNewEvent: newEvent,
+    onChangeTimes: changeTimes,
+    ghost,
+  };
+
   let content: ReactNode;
   if (view === "month")
     content = (
@@ -215,6 +377,7 @@ function Calendar({
         onOpenDay={(date) => {
           goDay(date, "day");
         }}
+        {...gridProps}
       />
     );
   else if (view === "agenda")
@@ -239,6 +402,7 @@ function Calendar({
         onOpenDay={(date) => {
           goDay(date, "day");
         }}
+        {...gridProps}
       />
     );
 
@@ -250,16 +414,58 @@ function Calendar({
       onChooseDay={(date) => {
         goDay(date);
       }}
+      onNewEvent={() => {
+        newEvent();
+      }}
       {...(onNavigate ? { onNavigate } : {})}
     />
   );
-  const details = open && (
-    <EventDetails key={eventKey(open)} placed={open} onClose={close} />
+
+  // The editor takes the place of the event's details.
+  const mode: EditorMode | undefined = route.create
+    ? {
+        kind: "new",
+        ...(route.create.from !== undefined && route.create.to !== undefined
+          ? { from: route.create.from, to: route.create.to }
+          : suggestedTime(day, new Date())),
+      }
+    : route.edit && open
+      ? { kind: "edit", placed: open }
+      : undefined;
+  const panel = mode ? (
+    <EventEditor
+      mode={mode}
+      statuses={statuses}
+      onClose={close}
+      onDeleted={afterDelete}
+    />
+  ) : route.edit && route.event !== undefined ? (
+    <p className="h-full bg-white p-4 text-sm text-zinc-500 dark:bg-zinc-950">
+      {c.loadingEvent}
+    </p>
+  ) : (
+    open && (
+      <EventDetails
+        key={eventKey(open)}
+        placed={open}
+        onClose={close}
+        {...(canChange(open)
+          ? {
+              onEdit: () => {
+                editEvent(open);
+              },
+              onDelete: () => {
+                removeEvent(open);
+              },
+            }
+          : {})}
+      />
+    )
   );
 
-  // Phones: the open event is a screen of its own.
-  if (breakpoint === "narrow" && open)
-    return <div className="min-h-0 min-w-0 flex-1">{details}</div>;
+  // Phones: the open event (or the editor) is a screen of its own.
+  if (breakpoint === "narrow" && panel)
+    return <div className="min-h-0 min-w-0 flex-1">{panel}</div>;
 
   return (
     <>
@@ -287,7 +493,7 @@ function Calendar({
         {toolbar}
         {content}
       </main>
-      {details && (
+      {panel && (
         <div
           className={
             breakpoint === "wide"
@@ -295,8 +501,20 @@ function Calendar({
               : "fixed inset-y-0 right-0 z-30 w-full max-w-md border-l border-zinc-200 shadow-xl dark:border-zinc-800"
           }
         >
-          {details}
+          {panel}
         </div>
+      )}
+      {breakpoint === "narrow" && (
+        <button
+          type="button"
+          aria-label={c.newEvent}
+          onClick={() => {
+            newEvent();
+          }}
+          className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 grid size-14 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg"
+        >
+          <Icon name="plus" className="size-6" />
+        </button>
       )}
     </>
   );

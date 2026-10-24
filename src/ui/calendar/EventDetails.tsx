@@ -17,9 +17,14 @@ import { RsvpButtons } from "./RsvpButtons";
 export function EventDetails({
   placed,
   onClose,
+  onEdit,
+  onDelete,
 }: {
   placed: PlacedEvent;
   onClose: () => void;
+  /** It's yours to change: Edit and Delete show. */
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const t = useT();
   const c = t.calendar;
@@ -55,6 +60,12 @@ export function EventDetails({
         >
           {title}
         </h2>
+        {onEdit && (
+          <IconButton label={t.common.edit} icon="pencil" onClick={onEdit} />
+        )}
+        {onDelete && (
+          <IconButton label={t.common.delete} icon="trash" onClick={onDelete} />
+        )}
         <IconButton label={c.closeEvent} icon="x" onClick={onClose} />
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 text-sm">

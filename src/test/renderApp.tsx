@@ -32,6 +32,8 @@ export interface RenderAppOptions {
   readonly calendarAccess?: CalendarAccess;
   /** Creates iCal subscriptions' calendars (default: the real one, with `fetch`). */
   readonly icsFactory?: IcsFactory;
+  /** How the demo calendar tells guests (default: asks, like Google). */
+  readonly guestNotices?: "ask" | "always";
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -44,6 +46,7 @@ export function renderApp({
   setups,
   calendarAccess = "granted",
   icsFactory,
+  guestNotices = "ask",
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
@@ -58,6 +61,7 @@ export function renderApp({
         // Events around TEST_NOW (week of Monday 2026-10-12).
         calendar: () => createDemoCalendar(TEST_NOW),
         calendarAccess,
+        guestNotices,
       }),
     ],
     ...(setups ? { createSetups: setups } : {}),

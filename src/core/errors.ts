@@ -63,7 +63,9 @@ export type MailErrorReason =
   | "icsBlocked"
   | "icsNotFound"
   | "icsUnreadable"
-  | "icsBadUrl";
+  | "icsBadUrl"
+  | "calendarReadOnly"
+  | "eventGone";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

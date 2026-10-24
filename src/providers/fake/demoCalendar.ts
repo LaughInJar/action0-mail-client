@@ -40,6 +40,7 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         primary: true,
         shownByDefault: true,
         readOnly: false,
+        videoCall: "googleMeet",
       },
       {
         id: personal,
@@ -67,6 +68,8 @@ export function createDemoCalendar(now = Date.now()): FakeCalendarData {
         start: "09:30",
         end: "09:45",
         meetingUrl: "https://meet.example/standup",
+        organizer: ME,
+        attendees: [ANNA, JONAS, MIA],
       },
       {
         key: "team",

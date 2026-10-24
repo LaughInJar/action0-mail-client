@@ -201,6 +201,42 @@ describe("calendar routes", () => {
     expect(parseCalendarHash(formatRoute(route))).toBeNull();
   });
 
+  it("round-trip editing an event and creating one, with or without a time", () => {
+    const editing = {
+      view: "day" as const,
+      date: "2026-10-15",
+      event: '["acct","ev/1"]',
+      edit: true as const,
+    };
+    expect(formatCalendarRoute(editing)).toMatch(/\/edit$/);
+    expect(parseCalendarHash(formatCalendarRoute(editing))).toEqual(editing);
+    const timed = {
+      view: "week" as const,
+      date: "2026-10-15",
+      create: { from: "2026-10-15T10:00", to: "2026-10-15T11:00" },
+    };
+    expect(formatCalendarRoute(timed)).toBe(
+      "#/calendar/week/2026-10-15/new/2026-10-15T10%3A00/2026-10-15T11%3A00",
+    );
+    expect(parseCalendarHash(formatCalendarRoute(timed))).toEqual(timed);
+    const allDay = {
+      view: "month" as const,
+      date: "2026-10-15",
+      create: { from: "2026-10-20", to: "2026-10-21" },
+    };
+    expect(parseCalendarHash(formatCalendarRoute(allDay))).toEqual(allDay);
+    expect(parseCalendarHash("#/calendar/week/2026-10-15/new")).toEqual({
+      view: "week",
+      date: "2026-10-15",
+      create: {},
+    });
+    // Times that aren't times are dropped; unknown segments aren't routes.
+    expect(
+      parseCalendarHash("#/calendar/week/2026-10-15/new/soon/later")?.create,
+    ).toEqual({});
+    expect(parseCalendarHash("#/calendar/week/2026-10-15/x/delete")).toBeNull();
+  });
+
   it("repairs unknown views and dates", () => {
     expect(parseCalendarHash("#/calendar/year/2026-10-15")?.view).toBe("week");
     expect(parseCalendarHash("#/calendar/day/someday")?.date).toMatch(

@@ -22,12 +22,14 @@ export function CalendarSidebar({
   selected,
   firstDay,
   onChooseDay,
+  onNewEvent,
   onNavigate,
 }: {
   statuses: readonly SourceStatus[];
   selected: Date;
   firstDay: number;
   onChooseDay: (day: Date) => void;
+  onNewEvent: () => void;
   /** Called after navigating (closes the drawer). */
   onNavigate?: () => void;
 }) {
@@ -56,6 +58,22 @@ export function CalendarSidebar({
         />
       </div>
       <AppSwitch {...(onNavigate ? { onNavigate } : {})} />
+      <div className="px-2 pt-1 pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate?.();
+            onNewEvent();
+          }}
+          className="flex w-full items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 pointer-coarse:min-h-11"
+        >
+          <Icon name="plus" className="size-4" />
+          <span className="flex-1 text-left">{t.calendar.newEvent}</span>
+          <kbd className="font-sans text-xs font-normal opacity-75 pointer-coarse:hidden">
+            c
+          </kbd>
+        </button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2">
         <MiniMonth
           selected={selected}

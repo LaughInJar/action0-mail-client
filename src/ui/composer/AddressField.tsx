@@ -29,6 +29,10 @@ export interface AddressFieldProps {
   readonly onChange: (next: EmailAddress[]) => void;
   /** Shown at the end of the row (e.g. the Cc/Bcc buttons). */
   readonly trailing?: ReactNode;
+  /** The label is for screen readers only (the field is labelled elsewhere on screen). */
+  readonly hideLabel?: boolean;
+  /** Shown in the empty field. */
+  readonly placeholder?: string;
 }
 
 const SUGGEST_DELAY_MS = 150;
@@ -46,6 +50,8 @@ export function AddressField({
   value,
   onChange,
   trailing,
+  hideLabel = false,
+  placeholder,
 }: AddressFieldProps) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
@@ -150,7 +156,11 @@ export function AddressField({
     <div className="relative flex items-start gap-2 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
       <label
         htmlFor={id}
-        className="w-8 shrink-0 py-1.5 text-sm text-zinc-500 pointer-coarse:py-3"
+        className={
+          hideLabel
+            ? "sr-only"
+            : "w-8 shrink-0 py-1.5 text-sm text-zinc-500 pointer-coarse:py-3"
+        }
       >
         {label}
       </label>
@@ -213,12 +223,15 @@ export function AddressField({
             setOpen(false);
             commitText(text);
           }}
+          {...(placeholder && value.length === 0 ? { placeholder } : {})}
           className="min-w-32 flex-1 bg-transparent py-1 text-sm outline-none pointer-coarse:min-h-11"
         />
       </div>
       {trailing}
       {showList && (
-        <div className="absolute top-full right-3 left-12 z-10 mt-0.5 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        <div
+          className={`absolute top-full right-3 z-10 mt-0.5 ${hideLabel ? "left-3" : "left-12"} overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900`}
+        >
           <div id={listId} role="listbox" aria-label={t.composer.suggestions}>
             {options.map((option, index) => (
               // Clicks are fine on options; the combobox input handles the keyboard.
