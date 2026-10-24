@@ -1,9 +1,9 @@
 const en = {
   title: "Keyboard shortcuts",
-  treeMenuHint: {
-    before: "In the folder tree,",
+  menuHint: {
+    before: "Right-click, a long press or",
     after:
-      "(or the Menu key) opens the menu of a label: rename, colour, move, hide, delete.",
+      "(or the Menu key) opens the menu of a message, a mailbox or an event.",
   },
   groups: {
     list: "Message list",
@@ -85,10 +85,10 @@ const en = {
 
 const de: typeof en = {
   title: "Tastenkürzel",
-  treeMenuHint: {
-    before: "In der Ordnerliste öffnet",
+  menuHint: {
+    before: "Rechtsklick, langes Drücken oder",
     after:
-      "(oder die Menütaste) das Menü eines Labels: umbenennen, Farbe, verschieben, ausblenden, löschen.",
+      "(oder die Menütaste) öffnet das Menü einer Nachricht, eines Ordners oder eines Termins.",
   },
   groups: {
     list: "Nachrichtenliste",

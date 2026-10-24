@@ -35,6 +35,7 @@ import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useUnsubscribe } from "./useUnsubscribe";
 import { AccountLine } from "./AccountLine";
+import { useMessageMenu } from "./useMessageMenu";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
 
@@ -216,6 +217,12 @@ function ConversationBody({
   compose,
 }: ConversationBodyProps) {
   const subjectId = useId();
+  const menuOf = useMessageMenu(accountId);
+  // Folded lines: right-click, long press and the Menu key open its menu.
+  const folded = (id: MessageId) => {
+    const { consumeClick: _consume, ...handlers } = menuOf(id);
+    return handlers;
+  };
   const store = useUiStore();
   const t = useT();
   const cursor = useUi((state) => state.readerCursor);
@@ -429,7 +436,9 @@ function ConversationBody({
             ) : (
               <button
                 type="button"
+                {...folded(message.id)}
                 onClick={() => {
+                  if (menuOf(message.id).consumeClick()) return;
                   toggle(message.id);
                   store.getState().setReaderCursor(message.id);
                 }}
@@ -511,51 +520,59 @@ function OpenMessage({
   const unsubscribe = useUnsubscribe();
   const t = useT();
   const unsubscribed = useUi((state) => state.unsubscribed.has(message.id));
+  const {
+    consumeClick: _consume,
+    onKeyDown: _keys,
+    ...headerMenu
+  } = useMessageMenu(accountId)(message.id);
   const button =
     "flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
   return (
     <div>
-      <MessageHeader
-        message={message}
-        mailboxes={mailboxes}
-        trailing={
-          <>
-            {actions.canStar && !draft && (
-              <IconButton
-                label={
-                  message.flags.flagged
-                    ? t.reader.unstarMessage
-                    : t.reader.starMessage
-                }
-                icon="star"
-                pressed={message.flags.flagged}
-                onClick={() => {
-                  actions.toggleStar([messageKey(accountId, message.id)], {
-                    exact: true,
-                  });
-                }}
-              />
-            )}
-            {onCollapse && (
-              <IconButton
-                label={t.reader.closeMessage}
-                icon="chevron-up"
-                onClick={onCollapse}
-              />
-            )}
-          </>
-        }
-        {...(message.unsubscribe
-          ? {
-              unsubscribe: {
-                done: unsubscribed,
-                onClick: () => {
-                  unsubscribe.request(accountId, message);
+      {/* Right-click or a long press: what can be done with it. */}
+      <div {...headerMenu}>
+        <MessageHeader
+          message={message}
+          mailboxes={mailboxes}
+          trailing={
+            <>
+              {actions.canStar && !draft && (
+                <IconButton
+                  label={
+                    message.flags.flagged
+                      ? t.reader.unstarMessage
+                      : t.reader.starMessage
+                  }
+                  icon="star"
+                  pressed={message.flags.flagged}
+                  onClick={() => {
+                    actions.toggleStar([messageKey(accountId, message.id)], {
+                      exact: true,
+                    });
+                  }}
+                />
+              )}
+              {onCollapse && (
+                <IconButton
+                  label={t.reader.closeMessage}
+                  icon="chevron-up"
+                  onClick={onCollapse}
+                />
+              )}
+            </>
+          }
+          {...(message.unsubscribe
+            ? {
+                unsubscribe: {
+                  done: unsubscribed,
+                  onClick: () => {
+                    unsubscribe.request(accountId, message);
+                  },
                 },
-              },
-            }
-          : {})}
-      />
+              }
+            : {})}
+        />
+      </div>
       <InvitationBar accountId={accountId} message={message} />
       <MessageBody accountId={accountId} message={message} />
       <AttachmentList accountId={accountId} message={message} />

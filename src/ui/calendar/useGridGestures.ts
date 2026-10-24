@@ -7,6 +7,8 @@ import {
   type RefObject,
 } from "react";
 import type { PlacedEvent } from "../../data/calendar";
+import type { MenuPosition } from "../../state/uiStore";
+import { atPointer } from "../common/menuPosition";
 
 /** A place in a grid: a shown day (0 = the first) and, in time grids, minutes into it. */
 export interface GridSlot {
@@ -42,6 +44,8 @@ export interface GridGestureOptions {
   readonly onMove: (placed: PlacedEvent, grab: GridSlot, at: GridSlot) => void;
   /** Events can change their length (time grids). */
   readonly onResize?: (placed: PlacedEvent, at: GridSlot) => void;
+  /** A lifted event was let go where it was (touch): its menu. */
+  readonly onMenu?: (placed: PlacedEvent, at: MenuPosition) => void;
   /** Scrolled while dragging near its top or bottom edge. */
   readonly scroller?: RefObject<HTMLElement | null>;
 }
@@ -64,6 +68,8 @@ interface Pending {
   readonly placed: PlacedEvent | undefined;
   readonly grab: GridSlot;
   active: boolean;
+  /** Moved since it was lifted (touch): a drag, not a press. */
+  travelled: boolean;
   outside: boolean;
   last: { x: number; y: number };
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -73,8 +79,9 @@ interface Pending {
  * Pointer gestures of a calendar grid: dragging events to move them, their
  * bottom edge to change their length, and empty space to pick a range for
  * a new event (a click there suggests one). With a mouse a drag starts
- * after a few pixels; on touch after a long press, so swipes still scroll.
- * Escape, or letting go outside the grid, cancels.
+ * after a few pixels; on touch after a long press, so swipes still scroll
+ * (and an event lifted and let go without moving opens its menu). Escape,
+ * or letting go outside the grid, cancels.
  */
 export function useGridGestures(options: GridGestureOptions): {
   /** The gesture under way, to show where things go. */
@@ -135,6 +142,7 @@ export function useGridGestures(options: GridGestureOptions): {
       placed,
       grab,
       active: false,
+      travelled: false,
       outside: false,
       last: { x: event.clientX, y: event.clientY },
       timer: undefined,
@@ -184,7 +192,7 @@ export function useGridGestures(options: GridGestureOptions): {
       cleanup.current?.();
       const { active, outside } = state;
       if (!commit) return;
-      const { onCreate, onMove, onResize: resize } = latest.current;
+      const { onCreate, onMove, onResize: resize, onMenu } = latest.current;
       const slot = latest.current.slotAt(state.last.x, state.last.y);
       if (!active) {
         // A click or tap on empty space suggests a new event there.
@@ -200,6 +208,11 @@ export function useGridGestures(options: GridGestureOptions): {
       setTimeout(() => {
         window.removeEventListener("click", swallow, { capture: true });
       }, 0);
+      // Lifted and let go in place: the event's menu.
+      if (state.touch && !state.travelled && state.placed && onMenu) {
+        onMenu(state.placed, atPointer({ clientX: state.x, clientY: state.y }));
+        return;
+      }
       if (outside || !slot) return;
       if (state.kind === "create") onCreate(state.grab, slot);
       else if (state.placed && state.kind === "move")
@@ -223,6 +236,7 @@ export function useGridGestures(options: GridGestureOptions): {
         if (distance <= MOUSE_SLOP) return;
         activate();
       }
+      if (distance > TOUCH_SLOP) state.travelled = true;
       show();
       if (!frame) frame = requestAnimationFrame(scroll);
     };

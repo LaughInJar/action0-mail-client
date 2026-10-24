@@ -6,7 +6,9 @@ import {
   asMessageId,
   asThreadId,
   type Cursor,
+  type MailboxId,
 } from "../../core/ids";
+import { createFolderData, FOLDER } from "../../test/folderData";
 import { createDemoArrival, createDemoData, DEMO_MAILBOX } from "./demoData";
 import { FakeMailProvider } from "./FakeMailProvider";
 
@@ -507,5 +509,75 @@ describe("FakeMailProvider threads", () => {
       threading: { threadId: asThreadId("t-trip"), references: [] },
     });
     expect((await ids())[0]).toBe("t-trip");
+  });
+});
+
+describe("FakeMailProvider.markAllRead", () => {
+  /** Ids of the unread messages a mailbox lists, newest first. */
+  async function unreadIn(fake: FakeMailProvider, mailboxId: MailboxId) {
+    const { items } = await fake.listMessages({ mailboxId, limit: 1000 });
+    return items.filter((m) => !m.flags.seen).map((m) => m.id);
+  }
+
+  it("marks the unread messages of a label read and returns their ids", async () => {
+    const fake = provider();
+    const work = await unreadIn(fake, DEMO_MAILBOX.work);
+    const elsewhere = (await unreadIn(fake, DEMO_MAILBOX.inbox)).filter(
+      (id) => !work.includes(id),
+    );
+    expect(work.length).toBeGreaterThan(0);
+    expect(elsewhere.length).toBeGreaterThan(0);
+    const start = await fake.changesSince(undefined);
+
+    expect(await fake.markAllRead(DEMO_MAILBOX.work)).toEqual(work);
+    expect(await unreadIn(fake, DEMO_MAILBOX.work)).toEqual([]);
+    expect(await unreadIn(fake, DEMO_MAILBOX.inbox)).toEqual(elsewhere);
+    const { changes } = await fake.changesSince(start.token);
+    expect(
+      changes.map((c) => (c.kind === "removed" ? c.id : c.message.id)),
+    ).toEqual(expect.arrayContaining(work));
+    expect(changes).toHaveLength(work.length);
+  });
+
+  it("leaves Spam and Trash alone when marking All Mail", async () => {
+    const fake = provider();
+    const all = await unreadIn(fake, DEMO_MAILBOX.all);
+    const spam = await unreadIn(fake, DEMO_MAILBOX.spam);
+    const trash = await unreadIn(fake, DEMO_MAILBOX.trash);
+    expect(spam.length).toBeGreaterThan(0);
+    expect(await fake.markAllRead(DEMO_MAILBOX.all)).toEqual(all);
+    expect(await unreadIn(fake, DEMO_MAILBOX.all)).toEqual([]);
+    expect(await unreadIn(fake, DEMO_MAILBOX.spam)).toEqual(spam);
+    expect(await unreadIn(fake, DEMO_MAILBOX.trash)).toEqual(trash);
+  });
+
+  it("marks a folder or the Flagged view in folder mode", async () => {
+    const fake = new FakeMailProvider(
+      createFolderData(Date.parse("2026-10-18T12:00:00Z")),
+    );
+    const quarterly = asMessageId("quarterly");
+    const kickoff = asMessageId("kickoff");
+    const lunch = asMessageId("lunch");
+    await fake.setFlags([quarterly, kickoff], { seen: false });
+    expect(await fake.markAllRead(FOLDER.inbox)).toEqual([
+      quarterly,
+      asMessageId("plan-3"),
+    ]);
+    expect(await unreadIn(fake, FOLDER.projects)).toEqual([kickoff]);
+
+    await fake.setFlags([kickoff, lunch], { seen: false, flagged: true });
+    await fake.trash([lunch]);
+    expect(await fake.markAllRead(FOLDER.flagged)).toEqual([kickoff]);
+    expect(await unreadIn(fake, FOLDER.trash)).toEqual([lunch]);
+  });
+
+  it("changes nothing when writes fail", async () => {
+    const fake = provider();
+    const before = await unreadIn(fake, DEMO_MAILBOX.inbox);
+    fake.failWrites = true;
+    await expect(fake.markAllRead(DEMO_MAILBOX.inbox)).rejects.toMatchObject({
+      code: "provider",
+    });
+    expect(await unreadIn(fake, DEMO_MAILBOX.inbox)).toEqual(before);
   });
 });

@@ -17,7 +17,8 @@ import {
   type AccountId,
 } from "../../core/ids";
 import type { Mailbox, MailboxRole } from "../../core/model";
-import { isOwnMailbox } from "../../data/mailboxActions";
+import type { ProviderCapabilities } from "../../core/provider";
+import { usePlatform } from "../../platform/context";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
 import { findFolded } from "../../lib/text";
@@ -30,6 +31,7 @@ import {
   useOpenAllInboxes,
 } from "./allInboxes";
 import { Icon, type IconName } from "../common/Icon";
+import { wantsAppMenu } from "../common/menuPosition";
 import { useLongPress } from "../messages/useLongPress";
 import {
   badgeCount,
@@ -39,6 +41,7 @@ import {
   type MailboxNode,
 } from "./buildTree";
 import { FOLDER_FILTER_ID } from "./FolderFilter";
+import { hasMailboxMenu } from "./mailboxMenuItems";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
 
@@ -107,15 +110,16 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const a = useT().accounts;
 
   /**
-   * Opens the label menu of `item`: at a pointer position, below an anchor
-   * element, or below the item itself. False if the item has no menu.
+   * Opens the context menu of a mailbox `item`: at a pointer position,
+   * below an anchor element, or below the item itself. False if the item
+   * has no menu (account headers, All inboxes, Sent in the desktop app).
    */
   const openMenu = (
     item: HTMLElement,
     at?: { x: number; y: number } | Element,
   ) => {
-    const { accountId, mailboxId, editable } = item.dataset;
-    if (editable !== "true" || !accountId || !mailboxId) return false;
+    const { accountId, mailboxId, menu } = item.dataset;
+    if (!accountId || !mailboxId || menu !== "true") return false;
     let position;
     if (at && "x" in at && !(at instanceof Element))
       position = { x: at.x, y: at.y, flipY: at.y };
@@ -127,14 +131,15 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
         flipY: rect.top,
       };
     }
-    store.getState().setLabelMenu({
+    store.getState().setContextMenu({
+      kind: "mailbox",
       accountId: asAccountId(accountId),
       mailboxId: asMailboxId(mailboxId),
-      ...position,
+      at: position,
     });
     return true;
   };
-  // A long press opens the menu; without one (system mailboxes) it's a tap.
+  // A long press opens the menu (a mailbox's); elsewhere it's a tap.
   const pressOpenedMenu = useRef(false);
   const longPress = useLongPress((target) => {
     const item = (target as HTMLElement).closest<HTMLElement>(
@@ -338,6 +343,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   };
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    if (!wantsAppMenu(event)) return;
     const item = (event.target as HTMLElement).closest<HTMLElement>(
       '[role="treeitem"]',
     );
@@ -434,7 +440,7 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
         node={node}
         depth={2}
         parentKey={key}
-        manageable={handle.provider.capabilities.manageMailboxes}
+        capabilities={handle.provider.capabilities}
       />
     ));
 
@@ -524,8 +530,7 @@ interface MailboxBranchProps {
   readonly node: MailboxNode;
   readonly depth: number;
   readonly parentKey: string;
-  /** The account's own mailboxes can be changed (they get a menu). */
-  readonly manageable: boolean;
+  readonly capabilities: ProviderCapabilities;
 }
 
 function MailboxBranch({
@@ -533,7 +538,7 @@ function MailboxBranch({
   node,
   depth,
   parentKey,
-  manageable,
+  capabilities,
 }: MailboxBranchProps) {
   const { mailbox, children } = node;
   const route = useRoute();
@@ -551,7 +556,8 @@ function MailboxBranch({
   const badge = badgeCount(mailbox);
   const drop = useContext(DropContext);
   const dropHere = drop?.key === key;
-  const editable = manageable && isOwnMailbox(mailbox);
+  const web = usePlatform().kind === "web";
+  const menu = hasMailboxMenu(mailbox, capabilities, web);
   const a = useT().accounts;
 
   return (
@@ -572,9 +578,9 @@ function MailboxBranch({
         data-role={mailbox.role}
         data-kind={mailbox.kind}
         data-match={node.match}
-        data-editable={editable || undefined}
-        aria-haspopup={editable ? "menu" : undefined}
-        aria-keyshortcuts={editable ? "Shift+F10" : undefined}
+        data-menu={String(menu)}
+        aria-haspopup={menu ? "menu" : undefined}
+        aria-keyshortcuts={menu ? "Shift+F10" : undefined}
         className={`${rowClass(selected)} ${dropHere ? (drop.otherAccount ? "ring-2 ring-zinc-400" : "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20") : ""}`}
         style={{ paddingLeft: `${(depth - 1) * 0.875 + 0.5}rem` }}
       >
@@ -617,7 +623,7 @@ function MailboxBranch({
             </span>
           </span>
         )}
-        {editable && selected && (
+        {selected && menu && (
           // Mouse and touch only (keyboards have Shift+F10), so it stays
           // out of the tab order and out of the item's accessible name.
           <button
@@ -643,7 +649,7 @@ function MailboxBranch({
             node={child}
             depth={depth + 1}
             parentKey={key}
-            manageable={manageable}
+            capabilities={capabilities}
           />
         ))}
     </>

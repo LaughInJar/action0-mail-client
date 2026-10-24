@@ -39,6 +39,7 @@ import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { useMarkReadOnView } from "./useMarkReadOnView";
 import { useUnsubscribe } from "./useUnsubscribe";
+import { useMessageMenu } from "./useMessageMenu";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
 
@@ -207,27 +208,36 @@ function MessageView({
     !!message && !!drafts && message.mailboxIds.includes(drafts.id);
   const unsubscribe = useUnsubscribe();
   const unsubscribed = useUi((state) => state.unsubscribed.has(messageId));
+  const handlers = useMessageMenu(accountId);
+  // The header has no click of its own: the long press needs no swallowing.
+  const menuOf = (id: MessageId) => {
+    const { consumeClick: _consume, onKeyDown: _keys, ...rest } = handlers(id);
+    return rest;
+  };
 
   let content;
   if (message) {
     content = (
       <article aria-labelledby={subjectId}>
         {inAccount && <AccountLine accountId={accountId} />}
-        <MessageHeader
-          message={message}
-          mailboxes={mailboxes}
-          subjectId={subjectId}
-          {...(message.unsubscribe
-            ? {
-                unsubscribe: {
-                  done: unsubscribed,
-                  onClick: () => {
-                    unsubscribe.request(accountId, message);
+        {/* Right-click or a long press: what can be done with it. */}
+        <div {...menuOf(message.id)}>
+          <MessageHeader
+            message={message}
+            mailboxes={mailboxes}
+            subjectId={subjectId}
+            {...(message.unsubscribe
+              ? {
+                  unsubscribe: {
+                    done: unsubscribed,
+                    onClick: () => {
+                      unsubscribe.request(accountId, message);
+                    },
                   },
-                },
-              }
-            : {})}
-        />
+                }
+              : {})}
+          />
+        </div>
         <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />

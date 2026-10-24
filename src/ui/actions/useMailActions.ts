@@ -42,6 +42,11 @@ import { routeOfRow, useCurrentList } from "../messages/useCurrentList";
 import { useT } from "../../i18n/context";
 import { mailboxName, usesFolders } from "../common/mailboxNames";
 
+/** `exact`: the keys are messages, not rows (never whole conversations). */
+export interface ExactOption {
+  readonly exact?: boolean;
+}
+
 /** Options of {@link MailActions.setSeen}. */
 export interface SetSeenOptions {
   /** Explicit targets; defaults to the selection or the focused message. */
@@ -68,7 +73,10 @@ export interface MailActions {
   /** The selection (in list order), or else the focused message. */
   readonly targets: () => MessageKey[];
   /** Archives `keys`, or the targets. */
-  readonly archive: (keys?: readonly MessageKey[]) => void;
+  readonly archive: (
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
   readonly setSeen: (seen: boolean, options?: SetSeenOptions) => void;
   /**
    * Stars all of them, unless all are starred already: then unstars all.
@@ -80,16 +88,22 @@ export interface MailActions {
     options?: { readonly exact?: boolean },
   ) => void;
   /** Moves out of the listed mailbox into `to` (a mailbox of their account). */
-  readonly moveTo: (to: MailboxId, keys?: readonly MessageKey[]) => void;
+  readonly moveTo: (
+    to: MailboxId,
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
   readonly setLabels: (
     add: readonly MailboxId[],
     remove: readonly MailboxId[],
     keys?: readonly MessageKey[],
+    options?: ExactOption,
   ) => void;
   /** Opens the move or label picker for `keys`, or the targets. */
   readonly openPicker: (
     mode: PickerState["mode"],
     keys?: readonly MessageKey[],
+    options?: ExactOption,
   ) => void;
   readonly canTrash: boolean;
   readonly canSpam: boolean;
@@ -97,9 +111,9 @@ export interface MailActions {
   /** Role of the mailbox being shown ("trash" and "junk" change what actions do). */
   readonly view: Mailbox["role"];
   /** Move to Trash; inside Trash: restore. */
-  readonly trash: (keys?: readonly MessageKey[]) => void;
+  readonly trash: (keys?: readonly MessageKey[], options?: ExactOption) => void;
   /** Report spam; inside Spam: not spam (back to the Inbox). */
-  readonly spam: (keys?: readonly MessageKey[]) => void;
+  readonly spam: (keys?: readonly MessageKey[], options?: ExactOption) => void;
   /** Asks for confirmation, then deletes permanently (only inside Trash or Spam). */
   readonly requestDeleteForever: (keys?: readonly MessageKey[]) => void;
   /** Asks for confirmation, then empties the Trash or Spam being shown. */
@@ -111,12 +125,20 @@ export interface MailActions {
 }
 
 interface PerformOptions {
-  /** Toast text for the done action; omit for silent actions. */
-  readonly done?: (count: number) => string;
+  /**
+   * Toast text for the done action, given what changed ("3 messages",
+   * "1 conversation"); omit for silent actions.
+   */
+  readonly done?: (what: string) => string;
   /** Prefix of the error toast. */
   readonly failure: string;
   /** Toast when nothing would change; omit to stay quiet. */
   readonly nothing?: string;
+  /**
+   * Count messages, also in conversation view (they were meant one by
+   * one); by default whatever `exact` says.
+   */
+  readonly messages?: boolean;
 }
 
 /** The targets of one account, in list order. */
@@ -359,16 +381,18 @@ export function useMailActions(): MailActions {
             : [];
         },
       );
+      // Conversations are counted as such, unless single messages were meant.
+      const singles = options.messages ?? exact;
       const touched = planned.reduce(
         (sum, { group, changes }) =>
           sum +
-          (group.source.conversations
+          (group.source.conversations && !singles
             ? new Set(changes.map((change) => threadIdOf(change.before))).size
             : changes.length),
         0,
       );
       showToast({
-        message: options.done(touched),
+        message: options.done((singles ? t.common.messages : count)(touched)),
         tone: "info",
         ...(steps.length > 0 ? { undo: steps } : {}),
       });
@@ -445,9 +469,11 @@ export function useMailActions(): MailActions {
           return { kind: "set-flags", ids, flags: { flagged } };
         },
         {
-          done: (n) => a.starred(count(n), flagged),
+          done: (what) => a.starred(what, flagged),
           failure: a.couldntStar(flagged),
+          messages: exact,
         },
+        // The ids are chosen above (a conversation's newest message).
         true,
       );
     };
@@ -464,7 +490,7 @@ export function useMailActions(): MailActions {
       ),
       targets,
 
-      archive: (explicit) => {
+      archive: (explicit, { exact = false } = {}) => {
         perform(
           keysOf(explicit),
           (group) =>
@@ -472,10 +498,11 @@ export function useMailActions(): MailActions {
               ? { kind: "archive", ids: group.ids }
               : undefined,
           {
-            done: (n) => a.archived(count(n)),
+            done: (what) => a.archived(what),
             failure: a.couldntArchive,
             nothing: a.notInInbox,
           },
+          exact,
         );
       },
 
@@ -490,9 +517,7 @@ export function useMailActions(): MailActions {
               ? { kind: "set-flags", ids: group.ids, flags: { seen } }
               : undefined,
           {
-            ...(silent
-              ? {}
-              : { done: (n: number) => a.marked(count(n), seen) }),
+            ...(silent ? {} : { done: (what: string) => a.marked(what, seen) }),
             failure: a.couldntMark(seen),
           },
           exact,
@@ -501,7 +526,7 @@ export function useMailActions(): MailActions {
 
       toggleStar,
 
-      moveTo: (to, explicit) => {
+      moveTo: (to, explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         const group = oneAccount(keys);
         if (!group) return;
@@ -510,17 +535,24 @@ export function useMailActions(): MailActions {
         const role = mailboxOf(accountId, to)?.role;
         // Trash and Spam have their own semantics (and Gmail its own calls).
         if (role === "trash" && capabilities?.trash) {
-          perform(keys, ({ ids }) => ({ kind: "trash", ids }), {
-            done: (n) => a.movedToTrash(count(n)),
-            failure: a.couldntTrash,
-          });
+          perform(
+            keys,
+            ({ ids }) => ({ kind: "trash", ids }),
+            { done: (what) => a.movedToTrash(what), failure: a.couldntTrash },
+            exact,
+          );
           return;
         }
         if (role === "junk" && capabilities?.spam) {
-          perform(keys, ({ ids }) => ({ kind: "report-spam", ids }), {
-            done: (n) => a.reportedSpam(count(n)),
-            failure: a.couldntReportSpam,
-          });
+          perform(
+            keys,
+            ({ ids }) => ({ kind: "report-spam", ids }),
+            {
+              done: (what) => a.reportedSpam(what),
+              failure: a.couldntReportSpam,
+            },
+            exact,
+          );
           return;
         }
         if (!capabilities?.move || !route) return;
@@ -529,14 +561,19 @@ export function useMailActions(): MailActions {
           group.source.scope?.id ??
           (accountId === route.accountId ? route.mailboxId : undefined);
         if (from === undefined) return;
-        perform(keys, ({ ids }) => ({ kind: "move", ids, from, to }), {
-          done: (n) => a.moved(count(n), name),
-          failure: a.couldntMove,
-          nothing: a.alreadyIn(name),
-        });
+        perform(
+          keys,
+          ({ ids }) => ({ kind: "move", ids, from, to }),
+          {
+            done: (what) => a.moved(what, name),
+            failure: a.couldntMove,
+            nothing: a.alreadyIn(name),
+          },
+          exact,
+        );
       },
 
-      setLabels: (add, remove, explicit) => {
+      setLabels: (add, remove, explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         const group = oneAccount(keys);
         if (!group || !capabilitiesOf(group.accountId)?.labels) return;
@@ -546,31 +583,36 @@ export function useMailActions(): MailActions {
         // Outlook's labels are its categories.
         const categories =
           capabilitiesOf(accountId)?.mailboxKinds.includes("folder") === true;
-        perform(keys, ({ ids }) => ({ kind: "set-labels", ids, add, remove }), {
-          done: (n) => {
-            if (add.length === 1 && remove.length === 0 && onlyAdded) {
-              const name = nameOf(accountId, onlyAdded);
+        perform(
+          keys,
+          ({ ids }) => ({ kind: "set-labels", ids, add, remove }),
+          {
+            done: (what) => {
+              if (add.length === 1 && remove.length === 0 && onlyAdded) {
+                const name = nameOf(accountId, onlyAdded);
+                return categories
+                  ? a.categoryAdded(name, what)
+                  : a.labelAdded(name, what);
+              }
+              if (remove.length === 1 && add.length === 0 && onlyRemoved) {
+                const name = nameOf(accountId, onlyRemoved);
+                return categories
+                  ? a.categoryRemoved(name, what)
+                  : a.labelRemoved(name, what);
+              }
               return categories
-                ? a.categoryAdded(name, count(n))
-                : a.labelAdded(name, count(n));
-            }
-            if (remove.length === 1 && add.length === 0 && onlyRemoved) {
-              const name = nameOf(accountId, onlyRemoved);
-              return categories
-                ? a.categoryRemoved(name, count(n))
-                : a.labelRemoved(name, count(n));
-            }
-            return categories
-              ? a.categoriesChanged(count(n))
-              : a.labelsChanged(count(n));
+                ? a.categoriesChanged(what)
+                : a.labelsChanged(what);
+            },
+            failure: categories
+              ? a.couldntChangeCategories
+              : a.couldntChangeLabels,
           },
-          failure: categories
-            ? a.couldntChangeCategories
-            : a.couldntChangeLabels,
-        });
+          exact,
+        );
       },
 
-      openPicker: (mode, explicit) => {
+      openPicker: (mode, explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         if (keys.length === 0) return;
         const group = oneAccount(keys);
@@ -579,7 +621,8 @@ export function useMailActions(): MailActions {
           mode,
           accountId: group.accountId,
           ids: group.ids,
-          conversations: group.source.conversations,
+          conversations: group.source.conversations && !exact,
+          ...(exact ? { exact: true } : {}),
         });
       },
 
@@ -588,7 +631,7 @@ export function useMailActions(): MailActions {
       canDeleteForever: anyCan((c) => c.deleteForever),
       view,
 
-      trash: (explicit) => {
+      trash: (explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         const groups = groupsOf(keys);
         const restoring = groups.length > 0 && groups.every(trashIn);
@@ -599,15 +642,16 @@ export function useMailActions(): MailActions {
               ? { kind: trashIn(group) ? "untrash" : "trash", ids: group.ids }
               : undefined,
           restoring
-            ? { done: (n) => a.restored(count(n)), failure: a.couldntRestore }
+            ? { done: (what) => a.restored(what), failure: a.couldntRestore }
             : {
-                done: (n) => a.movedToTrash(count(n)),
+                done: (what) => a.movedToTrash(what),
                 failure: a.couldntTrash,
               },
+          exact,
         );
       },
 
-      spam: (explicit) => {
+      spam: (explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         const groups = groupsOf(keys);
         const unspamming = groups.length > 0 && groups.every(spamIn);
@@ -622,13 +666,14 @@ export function useMailActions(): MailActions {
               : undefined,
           unspamming
             ? {
-                done: (n) => a.notSpamMoved(count(n)),
+                done: (what) => a.notSpamMoved(what),
                 failure: a.couldntNotSpam,
               }
             : {
-                done: (n) => a.reportedSpam(count(n)),
+                done: (what) => a.reportedSpam(what),
                 failure: a.couldntReportSpam,
               },
+          exact,
         );
       },
 
@@ -677,7 +722,7 @@ export function useMailActions(): MailActions {
             action.ids.map((id) => messageKey(action.accountId, id)),
             ({ ids }) => ({ kind: "delete-forever", ids }),
             {
-              done: (n) => a.deletedForever(count(n)),
+              done: (what) => a.deletedForever(what),
               failure: a.couldntDelete,
             },
           );

@@ -240,7 +240,7 @@ describe("phone layout", () => {
     ).toBeInTheDocument();
   });
 
-  it("starts selection mode with a long press, then taps toggle", async () => {
+  it("starts selection mode from a long press's menu, then taps toggle", async () => {
     renderApp({ viewport: "narrow" });
     const first = await option(/Welcome to the demo/);
     const second = await option(/New logo draft/);
@@ -252,8 +252,18 @@ describe("phone layout", () => {
     });
     await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
     fireEvent.pointerUp(first, { pointerType: "touch" });
+    // The lifting finger's click neither opens the mail nor chooses.
     fireEvent.click(first);
+    const menu = await screen.findByRole("menu", {
+      name: "Welcome to the demo",
+    });
+    const select = within(menu).getByRole("menuitem", { name: "Select" });
+    fireEvent.click(select, { detail: 1 });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.pointerDown(select, { pointerType: "touch" });
+    fireEvent.click(select, { detail: 1 });
     expect(await screen.findByText("1 selected")).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
     fireEvent.pointerDown(second, { pointerType: "touch" });
     fireEvent.pointerUp(second, { pointerType: "touch" });

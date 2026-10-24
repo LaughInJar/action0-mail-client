@@ -14,6 +14,7 @@ import {
   resizedInGrid,
   type EventTimes,
 } from "./moves";
+import { useOpenEventMenu } from "./useEventMenu";
 import { useGridGestures } from "./useGridGestures";
 import { useNow } from "./useNow";
 
@@ -112,11 +113,13 @@ export function WeekView({
   };
 
   const eventOf = (key: string) => findEvent(events, key);
+  const onMenu = useOpenEventMenu();
 
   const grid = useGridGestures({
     scroller: scrollRef,
     eventOf,
     canDrag,
+    onMenu,
     slotAt: (x, y) => {
       const view = scrollRef.current?.getBoundingClientRect();
       const rect = gridRef.current?.getBoundingClientRect();
@@ -143,6 +146,7 @@ export function WeekView({
   const barGestures = useGridGestures({
     eventOf,
     canDrag,
+    onMenu,
     slotAt: (x, y) => {
       const rect = barRowRef.current?.getBoundingClientRect();
       const day = dayAt(x);

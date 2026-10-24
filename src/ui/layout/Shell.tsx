@@ -37,7 +37,7 @@ import { ConfirmHost } from "../common/ConfirmDialog";
 import { QuestionHost } from "../common/QuestionDialog";
 import { SettingsHost } from "../settings/SettingsHost";
 import { LabelDialogHost } from "../labels/LabelDialog";
-import { LabelMenuHost } from "../labels/LabelMenu";
+import { ContextMenuHost } from "../common/ContextMenuHost";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
@@ -183,7 +183,7 @@ function MailApp() {
       )}
       <ShortcutHelp />
       <MailboxPickerHost />
-      <LabelMenuHost />
+      <ContextMenuHost />
       <ManageLabelsHost />
       <LabelDialogHost />
       <SettingsHost />

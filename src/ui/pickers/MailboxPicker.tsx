@@ -81,6 +81,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   };
   // The rows, as the actions take them.
   const keys = picker.ids.map((id) => messageKey(picker.accountId, id));
+  const exact = { exact: picker.exact === true };
   // On touch devices, focusing the filter would cover the sheet with the keyboard.
   const coarse = useCoarsePointer();
 
@@ -181,7 +182,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
       if (!on && before !== "off") remove.push(id);
     }
     if (add.length > 0 || remove.length > 0)
-      actions.setLabels(add, remove, keys);
+      actions.setLabels(add, remove, keys, exact);
     close();
   };
 
@@ -199,7 +200,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
             setFilter(typed.join(" / "));
             setActive(0);
           } else {
-            actions.moveTo(mailbox.id, keys);
+            actions.moveTo(mailbox.id, keys, exact);
             close();
           }
         },
@@ -215,7 +216,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
       toggle(mailbox.id);
       return;
     }
-    actions.moveTo(mailbox.id, keys);
+    actions.moveTo(mailbox.id, keys, exact);
     close();
   };
 

@@ -5,6 +5,7 @@ import { addDays, dayKey, onDay, sameDay } from "./dates";
 import { EventChip } from "./EventChip";
 import { dayOrder, eventKey, findEvent } from "./format";
 import { movedByDays, type EventTimes } from "./moves";
+import { useOpenEventMenu } from "./useEventMenu";
 import { useGridGestures } from "./useGridGestures";
 import { useNow } from "./useNow";
 import type { Ghost } from "./WeekView";
@@ -49,9 +50,11 @@ export function MonthView({
   const dayNumber = new Intl.DateTimeFormat(t.locale, { day: "numeric" });
   const label = new Intl.DateTimeFormat(t.locale, { dateStyle: "full" });
 
+  const onMenu = useOpenEventMenu();
   const { gesture, onPointerDown } = useGridGestures({
     eventOf: (key) => findEvent(events, key),
     canDrag,
+    onMenu,
     slotAt: (x, y) => {
       const index = cellRefs.current.findIndex((cell) => {
         const rect = cell?.getBoundingClientRect();

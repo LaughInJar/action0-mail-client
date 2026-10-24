@@ -235,6 +235,16 @@ export interface MailProvider {
   ): Promise<MutationResult>;
 
   /**
+   * Marks every unread message of a mailbox read (for views: what the view lists,
+   * e.g. All mail without Trash/Spam). Returns the ids it changed, so the caller
+   * can undo it by marking exactly those unread again.
+   */
+  markAllRead(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<readonly MessageId[]>;
+
+  /**
    * Moves messages out of `from` (the list the user is in) into `to`.
    * Label-based providers add `to` and remove `from` unless it is a view;
    * folder-based providers move the messages.

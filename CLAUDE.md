@@ -22,6 +22,15 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 3. Exchange Online through Microsoft Graph: MSAL.js, SPA auth code flow with PKCE.
 4. IMAP/SMTP (and CalDAV). Browsers can't open raw TCP connections, so these come only to the desktop app, through its native side, with no proxy (see the desktop app decisions). Keep the provider abstraction ready for such an adapter so it can be added without restructuring.
 
+## Backlog
+
+Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
+
+1. Show a mail's headers and source ("Show original").
+2. Android and iOS app.
+3. Spell checker in the composer.
+4. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
+
 ## Architecture rules
 
 - Each concern has a clear boundary: auth, provider/API access, caching, state, UI. They connect only through TypeScript interfaces. Keep it modular.
@@ -222,3 +231,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
 - **Release checks decisions:** before any installer is built, the release workflow checks that the tag equals the version in `package.json`, `src-tauri/Cargo.toml` and `Cargo.lock`, that the tagged commit is on `main`, and runs CI's `check` job (reused, not copied).
 - **Cleanup decisions:** message ids stay stable across moves and label changes; a provider whose native ids change (IMAP UIDs) keeps a stable one itself (RFC 8474 `EMAILID` or its own mapping), so `MutationResult` carries no id map. The unused `editSignatures` capability and the unused `core:window:allow-hide` permission are gone.
 - **Outlook forwards decisions:** forwards are created with Graph's `createForward` (Outlook records them as forwarded, not replied) and reuse the original's attachments Outlook copies into the draft instead of uploading them again; replies keep `createReply`.
+- **Context menu decisions:**
+  - Right-click, long press on touch, or Menu / Shift+F10 opens a context menu (a popup at the pointer; a bottom sheet on phones); Shift+right-click keeps the browser's menu. Entries follow capabilities, changes are undoable, destructive ones ask.
+  - Message and conversation rows: (touch) Select, Open, Open in a new tab (web), Reply, Reply all, Forward, Archive, Delete, Report spam (Trash/Spam: Restore / Not spam, Delete forever), Move to…, Labels/Categories…, Star, Read/unread, Mail from <sender>, Copy sender address, and Show original once that exists. A long press now opens this menu (replacing "long-press starts multi-select"; Select is its first entry). On a selected row the menu acts on the whole selection; on any other row on that row only, leaving the selection.
+  - Tree: Open in a new tab (web), Mark all as read (undoable; new provider `markAllRead`), Empty Trash/Spam, New label/folder inside, and for your own mailboxes the existing entries.
+  - Reader: a message's header or folded line: Reply, Reply all, Forward, Star, Mark unread, Archive, Delete, Move, Labels, Copy sender address, Mail from <sender> (the mail body keeps the browser's menu).
+  - Calendar events: Open, Edit, Delete, Join meeting, Copy link, Accept / Maybe / Decline for invitations (verbs, since the menu has no "Going?" heading; the current answer is checked); a long press that doesn't move opens the menu, one that moves drags.

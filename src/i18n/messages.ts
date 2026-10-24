@@ -9,6 +9,7 @@ import { categories, folders, labels } from "./texts/labels";
 import { layout } from "./texts/layout";
 import { list } from "./texts/list";
 import { mailboxes } from "./texts/mailboxes";
+import { menus } from "./texts/menus";
 import { reader } from "./texts/reader";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
@@ -34,6 +35,7 @@ export const messages = {
     layout: layout.en,
     list: list.en,
     mailboxes: mailboxes.en,
+    menus: menus.en,
     reader: reader.en,
     settings: settings.en,
     shortcuts: shortcuts.en,
@@ -53,6 +55,7 @@ export const messages = {
     layout: layout.de,
     list: list.de,
     mailboxes: mailboxes.de,
+    menus: menus.de,
     reader: reader.de,
     settings: settings.de,
     shortcuts: shortcuts.de,

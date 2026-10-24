@@ -99,12 +99,12 @@ function ShortcutDialog() {
             </section>
           ))}
         <p className="text-xs text-zinc-500">
-          {t.shortcuts.treeMenuHint.before}{" "}
+          {t.shortcuts.menuHint.before}{" "}
           <kbd className="font-sans font-semibold">
             {t.shortcuts.keys.shift}
           </kbd>
           +<kbd className="font-sans font-semibold">F10</kbd>{" "}
-          {t.shortcuts.treeMenuHint.after}
+          {t.shortcuts.menuHint.after}
         </p>
       </div>
     </div>

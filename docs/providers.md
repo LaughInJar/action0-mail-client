@@ -23,15 +23,15 @@ How requests flow from a click to a provider is described in [architecture.md](a
 - Results are plain, JSON-serializable data (the cache persists some of them to sessionStorage).
 - Transient failures are retried inside the provider's HTTP client. The query client deliberately doesn't retry (`retry: false` in `src/data/queryClient.ts`), so retries don't multiply against the provider's quota.
 
-| Group              | Methods                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                     |
-| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`                                            |
-| Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox` |
-| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                    |
-| Live updates       | `changesSince`                                                                                                                        |
-| Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                     |
-| Other              | `oneClickUnsubscribe`, `listSenders`, `updateSignature`                                                                               |
+| Group              | Methods                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                                    |
+| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`                                                           |
+| Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox`, `markAllRead` |
+| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                   |
+| Live updates       | `changesSince`                                                                                                                                       |
+| Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                                    |
+| Other              | `oneClickUnsubscribe`, `listSenders`, `updateSignature`                                                                                              |
 
 Lists take a `ListMessagesQuery` and return one `Page`:
 
@@ -238,6 +238,8 @@ All label changes go through `messages.batchModify` in chunks of 1000 ids; messa
 
 `emptyMailbox` accepts only Spam and Trash (`onlyTrashSpam`): it lists every id there and deletes them.
 
+`markAllRead` lists the mailbox's unread messages (its list filter plus `is:unread`) and marks them read in chunks of 1000; it returns their ids, so Undo marks exactly those unread again. The Categories group and other synthetic mailboxes are refused.
+
 ### Drafts and sending
 
 Outgoing mail is a raw MIME message built by `buildMessage` (`src/providers/mime/buildMessage.ts`): 7-bit clean with CRLF line endings, `multipart/alternative` (text and HTML, quoted-printable UTF-8), wrapped in `multipart/related` for inline images and `multipart/mixed` for files; headers use RFC 2047 encoded words and file names RFC 2231. Without a From header Gmail uses the account's default address. Attachments that are parts of other messages are downloaded first (`#bytesOf`).
@@ -324,6 +326,8 @@ Moves go through `POST me/messages/{id}/move` in `$batch` requests; with immutab
 | `delete-forever`                   | `DELETE me/messages/{id}`, batched; like Outlook's Shift+Delete, Outlook can still recover them for a while                                           |
 
 `emptyMailbox` accepts only Deleted Items and Junk Email and deletes their messages 200 at a time.
+
+`markAllRead` lists the unread messages (`isRead eq false`) of the folder, or of a view by its filter (Flagged, a category), then sets `isRead` on them like `setFlags`, and returns their ids for Undo. The Categories group itself is refused.
 
 ### Folder and category management
 

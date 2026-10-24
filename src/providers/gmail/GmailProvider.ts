@@ -1010,6 +1010,25 @@ export class GmailProvider implements MailProvider {
   }
 
   /**
+   * Lists the ids of the mailbox's unread messages, every page, with the
+   * filter of its listing (so All Mail and Starred leave out Spam and Trash),
+   * then removes `UNREAD` from them in `batchModify` chunks.
+   */
+  async markAllRead(
+    mailboxId: MailboxId,
+    signal?: AbortSignal,
+  ): Promise<readonly MessageId[]> {
+    const invalid =
+      mailboxId === ALL_MAIL_ID ? undefined : inventedIdError([mailboxId]);
+    if (invalid) throw invalid;
+    const ids = (
+      await this.#listAllIds(listFilter(mailboxId, "is:unread"), signal)
+    ).map(asMessageId);
+    await this.setFlags(ids, { seen: true }, signal);
+    return ids;
+  }
+
+  /**
    * Gmail moves by relabelling: add `to`, remove `from` unless `from` is a
    * view (All Mail, Starred), so moving out of a view never unstars.
    */

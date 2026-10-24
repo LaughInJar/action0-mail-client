@@ -14,7 +14,10 @@ export interface LongPressOptions {
  * click handler to swallow the click that ends a long press.
  */
 export function useLongPress(
-  onLongPress: (target: EventTarget) => void,
+  onLongPress: (
+    target: EventTarget,
+    at: { readonly clientX: number; readonly clientY: number },
+  ) => void,
   { delayMs = 500, tolerancePx = 10 }: LongPressOptions = {},
 ) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -34,10 +37,11 @@ export function useLongPress(
       cancel();
       start.current = { x: event.clientX, y: event.clientY };
       const target = event.target;
+      const at = { clientX: event.clientX, clientY: event.clientY };
       timer.current = setTimeout(() => {
         fired.current = true;
         timer.current = undefined;
-        onLongPress(target);
+        onLongPress(target, at);
       }, delayMs);
     },
     onPointerMove: (event: PointerEvent) => {

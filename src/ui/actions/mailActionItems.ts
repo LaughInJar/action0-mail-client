@@ -35,6 +35,10 @@ export interface MailActionTarget {
   readonly accountId?: AccountId;
   /** Whether Archive applies (the message is in the Inbox). */
   readonly archivable?: boolean;
+  /** Explicit rows to act on (a context menu); else `message`, else the targets. */
+  readonly keys?: readonly MessageKey[];
+  /** The keys are messages, not rows (one message of a conversation). */
+  readonly exact?: boolean;
 }
 
 /**
@@ -44,13 +48,21 @@ export interface MailActionTarget {
  */
 export function mailActionItems(
   actions: MailActions,
-  { message, accountId, archivable = true }: MailActionTarget,
+  {
+    message,
+    accountId,
+    archivable = true,
+    keys,
+    exact = false,
+  }: MailActionTarget,
   a: I18n["actions"],
 ): ToolbarItem[] {
   const ids: readonly MessageKey[] | undefined =
-    message && accountId !== undefined
+    keys ??
+    (message && accountId !== undefined
       ? [messageKey(accountId, message.id)]
-      : undefined;
+      : undefined);
+  const options = { exact };
   const quarantined = actions.view === "trash" || actions.view === "junk";
   const item = (fields: Omit<ToolbarItem, "group">): ToolbarItem => ({
     ...fields,
@@ -67,7 +79,10 @@ export function mailActionItems(
             icon: message.flags.seen ? "mail" : "mail-open",
             keep: 8,
             run: () => {
-              actions.setSeen(!message.flags.seen, ids ? { keys: ids } : {});
+              actions.setSeen(!message.flags.seen, {
+                ...(ids ? { keys: ids } : {}),
+                exact,
+              });
             },
           }),
         ]
@@ -78,7 +93,7 @@ export function mailActionItems(
             icon: "mail-open",
             keep: 8,
             run: () => {
-              actions.setSeen(true);
+              actions.setSeen(true, { ...(ids ? { keys: ids } : {}), exact });
             },
           }),
           item({
@@ -87,7 +102,7 @@ export function mailActionItems(
             icon: "mail",
             keep: 8,
             run: () => {
-              actions.setSeen(false);
+              actions.setSeen(false, { ...(ids ? { keys: ids } : {}), exact });
             },
           }),
         ];
@@ -101,7 +116,7 @@ export function mailActionItems(
               label: a.restoreButton,
               icon: "inbox",
               run: () => {
-                actions.trash(ids);
+                actions.trash(ids, options);
               },
             }),
           ]
@@ -113,7 +128,7 @@ export function mailActionItems(
               label: a.notSpamButton,
               icon: "inbox",
               run: () => {
-                actions.spam(ids);
+                actions.spam(ids, options);
               },
             }),
           ]
@@ -143,7 +158,7 @@ export function mailActionItems(
             icon: "archive",
             disabled: !archivable,
             run: () => {
-              actions.archive(ids);
+              actions.archive(ids, options);
             },
           }),
         ]
@@ -155,7 +170,7 @@ export function mailActionItems(
             label: a.trashButton,
             icon: "trash",
             run: () => {
-              actions.trash(ids);
+              actions.trash(ids, options);
             },
           }),
         ]
@@ -168,7 +183,7 @@ export function mailActionItems(
             icon: "alert",
             keep: 3,
             run: () => {
-              actions.spam(ids);
+              actions.spam(ids, options);
             },
           }),
         ]
@@ -181,7 +196,7 @@ export function mailActionItems(
             icon: "folder",
             keep: 5,
             run: () => {
-              actions.openPicker("move", ids);
+              actions.openPicker("move", ids, options);
             },
           }),
         ]
@@ -196,7 +211,7 @@ export function mailActionItems(
             icon: "tag",
             keep: 4,
             run: () => {
-              actions.openPicker("labels", ids);
+              actions.openPicker("labels", ids, options);
             },
           }),
         ]
@@ -214,7 +229,7 @@ export function mailActionItems(
             ...(message ? { pressed: message.flags.flagged } : {}),
             keep: 7,
             run: () => {
-              actions.toggleStar(ids);
+              actions.toggleStar(ids, options);
             },
           }),
         ]

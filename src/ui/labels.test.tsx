@@ -97,6 +97,8 @@ describe("the label menu", () => {
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
     ).toEqual([
+      "Open in a new tab",
+      "Mark all as read",
       "Rename…",
       "Colour…",
       "Move under…",
@@ -115,11 +117,15 @@ describe("the label menu", () => {
     await user.keyboard("{Shift>}{F10}{/Shift}");
     const workMenu = await menu("Work");
     expect(
-      within(workMenu).getByRole("menuitem", { name: "Rename…" }),
+      within(workMenu).getByRole("menuitem", { name: "Open in a new tab" }),
+    ).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(
+      within(workMenu).getByRole("menuitem", { name: "Delete…" }),
     ).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     expect(
-      within(workMenu).getByRole("menuitem", { name: "Colour…" }),
+      within(workMenu).getByRole("menuitem", { name: "Open in a new tab" }),
     ).toHaveFocus();
   });
 
@@ -147,11 +153,12 @@ describe("the label menu", () => {
     expect(window.location.hash).toBe(hash);
   });
 
-  it("lets a long press on a system mailbox open it", async () => {
+  it("opens a system mailbox's menu with a long press", async () => {
     const { user } = renderApp({ viewport: "narrow" });
     await screen.findByRole("option", { name: /Welcome to the demo/ });
     await user.click(screen.getByRole("button", { name: "Show folders" }));
     const sent = await treeItem("Sent");
+    const hash = window.location.hash;
     fireEvent.pointerDown(sent, {
       pointerType: "touch",
       clientX: 4,
@@ -160,22 +167,41 @@ describe("the label menu", () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
     fireEvent.pointerUp(sent, { pointerType: "touch" });
     fireEvent.click(sent, { detail: 1 });
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(/\/sent$/);
-    });
+    const opened = await menu("Sent");
+    expect(
+      within(opened)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Open in a new tab"]);
+    expect(window.location.hash).toBe(hash);
   });
 
-  it("has nothing for system mailboxes", async () => {
+  it("offers system mailboxes what fits them", async () => {
     const { user } = renderApp();
     await subject("Welcome to the demo");
+    const entries = async (name: string) =>
+      within(await menu(name))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent);
+
     await rightClick(user, "Inbox");
+    expect(await entries("Inbox")).toEqual([
+      "Open in a new tab",
+      "Mark all as read",
+    ]);
+    await user.keyboard("{Escape}");
+
     (await treeItem("Sent")).focus();
     await user.keyboard("{Shift>}{F10}{/Shift}");
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(
-      (await treeItem("Inbox")).querySelector("[data-label-menu]"),
-    ).toBeNull();
+    expect(await entries("Sent")).toEqual(["Open in a new tab"]);
+    await user.keyboard("{Escape}");
+
+    await rightClick(user, "Trash");
+    expect(await entries("Trash")).toEqual([
+      "Open in a new tab",
+      "Mark all as read",
+      "Empty Trash",
+    ]);
   });
 });
 

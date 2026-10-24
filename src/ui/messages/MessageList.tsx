@@ -14,6 +14,13 @@ import type { ListRow } from "../../data/listRows";
 import { useSendersOf } from "../../data/senders";
 import type { ListSource } from "../../data/unified";
 import { useUi, useUiStore } from "../../state/context";
+import type { MenuPosition } from "../../state/uiStore";
+import {
+  atPointer,
+  belowElement,
+  isMenuKey,
+  wantsAppMenu,
+} from "../common/menuPosition";
 import { useAccountColors } from "../accounts/accountColors";
 import { useCoarsePointer } from "../layout/useBreakpoint";
 import { MessageRow } from "./MessageRow";
@@ -203,9 +210,19 @@ export function MessageList({
     return row?.dataset.rowKey as MessageKey | undefined;
   };
 
-  const longPress = useLongPress((target) => {
+  /** The menu of a row: the selection if the row is part of it, else the row. */
+  const openMenu = (key: MessageKey, at: MenuPosition) => {
+    const { selectedIds: selection, setContextMenu } = store.getState();
+    const keys = selection.has(key)
+      ? ids.filter((candidate) => selection.has(candidate))
+      : [key];
+    setContextMenu({ kind: "rows", keys, at });
+  };
+
+  // A long press opens the menu (its first entry starts selecting).
+  const longPress = useLongPress((target, at) => {
     const id = idFromTarget(target);
-    if (id !== undefined) store.getState().toggle(id);
+    if (id !== undefined) openMenu(id, atPointer(at));
   });
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -308,8 +325,14 @@ export function MessageList({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(event) => {
-          // Enter opens like a click; all other keys go to the global keymap.
           const focused = store.getState().focusedId;
+          if (isMenuKey(event) && focused !== null) {
+            event.preventDefault();
+            const row = listRef.current && rowOf(listRef.current, focused);
+            if (row) openMenu(focused, belowElement(row));
+            return;
+          }
+          // Enter opens like a click; all other keys go to the global keymap.
           if (event.key === "Enter" && enterOpens && focused !== null) {
             event.preventDefault();
             onOpen(focused);
@@ -322,7 +345,20 @@ export function MessageList({
         onPointerMove={longPress.onPointerMove}
         onPointerUp={longPress.onPointerUp}
         onPointerCancel={longPress.onPointerCancel}
-        onContextMenu={longPress.onContextMenu}
+        onContextMenu={(event) => {
+          const id = idFromTarget(event.target);
+          // Touch: the long press opens the menu. Shift keeps the browser's.
+          if (
+            id === undefined ||
+            pointerType.current !== "mouse" ||
+            !wantsAppMenu(event)
+          ) {
+            longPress.onContextMenu(event);
+            return;
+          }
+          event.preventDefault();
+          openMenu(id, atPointer(event));
+        }}
         onDragStart={onDragStart}
         onDragEnd={() => {
           store.getState().setDragging(null);

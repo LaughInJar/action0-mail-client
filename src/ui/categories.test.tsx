@@ -169,7 +169,7 @@ describe("Outlook categories", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Colour…", "Delete…"]);
+    ).toEqual(["Open in a new tab", "Mark all as read", "Colour…", "Delete…"]);
     expect(menu).toHaveTextContent("Outlook can’t rename categories.");
 
     await user.click(within(menu).getByRole("menuitem", { name: "Colour…" }));
