@@ -1,4 +1,10 @@
 import type { ProviderModule } from "../../accounts/types";
+import type { NativeSignIn } from "../../auth/native/bridge";
+import {
+  connectNative,
+  NativeAuthSession,
+} from "../../auth/native/NativeAuthSession";
+import type { AuthSession, ScopedSession } from "../../auth/types";
 import {
   MicrosoftAuthSession,
   sessionAccountStore,
@@ -24,7 +30,26 @@ export interface MicrosoftModuleOptions {
   readonly sessionStorage: Storage | undefined;
   /** Where settings live (localStorage): the signatures of Microsoft accounts. */
   readonly settings: Storage | undefined;
+  /** Desktop app: sign in natively (system browser) instead of with MSAL. */
+  readonly native?: NativeSignIn;
+  /** Makes the network requests (the desktop app's own); `fetch` if absent. */
+  readonly fetch?: typeof fetch;
 }
+
+/** Everything the desktop app asks for at once. */
+const NATIVE_SCOPES = [
+  ...GRAPH_SCOPES,
+  ...CALENDAR_SCOPES,
+  "openid",
+  "profile",
+];
+
+/** What the calendar needs of a session: calendar tokens and consent. */
+type CalendarSession = AuthSession &
+  ScopedSession & {
+    readonly loginHint: string;
+    tokenFor(scopes: readonly string[]): Promise<string>;
+  };
 
 /** localStorage key of an account's signatures (Graph can't store them). */
 export function signatureKey(accountId: string): string {
@@ -36,10 +61,43 @@ export function createMicrosoftModule({
   clientId,
   sessionStorage,
   settings,
+  native,
+  fetch,
 }: MicrosoftModuleOptions): ProviderModule {
-  const msal = msalLoader(clientId);
+  const net = fetch ? { fetch } : {};
   /** Personal accounts, by account id (their attachment limit is lower). */
   const personal = new Set<string>();
+  const parts = {
+    createCalendar: (_account: Account, auth: AuthSession) => {
+      const session = auth as CalendarSession;
+      return new GraphCalendarProvider(
+        new GraphHttp({
+          auth,
+          token: () => session.tokenFor(CALENDAR_SCOPES),
+          ...net,
+        }),
+        session,
+      );
+    },
+    createProvider: (account: Account, auth: AuthSession) =>
+      new GraphProvider(new GraphHttp({ auth, ...net }), {
+        personal:
+          personal.has(account.id) ||
+          /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email),
+        settings,
+        signatureKey: signatureKey(account.id),
+        ...net,
+      }),
+  };
+  if (native)
+    return {
+      type: "microsoft",
+      label: "Microsoft / Outlook",
+      ...nativeSignIn(native, clientId, personal),
+      ...parts,
+    };
+
+  const msal = msalLoader(clientId);
 
   const sessionFor = (account: Account) =>
     new MicrosoftAuthSession({
@@ -87,25 +145,51 @@ export function createMicrosoftModule({
     },
 
     restore: sessionFor,
+    ...parts,
+  };
+}
 
-    createCalendar: (_account, auth) => {
-      const session = auth as MicrosoftAuthSession;
-      return new GraphCalendarProvider(
-        new GraphHttp({
-          auth,
-          token: () => session.tokenFor(CALENDAR_SCOPES),
-        }),
-        session,
+/** Signing in through the system browser (desktop app). */
+function nativeSignIn(
+  native: NativeSignIn,
+  clientId: string,
+  personal: Set<string>,
+): Pick<ProviderModule, "connect" | "restore"> {
+  const request = {
+    provider: "microsoft",
+    client: { id: clientId },
+    scopes: NATIVE_SCOPES,
+    required: ["Mail.ReadWrite", "Mail.Send"],
+  } as const;
+  const sessionFor = (
+    account: Account,
+    granted = native.accounts.get(account.id)?.scopes ?? [],
+  ) =>
+    new NativeAuthSession({
+      ...request,
+      bridge: native.bridge,
+      key: account.id,
+      loginHint: account.email,
+      granted,
+      providerName: "Microsoft",
+    });
+  for (const known of native.accounts.values())
+    if (known.tenant === PERSONAL_TENANT_ID) personal.add(known.key);
+  return {
+    async connect() {
+      const signedIn = await connectNative(
+        native.bridge,
+        { ...request, prompt: "select_account" },
+        "Microsoft",
       );
+      const account: Account = {
+        id: asAccountId(signedIn.key),
+        type: "microsoft",
+        email: signedIn.email,
+      };
+      if (signedIn.tenant === PERSONAL_TENANT_ID) personal.add(account.id);
+      return { account, auth: sessionFor(account, signedIn.scopes) };
     },
-
-    createProvider: (account, auth) =>
-      new GraphProvider(new GraphHttp({ auth }), {
-        personal:
-          personal.has(account.id) ||
-          /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email),
-        settings,
-        signatureKey: signatureKey(account.id),
-      }),
+    restore: (account) => sessionFor(account),
   };
 }

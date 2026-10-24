@@ -4,7 +4,8 @@ import { useUi } from "../../state/context";
 import type { ThemeMode } from "../../state/theme";
 import { IconButton } from "../common/IconButton";
 import { Sheet } from "../common/Sheet";
-import { notificationsSupported } from "../sync/notifications";
+import { usePlatform } from "../../platform/context";
+import { DesktopSettings } from "./DesktopSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
 import { useT } from "../../i18n/context";
@@ -36,6 +37,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const setTheme = useUi((state) => state.setTheme);
   const t = useT();
   const s = t.settings;
+  const { desktop } = usePlatform();
+  const sections: (readonly [string, string])[] = [
+    ...SECTIONS.map(([id, key]) => [id, s[key]] as const),
+    ...(desktop ? [["settings-app", t.desktop.section] as const] : []),
+  ];
   const set =
     <K extends keyof AppSettings>(key: K) =>
     (value: AppSettings[K]) => {
@@ -55,7 +61,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           aria-label={s.sections}
           className="hidden w-40 shrink-0 space-y-0.5 border-r border-zinc-200 p-2 sm:block dark:border-zinc-800"
         >
-          {SECTIONS.map(([id, title]) => (
+          {sections.map(([id, title]) => (
             <button
               key={id}
               type="button"
@@ -66,7 +72,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               }}
               className="block w-full rounded-md px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              {s[title]}
+              {title}
             </button>
           ))}
         </nav>
@@ -201,6 +207,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               onChange={set("notifications")}
             />
           </SettingsSection>
+          {desktop && <DesktopSettings id="settings-app" desktop={desktop} />}
         </div>
       </div>
     </Sheet>
@@ -291,9 +298,16 @@ function Notifications({
   enabled: boolean;
   onChange: (enabled: boolean) => void;
 }) {
-  const supported = notificationsSupported();
+  const { notifications } = usePlatform();
+  const supported = notifications.supported();
   const [permission, setPermission] = useState<NotificationPermission>(() =>
-    supported ? Notification.permission : "denied",
+    !supported
+      ? "denied"
+      : notifications.allowed()
+        ? "granted"
+        : notifications.mustAsk
+          ? Notification.permission
+          : "default",
   );
   const blocked = supported && permission === "denied";
   const s = useT().settings;
@@ -313,7 +327,7 @@ function Notifications({
             const on = event.target.checked;
             onChange(on);
             if (on && permission === "default")
-              void Notification.requestPermission().then(setPermission);
+              void notifications.request().then(setPermission);
           }}
           className="mt-0.5 size-4 shrink-0 accent-blue-600"
         />

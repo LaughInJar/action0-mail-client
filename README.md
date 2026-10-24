@@ -1,6 +1,6 @@
 # action0 mail
 
-A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly.
+A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly. The same app also comes as a desktop app for Linux, Windows and macOS (see [Desktop app](#desktop-app)).
 
 **Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders instead of labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events.
 
@@ -114,7 +114,7 @@ Things to know:
 
 ## Calendars by address (iCal)
 
-**Add calendar by address…** in the calendar's column subscribes to an `.ics` calendar (`https://` or `webcal://`). The app reads it straight from the browser, which only works when the calendar's server allows that (it has to send `Access-Control-Allow-Origin`). Many don't, including Google's and Outlook's own "secret iCal addresses", iCloud, and Nextcloud by default; the dialog then says so instead of adding it. Reading those, and CalDAV calendars, needs a small proxy, which comes as a later feature (it's also what IMAP will need).
+**Add calendar by address…** in the calendar's column subscribes to an `.ics` calendar (`https://` or `webcal://`). The web app reads it straight from the browser, which only works when the calendar's server allows that (it has to send `Access-Control-Allow-Origin`). Many don't, including Google's and Outlook's own "secret iCal addresses", iCloud, and Nextcloud by default; the dialog then says so instead of adding it. The [desktop app](#desktop-app) reads any of them. CalDAV calendars (and IMAP) will come to the desktop app.
 
 iCal addresses are often secret (whoever has one can read the calendar), so treat them like passwords: they're saved in this browser's settings (localStorage), shown with an **iCal** mark, and **Remove** forgets them. iCal calendars are read-only and refresh every 15 minutes.
 
@@ -126,6 +126,44 @@ iCal addresses are often secret (whoever has one can read the calendar), so trea
 | **AADSTS700016**, _unauthorized_client_, or "not supported for personal accounts" | The client ID is wrong, or **Supported account types** under **Authentication** doesn't include the kind of account you used.                  |
 | **Need admin approval** (AADSTS65001, 90094)                                      | Your organization only allows approved apps. An administrator has to grant consent for the app in Entra (**Enterprise applications**).         |
 | The popup doesn't open                                                            | The browser blocked it. Allow popups for the site and click again.                                                                             |
+
+## Desktop app
+
+The same app, as a desktop app built with [Tauri](https://tauri.app) (`src-tauri/`). It does everything the web app does, plus:
+
+- Sign-in through your default browser, and it **stays signed in** across restarts (no hourly "Reconnect" for Google). Refresh tokens are kept only by the app's native side: encrypted in a file in the app's data folder, with the key in your system's keychain (Secret Service / KWallet / GNOME Keyring on Linux, Keychain on macOS, Credential Manager on Windows). The interface itself never sees them, only short-lived access tokens. Without a keychain, accounts stay signed in until you quit.
+- Network requests go through the native side, so calendars by address (iCal) load from any server, not only those that allow browser apps.
+- A **tray icon**: closing the window keeps action0 checking for mail in the tray (Settings → App can make closing quit instead). The tray menu has **Show action0**, **New mail** and **Quit**; <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Q</kbd> quits too. The unread count shows on the dock/taskbar icon where the system supports it (macOS, Windows, KDE/Unity docks) and next to the tray icon. On GNOME, tray icons need the AppIndicator extension.
+- **Default mail app**: `mailto:` links anywhere open a new mail in action0 (Settings → App → **Make action0 the default mail app**; on Windows and macOS you choose it in the system's settings). Links in mail open in your default browser; `mailto:` links in mail open a new mail.
+- **Start with the system** (Settings → App, off by default): starts hidden in the tray.
+- Attachments save through the system's Save dialog; PDFs open in your PDF viewer (from a folder that's emptied at every start).
+- **Updates**: the app looks for a new version at start and once a day and asks before installing it.
+
+### Running and building
+
+| Command             | What it does                                                                     |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `npm run app:dev`   | Runs the desktop app against the dev server (hot reload)                         |
+| `npm run app:build` | Builds installers for this system into `src-tauri/target/release/bundle/`        |
+| `npm run app:icon`  | Regenerates the app icons from `public/favicon.svg` (only when the icon changes) |
+
+You need Rust (1.90 or newer) and, on Linux, WebKitGTK 4.1, librsvg and libayatana-appindicator (Debian/Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev`; Gentoo: `net-libs/webkit-gtk:4.1 dev-libs/libayatana-appindicator`). See Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS and Windows.
+
+### Signing in from the desktop app
+
+The desktop app needs its own OAuth registrations, because Google and Microsoft treat desktop apps differently from web apps. **Add account** shows these checklists too.
+
+- **Google:** in the same Google Cloud project, under **Clients**, create a client of type **Desktop app** and copy its client ID **and client secret** (Google shows the secret only once; for desktop apps it isn't confidential). Paste both in the app, or put them into `.env.local` as `VITE_GOOGLE_DESKTOP_CLIENT_ID` and `VITE_GOOGLE_DESKTOP_CLIENT_SECRET`. While the Google app is in **Testing**, Google ends desktop sign-ins after 7 days: under **Audience**, choose **Publish app** to stay signed in (it stays unverified, which is fine for your own use).
+- **Microsoft:** in the same app registration, under **Authentication** → **Add a platform** → **Mobile and desktop applications**, add the custom redirect URI `http://localhost/desktop` (the app listens on a random port; Entra ignores the port). The client ID is the same as for the web app.
+
+### Releases
+
+Pushing a version tag builds installers for Linux (AppImage, .deb, .rpm), Windows (installer) and macOS (universal .dmg) into a **draft** GitHub Release (`.github/workflows/release.yml`):
+
+1. Set `"version"` in `package.json` (the app takes it from there), merge, then tag: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Check the draft release and publish it. Installed apps find the update through the release's `latest.json`.
+
+Updates are signed. Create the key pair once with `npx tauri signer generate -w ~/.tauri/action0-updater.key`, put the public key into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and add the private key (the file's content) and its password as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep the private key safe: without it, installed apps can't be updated. Optionally, set the repository variables `VITE_MICROSOFT_CLIENT_ID` and `VITE_GOOGLE_DESKTOP_CLIENT_ID` (and the secret `VITE_GOOGLE_DESKTOP_CLIENT_SECRET`) to build your clients into the app. The installers aren't code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first start.
 
 ## Testing on a phone
 
@@ -145,6 +183,8 @@ Google and Microsoft sign-in do not: both only allow plain `http://` for `localh
 | `npm run lint`    | ESLint (strict, type-aware, accessibility rules)                |
 | `npm run format`  | Format everything with Prettier (`format:check` only checks)    |
 | `npm run check`   | Everything CI runs: typecheck, lint, format check, tests, build |
+
+The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](#desktop-app).
 
 ## Keyboard shortcuts
 
@@ -195,7 +235,8 @@ src/
   core/        Domain model, MailProvider and CalendarProvider interfaces, errors, reply
                rules. No dependencies.
   auth/        AuthSession interface; google/ = Google Identity Services token client,
-               microsoft/ = MSAL (loaded on first use)
+               microsoft/ = MSAL (loaded on first use), native/ = the desktop app's
+               sign-in (done by its native side)
   providers/
     gmail/     Gmail REST adapter: HTTP client (retries, concurrency limit),
                label mapping, MIME parsing, mappers, drafts, People API
@@ -215,7 +256,11 @@ src/
   keyboard/    Central shortcut registry
   security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
   ui/          React components: layout, mailboxes, messages, reader, composer, calendar, help
+  platform/    What differs between the web app and the desktop app (links, files,
+               notifications, icons, tray): web.ts, desktop/ (Tauri, loaded only there)
   app/         Composition root: wires providers, registry, cache and UI together
+src-tauri/     The desktop app's native side (Rust): sign-in with the system browser,
+               the token vault, network requests, tray, single instance, mailto:
 ```
 
 Rules, enforced by ESLint where possible:
@@ -243,7 +288,7 @@ An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, 
 | sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                           | Tab session, ≤ 10 min for the cache |
 | localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked) | Until sign-out                      |
 
-Tokens never go to localStorage, and mail content is never stored long-term.
+Tokens never go to localStorage, and mail content is never stored long-term. In the desktop app, refresh tokens are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start.
 
 ### Security model for HTML mail
 
@@ -257,4 +302,4 @@ The production build also sets a strict CSP for the app itself. It lets the app 
 
 Tests use Vitest and React Testing Library and live next to the code (`*.test.ts(x)`). Provider APIs are always mocked: the Gmail adapter is tested against [MSW](https://mswjs.io/) HTTP mocks (unhandled requests fail the test), the UI against the in-memory provider.
 
-GitHub Actions runs typecheck, lint, format check, tests and build on every pull request and push to `main` (`.github/workflows/ci.yml`). To make these checks mandatory for merging, add the **check** job as a required status check in the repository's branch protection rules.
+GitHub Actions runs typecheck, lint, format check, tests and build on every pull request and push to `main`, and checks the desktop app's Rust code (`cargo fmt`, `clippy`, `cargo test`) (`.github/workflows/ci.yml`). The desktop app's native side (sign-in, vault, network requests) has Rust unit tests in `src-tauri/src`; the interface's desktop behaviour is tested with a fake `Platform`. To make these checks mandatory for merging, add the **check** job as a required status check in the repository's branch protection rules.

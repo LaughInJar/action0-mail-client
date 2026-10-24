@@ -18,6 +18,8 @@ import { useComposerEffects } from "../composer/useComposerEffects";
 import { useFileDrop } from "../composer/useFileDrop";
 import { NotificationsBar } from "../sync/NotificationsBar";
 import { notifyArrivals } from "../sync/notifications";
+import { usePlatform } from "../../platform/context";
+import { DesktopIntegration } from "../desktop/DesktopIntegration";
 import { useDocumentTitle } from "../sync/useDocumentTitle";
 import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
@@ -80,9 +82,10 @@ function MailApp() {
   const fileDrop = useFileDrop(compose);
   const router = useRouter();
   const store = useUiStore();
+  const platform = usePlatform();
   useMailSync((arrivals) => {
     if (store.getState().settings.notifications)
-      notifyArrivals(arrivals, router, t);
+      notifyArrivals(arrivals, router, t, platform.notifications);
   });
   useDocumentTitle();
   const undo = useUndo(actions, compose);
@@ -168,6 +171,7 @@ function MailApp() {
     <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
       <ReconnectBar />
       <NotificationsBar />
+      <DesktopIntegration compose={compose} />
       <div className="flex min-h-0 flex-1">{content}</div>
       {calendar === null ? (
         <MailCommands breakpoint={breakpoint} actions={actions} undo={undo} />

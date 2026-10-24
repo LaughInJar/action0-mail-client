@@ -1,4 +1,4 @@
-import type { MicrosoftAuthSession } from "../../auth/microsoft/MicrosoftAuthSession";
+import type { ScopedSession } from "../../auth/types";
 import { CALENDAR_SCOPES } from "../../auth/microsoft/msal";
 import {
   asCalendarId,
@@ -327,13 +327,16 @@ export class GraphCalendarProvider implements CalendarProvider {
   readonly canEdit = true;
   readonly guestNotices = "always";
   readonly #http: GraphHttp;
-  readonly #session: MicrosoftAuthSession;
+  readonly #session: ScopedSession & { readonly loginHint: string };
 
   /**
    * @param http Client whose token carries {@link CALENDAR_SCOPES}.
    * @param session The account's session, for consent to calendar access.
    */
-  constructor(http: GraphHttp, session: MicrosoftAuthSession) {
+  constructor(
+    http: GraphHttp,
+    session: ScopedSession & { readonly loginHint: string },
+  ) {
     this.#http = http;
     this.#session = session;
   }

@@ -63,9 +63,22 @@ export interface ProviderSetup {
   readonly type: ProviderType;
   /** The value in use and where it came from; a build value takes precedence. */
   readonly current: () =>
-    { readonly value: string; readonly source: SettingSource } | undefined;
+    | {
+        readonly value: string;
+        readonly source: SettingSource;
+        /** The client secret, for setups that need one. */
+        readonly secret?: string;
+      }
+    | undefined;
   /** What's wrong with a value, or undefined if it's fine. */
   readonly validate: (value: string) => SetupProblem | undefined;
-  /** Saves the value in this browser and (re-)registers the provider module. */
-  readonly apply: (value: string) => void;
+  /**
+   * The setup needs a client secret too (Google's desktop clients), and
+   * what's wrong with one.
+   */
+  readonly secret?: {
+    readonly validate: (secret: string) => SetupProblem | undefined;
+  };
+  /** Saves the value (and secret) and (re-)registers the provider module. */
+  readonly apply: (value: string, secret?: string) => void;
 }

@@ -33,7 +33,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 ## Security and storage rules
 
 - Browser storage is only for settings, UI state and short-lived caches with a TTL. Never persist mail content long-term.
-- OAuth tokens live in memory or sessionStorage, **never** in localStorage.
+- OAuth tokens live in memory or sessionStorage, **never** in localStorage. In the desktop app, refresh tokens live only in the OS keychain (handled in Rust); the UI only ever holds short-lived access tokens in memory.
 - HTML mail is sanitized (DOMPurify) and rendered in a sandboxed iframe. Remote images, and any other remote content, are blocked by default.
 
 ## UX principles
@@ -58,12 +58,13 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 ## Commands
 
 - `npm run dev`: dev server on http://localhost:5173 (port is fixed: it is the OAuth origin). Demo: `/?demo`.
-- `npm run check`: everything CI runs (typecheck, lint, format check, tests, build). Run it before handing work over.
+- `npm run check`: everything CI runs (typecheck, lint, format check, tests, build). Run it before handing work over. For the desktop app also `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` in `src-tauri/` (CI runs them too).
+- `npm run app:dev` / `npm run app:build`: the desktop app (Tauri).
 - `npm test`, `npm run lint`, `npm run format`: individual steps.
 
 ## Code conventions
 
-- Module layout and import rules: see README "Architecture". ESLint enforces that `ui/`, `data/`, `state/` and `keyboard/` never import `providers/` or `auth/google/`.
+- Module layout and import rules: see README "Architecture". ESLint enforces that `ui/`, `data/`, `state/` and `keyboard/` never import `providers/` or `auth/google/`, and that only `src/platform/desktop/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
 - Tests sit next to the code (`*.test.ts(x)`). Helpers live in `src/test/`. Gmail tests run in the Node environment against MSW (`onUnhandledFrame: "error"`); UI tests render the whole app with `renderApp()` and the in-memory provider.
 - Interfaces that get passed around as functions (subscribe, store actions, router) use function-typed properties, not method syntax (`@typescript-eslint/unbound-method`).
 
@@ -190,3 +191,10 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Repeats: daily, every weekday, weekly on that day, monthly on that date, yearly; ending never or on a date. Changing or deleting an occurrence asks "This event / This and following / All events"; "this and following" splits the series (the old one ends, a new one starts; one-off changes after that point are lost, and the question says so). Rules action0 can't show stay as they are, shown as "Custom".
   - Guests: on Google calendars every change to an event with guests asks "Send update to guests?" (Send / Don't send / Cancel). Microsoft always notifies guests, so the editor and Delete say "Guests will be notified" instead.
   - Every change is optimistic with an undo toast and `z`. Undoing a change to an event with guests asks "Notify guests?" again (Google). Deleting a Microsoft meeting with guests asks first and can't be undone (bringing it back would be a new invitation).
+- **Desktop app (Tauri) decisions:**
+  - action0 also ships as a Tauri 2 desktop app (Linux, Windows, macOS) with the same React UI; the static web app stays as it is (Gmail and Microsoft only). The app is the only home for IMAP and CalDAV (separate features next); no proxy. Android/iOS come later as their own feature. Rationale: one self-contained solution, a path to mobile, small and locked down by default.
+  - Sign-in in the app goes through the system browser (Google blocks embedded web views): auth code + PKCE with a loopback redirect, a "Desktop app" OAuth client for Google and a "Mobile and desktop applications" platform on the Entra app. Token exchange and refresh happen in Rust. Refresh tokens are kept only in the OS keychain (never in the UI's storage); the UI gets short-lived access tokens in memory. The app stays signed in across restarts.
+  - In the app, provider requests go through the native side, so CORS doesn't apply (iCal from any server works; groundwork for CalDAV).
+  - Desktop behaviour: external links open in the default browser, attachments save through the system dialog, file drops still reach the composer, window size/position remembered, one instance.
+  - Extras: native notifications with the unread count on the dock/taskbar where supported (always in the tray tooltip); a tray icon (closing the window keeps action0 checking mail in the tray, first close says so; Settings: keep running in the tray / quit); start with the system (off by default, starts hidden in the tray); `mailto:` handler (fills a new mail, from the account used last, in the running instance).
+  - Releases: a `v…` tag makes CI build installers (Linux AppImage/deb/rpm, Windows, macOS) into a GitHub Release; the app checks for signed updates on start and daily and asks before installing. OS code signing later. The protected `check` job also checks the Rust code.

@@ -8,6 +8,7 @@ import { App } from "../app/App";
 import { createAppServices } from "../app/services";
 import type { CalendarAccess } from "../core/calendar";
 import type { IcsFactory } from "../data/calendar";
+import type { Platform } from "../platform/types";
 import { createDemoCalendar } from "../providers/fake/demoCalendar";
 import { createDemoData } from "../providers/fake/demoData";
 import type { FakeMailData } from "../providers/fake/FakeMailProvider";
@@ -34,6 +35,8 @@ export interface RenderAppOptions {
   readonly icsFactory?: IcsFactory;
   /** How the demo calendar tells guests (default: asks, like Google). */
   readonly guestNotices?: "ask" | "always";
+  /** The platform (default: the web app). */
+  readonly platform?: Platform;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -47,6 +50,7 @@ export function renderApp({
   calendarAccess = "granted",
   icsFactory,
   guestNotices = "ask",
+  platform,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
@@ -66,6 +70,7 @@ export function renderApp({
     ],
     ...(setups ? { createSetups: setups } : {}),
     ...(icsFactory ? { icsFactory } : {}),
+    ...(platform ? { platform } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,

@@ -25,26 +25,6 @@ export function releaseObjectUrls(blobs: Iterable<Blob>): void {
   }
 }
 
-/**
- * Saves a file. The type is forced to `application/octet-stream`, so the
- * browser never renders it (an HTML file can't run in the app's origin).
- */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(
-    new Blob([blob], { type: "application/octet-stream" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename || "attachment";
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
-}
-
 /** How an attachment opens. */
 export type AttachmentKind = "image" | "pdf" | "download";
 

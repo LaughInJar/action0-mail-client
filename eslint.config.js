@@ -17,6 +17,13 @@ const providerImplementations = {
     "UI, data and state code must use the provider-agnostic contracts in src/core. Wire concrete providers in src/app.",
 };
 
+/** Tauri's APIs: only the desktop platform (`src/platform/desktop`) talks to the native side. */
+const tauriApis = {
+  group: ["@tauri-apps/*"],
+  message:
+    "Only src/platform/desktop uses Tauri; everything else goes through the Platform interface.",
+};
+
 /** `no-restricted-syntax` entries that catch interface text outside the catalogue. */
 function untranslated() {
   const message =
@@ -41,7 +48,7 @@ function untranslated() {
 }
 
 export default defineConfig([
-  globalIgnores(["dist", "coverage"]),
+  globalIgnores(["dist", "coverage", "src-tauri"]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -91,8 +98,23 @@ export default defineConfig([
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: [providerImplementations] },
+        { patterns: [providerImplementations, tauriApis] },
       ],
+    },
+  },
+  {
+    files: ["src/**"],
+    ignores: [
+      "src/platform/desktop/**",
+      "src/ui/**",
+      "src/data/**",
+      "src/state/**",
+      "src/keyboard/**",
+      "src/compose/**",
+      "src/core/**",
+    ],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [tauriApis] }],
     },
   },
   {

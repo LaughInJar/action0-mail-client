@@ -3,6 +3,7 @@ import { calendar } from "./texts/calendar";
 import { actions } from "./texts/actions";
 import { common } from "./texts/common";
 import { composer } from "./texts/composer";
+import { desktop } from "./texts/desktop";
 import { errors } from "./texts/errors";
 import { folders, labels } from "./texts/labels";
 import { layout } from "./texts/layout";
@@ -25,6 +26,7 @@ export const messages = {
     calendar: calendar.en,
     common: common.en,
     composer: composer.en,
+    desktop: desktop.en,
     errors: errors.en,
     folders: folders.en,
     labels: labels.en,
@@ -42,6 +44,7 @@ export const messages = {
     calendar: calendar.de,
     common: common.de,
     composer: composer.de,
+    desktop: desktop.de,
     errors: errors.de,
     folders: folders.de,
     labels: labels.de,

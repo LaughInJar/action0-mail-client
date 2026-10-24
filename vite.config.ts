@@ -37,11 +37,18 @@ const PRODUCTION_CSP = [
   "form-action 'none'",
 ].join("; ");
 
-/** Injects the CSP meta tag into `index.html`, for builds only (the dev server needs inline scripts for HMR). */
+/** True when the Tauri CLI builds the desktop app (it sets `TAURI_ENV_*`). */
+const desktopBuild = process.env.TAURI_ENV_PLATFORM !== undefined;
+
+/**
+ * Injects the CSP meta tag into `index.html`, for builds only (the dev
+ * server needs inline scripts for HMR). The desktop app has its own CSP
+ * (`src-tauri/tauri.conf.json`), which a meta tag would only narrow.
+ */
 function contentSecurityPolicy(): Plugin {
   return {
     name: "action0:csp",
-    apply: "build",
+    apply: (_config, { command }) => command === "build" && !desktopBuild,
     transformIndexHtml: () => [
       {
         tag: "meta",
@@ -70,7 +77,14 @@ export default defineConfig({
     },
   },
   // The port is part of the OAuth "Authorized JavaScript origin", so it must never drift.
-  server: { port: 5173, strictPort: true },
+  server: {
+    port: 5173,
+    strictPort: true,
+    // The desktop app's Rust code isn't part of the web app.
+    watch: { ignored: ["**/src-tauri/**"] },
+  },
+  // `tauri dev` shows its own output too.
+  clearScreen: false,
   preview: { port: 5173, strictPort: true },
   test: {
     environment: "jsdom",
