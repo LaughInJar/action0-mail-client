@@ -170,7 +170,7 @@ Why each scope is needed is in [security.md](security.md#scopes-per-provider). R
 - **Key:** 32 random bytes in the OS keychain through the `keyring` crate (Secret Service over D-Bus on Linux, the Keychain on macOS, Credential Manager on Windows), under the service name `app.action0.mail` (the app identifier) and the entry `vault-key`. Only the key goes there, because keychains limit entry sizes (Windows: 2560 bytes) and refresh tokens can be longer.
 - **File:** `accounts.vault` in the app's data folder (`app_data_dir()`, named after the identifier: `~/.local/share/app.action0.mail/` on Linux, `~/Library/Application Support/app.action0.mail/` on macOS, `%APPDATA%\app.action0.mail\` on Windows). Writes go to a sibling `.tmp` file that is renamed over it, so a crash never leaves half a file; on Unix the file is `0600`.
 - **Unreadable file or other key:** the vault starts empty (the accounts need signing in again).
-- **No keychain:** if the keychain can't be read or written, the vault has no key and writes nothing. Accounts work, but only until the app quits; `auth_accounts` reports `persistent: false`.
+- **No keychain:** if the keychain can't be read or written, the vault has no key and writes nothing. Accounts work, but only until the app quits; `auth_accounts` reports `persistent: false`, which the platform passes on as `DesktopControls.keychain`. Settings → App then says so (with the Linux hint), and the toast after connecting an account reads "Connected … (until you quit)".
 
 Access tokens are never stored: they live in the `Auth` state's memory and are handed to the UI per request.
 

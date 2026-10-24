@@ -53,7 +53,9 @@ const enReasons: Reasons = {
     `There’s already a folder called “${p.name ?? ""}” here.`,
   folderInsideItself: () => "A folder can’t go inside itself.",
   attachmentUploadBlocked: (p) =>
-    `“${p.name ?? ""}” is too big to upload from the browser (at most 3 MB per file for this account).`,
+    `“${p.name ?? ""}” couldn’t be uploaded: Outlook’s upload server didn’t answer. Files of up to 3 MB always work.`,
+  attachmentUploadInterrupted: (p) =>
+    `The connection dropped while uploading “${p.name ?? ""}”. The draft tries again when it saves next.`,
   wrongAccount: (p) =>
     `You signed in as ${p.actual ?? ""}, but this account is ${p.expected ?? ""}. Please choose ${p.expected ?? ""}.`,
   peopleUnavailable: () =>
@@ -122,7 +124,9 @@ const deReasons: Reasons = {
   folderExists: (p) => `Hier gibt es schon einen Ordner „${p.name ?? ""}“.`,
   folderInsideItself: () => "Ein Ordner kann nicht in sich selbst liegen.",
   attachmentUploadBlocked: (p) =>
-    `„${p.name ?? ""}“ ist zu groß, um es aus dem Browser hochzuladen (bei diesem Konto höchstens 3 MB pro Datei).`,
+    `„${p.name ?? ""}“ konnte nicht hochgeladen werden: Der Upload-Server von Outlook hat nicht geantwortet. Dateien bis 3 MB klappen immer.`,
+  attachmentUploadInterrupted: (p) =>
+    `Die Verbindung ist beim Hochladen von „${p.name ?? ""}“ abgebrochen. Der Entwurf versucht es beim nächsten Speichern noch einmal.`,
   wrongAccount: (p) =>
     `Du hast dich als ${p.actual ?? ""} angemeldet, dieses Konto ist aber ${p.expected ?? ""}. Bitte wähle ${p.expected ?? ""}.`,
   peopleUnavailable: () =>

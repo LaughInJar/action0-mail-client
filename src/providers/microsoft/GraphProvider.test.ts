@@ -501,6 +501,28 @@ describe("GraphProvider drafts", () => {
     ).toHaveLength(1);
   });
 
+  it("says whether the upload server didn't answer or the connection dropped", async () => {
+    const { graph, provider } = setup();
+    const big = file("video.bin", "x".repeat(UPLOAD_CHUNK_BYTES + 10));
+    graph.failUploadAt = 0;
+    const blocked = await failure(
+      provider.saveDraft({ ...base, attachments: [big] }),
+    );
+    expect(isMailError(blocked) && blocked.reason).toBe(
+      "attachmentUploadBlocked",
+    );
+    graph.failUploadAt = UPLOAD_CHUNK_BYTES;
+    const dropped = await failure(
+      provider.saveDraft({ ...base, attachments: [big] }),
+    );
+    expect(isMailError(dropped) && dropped.reason).toBe(
+      "attachmentUploadInterrupted",
+    );
+    expect(isMailError(dropped) && dropped.params).toEqual({
+      name: "video.bin",
+    });
+  });
+
   it("forwards keep files of the original: fetched, then uploaded", async () => {
     const { graph, provider } = setup();
     graph.add({

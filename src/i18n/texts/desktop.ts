@@ -31,6 +31,8 @@ const en = {
   },
   trayHint:
     "In the tray, action0 keeps checking for mail and notifies you. On GNOME, tray icons need the AppIndicator extension.",
+  noKeychain:
+    "No system keychain was found, so accounts stay signed in only until you quit action0. On Linux, a Secret Service keyring (GNOME Keyring or KWallet) fixes this.",
   autostart: "Start with the system",
   autostartHint: "action0 starts hidden in the tray when you log in.",
   defaultApp: "Default mail app",
@@ -84,6 +86,8 @@ const de: typeof en = {
   },
   trayHint:
     "Im Infobereich sucht action0 weiter nach neuen E-Mails und benachrichtigt dich. Unter GNOME braucht das Symbol die Erweiterung „AppIndicator“.",
+  noKeychain:
+    "Es wurde kein Schlüsselbund des Systems gefunden, deshalb bleiben Konten nur angemeldet, bis du action0 beendest. Unter Linux hilft ein Secret-Service-Schlüsselbund (GNOME Schlüsselbund oder KWallet).",
   autostart: "Mit dem System starten",
   autostartHint: "action0 startet beim Anmelden ausgeblendet im Infobereich.",
   defaultApp: "Standard-Mail-App",
