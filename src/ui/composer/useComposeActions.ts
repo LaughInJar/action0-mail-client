@@ -22,11 +22,12 @@ import {
 } from "../../core/compose";
 import type { Draft } from "../../core/compose";
 import { parseMailto } from "../../core/mailto";
-import type { AccountId, DraftId, MessageId } from "../../core/ids";
+import type { AccountId, DraftId, MessageRef } from "../../core/ids";
 import type { Message, Sender } from "../../core/model";
 import { referencedInlineImages } from "../../data/hooks";
 import { useDraftSync, type DraftSync } from "../../data/drafts";
-import { useRoute, useRouter, useUiStore } from "../../state/context";
+import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
+import type { Route } from "../../state/router";
 import type {
   ComposerInit,
   ComposerSession,
@@ -37,9 +38,14 @@ import { useT, type I18n } from "../../i18n/context";
 
 /** Starting, saving, sending and discarding mails. */
 export interface ComposeActions {
-  /** Whether the current account can write mail. */
+  /** Whether a new mail can be written (see {@link compose}). */
   readonly canCompose: boolean;
-  /** A new mail from the current account (or focuses the open composer). */
+  /** Whether mail can be written from an account (replies, drafts). */
+  readonly canWriteFrom: (accountId: AccountId) => boolean;
+  /**
+   * A new mail (or focuses the open composer): from the current account,
+   * or in All inboxes from the account the last mail went out from.
+   */
   readonly compose: () => void;
   /**
    * A new mail filled in from a `mailto:` link (from the system, the tray
@@ -47,12 +53,13 @@ export interface ComposeActions {
    * empty one (like {@link compose}).
    */
   readonly composeFrom: (mailto: string) => void;
-  readonly reply: (messageId: MessageId, mode: ReplyMode) => void;
-  readonly forward: (messageId: MessageId) => void;
+  /** Answers a message, from its account. */
+  readonly reply: (message: MessageRef, mode: ReplyMode) => void;
+  readonly forward: (message: MessageRef) => void;
   /** Continues a draft (a message in the drafts mailbox). */
-  readonly editDraft: (messageId: MessageId) => void;
-  /** Continues a draft by its id (e.g. after a reload). */
-  readonly resumeDraft: (draftId: DraftId) => void;
+  readonly editDraft: (message: MessageRef) => void;
+  /** Continues a draft of an account by its id (e.g. after a reload). */
+  readonly resumeDraft: (accountId: AccountId, draftId: DraftId) => void;
   /** Closes the composer; unsaved changes are saved. */
   readonly close: () => void;
   /** Deletes the draft and closes the composer (undoable). */
@@ -83,15 +90,17 @@ export function saveSession(
   t: I18n,
 ): Promise<void> {
   if (session.revision <= session.savedRevision) return Promise.resolve();
-  const { key, revision } = session;
+  const { key, revision, accountId } = session;
   store.getState().markComposerSaving(key);
-  return sync.save(key, session.accountId, session, session.draftId).then(
+  return sync.save(key, accountId, session, session.draftId).then(
     ({ id }) => {
-      store.getState().markComposerSaved(key, { revision, draftId: id });
+      store
+        .getState()
+        .markComposerSaved(key, accountId, { revision, draftId: id });
     },
     (error: unknown) => {
       const message = errorMessage(error, t);
-      store.getState().markComposerSaved(key, { error: message });
+      store.getState().markComposerSaved(key, accountId, { error: message });
       if (store.getState().composer?.key !== key)
         store.getState().showToast({
           message: t.composer.couldntSave(message),
@@ -124,6 +133,26 @@ export function sendQueued(
   );
 }
 
+/**
+ * The account a new mail starts from: the account in context, but in All
+ * inboxes the one the last mail went out from (if it can still write);
+ * otherwise the first account that can.
+ */
+export function newMailAccount(
+  route: Route,
+  lastSend: string | undefined,
+  accounts: readonly AccountId[],
+  canCompose: (accountId: AccountId) => boolean,
+): AccountId | undefined {
+  const last = accounts.find((id) => id === lastSend);
+  const preferred = route?.unified
+    ? (last ?? route.accountId)
+    : (route?.accountId ?? accounts[0]);
+  if (preferred !== undefined && canCompose(preferred)) return preferred;
+  // Inside one account that can't write: none. Otherwise the first that can.
+  return route && !route.unified ? undefined : accounts.find(canCompose);
+}
+
 /** {@link ComposeActions} for the current account. */
 export function useComposeActions(): ComposeActions {
   const router = useRouter();
@@ -132,11 +161,17 @@ export function useComposeActions(): ComposeActions {
   const sync = useDraftSync();
   const t = useT();
   const accounts = useAccounts();
-  const routeAccount = useRoute()?.accountId;
-  const accountId = routeAccount ?? accounts[0]?.account.id;
-  const canCompose =
-    accounts.find((handle) => handle.account.id === accountId)?.provider
-      .capabilities.compose === true;
+  const route = useRoute();
+  const lastSend = useUi((state) => state.settings.lastSendAccount);
+  const accountId = newMailAccount(
+    route,
+    lastSend,
+    accounts.map((handle) => handle.account.id),
+    (id) =>
+      accounts.find((handle) => handle.account.id === id)?.provider.capabilities
+        .compose === true,
+  );
+  const canCompose = accountId !== undefined;
 
   const actions = useMemo((): Omit<ComposeActions, "canCompose"> => {
     const c = t.composer;
@@ -145,11 +180,17 @@ export function useComposeActions(): ComposeActions {
       locale: t.locale,
       unknownSender: t.common.unknownSender,
     };
-    const currentAccount = (): AccountId | undefined =>
-      router.getRoute()?.accountId ?? registry.list()[0]?.account.id;
     const canComposeIn = (accountId: AccountId | undefined) =>
       accountId !== undefined &&
       registry.get(accountId)?.provider.capabilities.compose === true;
+    /** The account a new mail starts from (see {@link newMailAccount}). */
+    const currentAccount = (): AccountId | undefined =>
+      newMailAccount(
+        router.getRoute(),
+        store.getState().settings.lastSendAccount,
+        registry.list().map((handle) => handle.account.id),
+        canComposeIn,
+      );
 
     const fail = (prefix: string) => (error: unknown) => {
       store.getState().showToast({
@@ -192,9 +233,9 @@ export function useComposeActions(): ComposeActions {
           }
         : {};
 
-    /** The full message and the account's senders, then `start` with them. */
+    /** The full message and its account's senders, then `start` with them. */
     const withMessage = (
-      messageId: MessageId,
+      { accountId, messageId }: MessageRef,
       failure: string,
       start: (
         accountId: AccountId,
@@ -202,8 +243,7 @@ export function useComposeActions(): ComposeActions {
         senders: readonly Sender[],
       ) => void,
     ) => {
-      const accountId = currentAccount();
-      if (!canComposeIn(accountId) || accountId === undefined) return;
+      if (!canComposeIn(accountId)) return;
       Promise.all([sync.getMessage(accountId, messageId), sendersOf(accountId)])
         .then(([message, senders]) => {
           start(accountId, message, senders);
@@ -283,6 +323,8 @@ export function useComposeActions(): ComposeActions {
     };
 
     return {
+      canWriteFrom: canComposeIn,
+
       compose: () => {
         startNew(currentAccount());
       },
@@ -306,36 +348,32 @@ export function useComposeActions(): ComposeActions {
         });
       },
 
-      reply: (messageId, mode) => {
-        withMessage(
-          messageId,
-          c.couldntReply,
-          (accountId, message, senders) => {
-            const me = registry.get(accountId)?.account.email;
-            const mine = [
-              ...(me ? [me] : []),
-              ...senders.map((sender) => sender.address),
-            ];
-            const { to, cc } = replyRecipients(message, mode, mine);
-            open({
-              accountId,
-              kind: mode,
-              ...sendingAs(replyFrom(message, senders)),
-              to,
-              cc,
-              showCcBcc: cc.length > 0,
-              subject: replySubject(message.subject),
-              quote: replyQuote(message, quoteTexts),
-              threading: threadingFor(message),
-              focus: "body",
-            });
-          },
-        );
+      reply: (original, mode) => {
+        withMessage(original, c.couldntReply, (accountId, message, senders) => {
+          const me = registry.get(accountId)?.account.email;
+          const mine = [
+            ...(me ? [me] : []),
+            ...senders.map((sender) => sender.address),
+          ];
+          const { to, cc } = replyRecipients(message, mode, mine);
+          open({
+            accountId,
+            kind: mode,
+            ...sendingAs(replyFrom(message, senders)),
+            to,
+            cc,
+            showCcBcc: cc.length > 0,
+            subject: replySubject(message.subject),
+            quote: replyQuote(message, quoteTexts),
+            threading: threadingFor(message),
+            focus: "body",
+          });
+        });
       },
 
-      forward: (messageId) => {
+      forward: (original) => {
         withMessage(
-          messageId,
+          original,
           c.couldntForward,
           (accountId, message, senders) => {
             const inline = new Set(
@@ -365,9 +403,8 @@ export function useComposeActions(): ComposeActions {
         );
       },
 
-      editDraft: (messageId) => {
-        const accountId = currentAccount();
-        if (!canComposeIn(accountId) || accountId === undefined) return;
+      editDraft: ({ accountId, messageId }) => {
+        if (!canComposeIn(accountId)) return;
         sync
           .draftOf(accountId, messageId)
           .then((draft) => {
@@ -376,9 +413,8 @@ export function useComposeActions(): ComposeActions {
           .catch(fail(c.couldntOpenDraft));
       },
 
-      resumeDraft: (draftId) => {
-        const accountId = currentAccount();
-        if (!canComposeIn(accountId) || accountId === undefined) return;
+      resumeDraft: (accountId, draftId) => {
+        if (!canComposeIn(accountId)) return;
         sync
           .getDraft(accountId, draftId)
           .then((draft) => {

@@ -21,13 +21,14 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 - Light and dark mode: the switch next to "action0" at the top left chooses System (follows your device, the default), Light or Dark. The choice is remembered in this browser. HTML mail keeps the sender's design (light) in dark mode; plain-text mail follows the theme.
 - Conversation view (Settings → Reading, off by default): one row per conversation ("Anna, me 3"), and the reader shows the whole conversation, oldest first, with older read messages folded to one line. Your replies and drafts show in place. Archive, labels, delete and the other actions apply to the whole conversation (in Microsoft accounts: to its messages in the folder you're in, like Outlook, so your sent replies stay in Sent Items); <kbd>n</kbd>/<kbd>p</kbd> move between its messages, <kbd>Enter</kbd> opens or closes one, and <kbd>r</kbd>/<kbd>f</kbd> answer the one at the cursor.
+- All inboxes (with two or more accounts; at the top of the folder list, or <kbd>g</kbd> <kbd>u</kbd>): every account's Inbox in one list, by date, and where the app starts. A coloured bar shows each message's account, and the reader names it. Archive, read/unread, star, delete and spam work on a selection from several accounts as one action (one <kbd>z</kbd> undoes it); moving and labels work within one account. Search covers every Inbox, or every whole account with "Everywhere". Replies go out from the message's account, and new mail from the account you last sent from.
 - A calendar (the **Mail | Calendar** switch at the top left, or <kbd>g</kbd> <kbd>c</kbd>): the calendars of every Google and Microsoft account, and calendars added by their iCal address, in one week, month or agenda view (day and agenda on phones). Tick or untick each calendar; overlapping events sit side by side. Invitations get **Yes / Maybe / No**, in the event and right inside the invitation mail, which also says what else is planned at that time. Changing an answer can be undone (<kbd>z</kbd>).
 - Creating and editing events: **New event** (or <kbd>c</kbd>), a click or a drag across empty time (a day in month view makes an all-day event) opens the editor: title, time, repeats (daily, weekdays, weekly, monthly, yearly; until a date), calendar, Google Meet or Teams video call, location, guests (with the same address suggestions as mail) and description. Drag events to move them, or their bottom edge to change their length; on touch screens a long press lifts an event first. Repeating events ask whether a change is for this event, this and the following ones, or all. On Google calendars, changes to events with guests ask whether to tell them; Microsoft always tells them. Every change can be undone (<kbd>z</kbd>), except deleting a Microsoft meeting with guests (it asks first). Invitations from others and read-only calendars can't be changed.
 - English and German: the interface follows the browser's language, and Settings → General can choose English or Deutsch instead. Dates and numbers follow the browser's regional format (Austrian German writes "Jänner"); German replies quote with "Am 16.10.2026 um 20:59 schrieb …:".
 - Settings (⚙ next to the theme switch): language, list density, where to go after archiving, when mail counts as read, remote images (ask, always, or remember trusted senders), the undo-send time, desktop notifications, and your signatures.
-- Several addresses: the composer has a From field when an account has Gmail aliases ("send mail as"), and replies go out from the address the mail was sent to. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
+- Several addresses: the composer's From field lists the addresses of every account (Gmail aliases, "send mail as", included), and replies go out from the address the mail was sent to. Choosing another account's address moves the draft there, files included. Each address has its own signature, edited in Settings and saved to Gmail; in a mail it shows exactly as recipients will see it, and × removes it.
 - Safe HTML mail: sanitized, rendered in a sandboxed iframe without scripts, remote images blocked until you allow them.
-- A demo account with sample mail, so you can try the UI without signing in.
+- Two demo accounts with sample mail (one Gmail-like, one Outlook-like), so you can try the UI, All inboxes included, without signing in.
 
 ## Quick start
 
@@ -38,7 +39,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173/?demo> to start with the demo account. To read your Gmail, set up an OAuth client first (next section); for Outlook.com or Microsoft 365, register the app in Microsoft Entra ([Setting up Microsoft sign-in](#setting-up-microsoft-sign-in)).
+Open <http://localhost:5173/?demo> to start with the demo accounts. To read your Gmail, set up an OAuth client first (next section); for Outlook.com or Microsoft 365, register the app in Microsoft Entra ([Setting up Microsoft sign-in](#setting-up-microsoft-sign-in)).
 
 ## Setting up Google sign-in
 
@@ -246,7 +247,7 @@ src/
     */calendar Calendar adapters: Google Calendar API, Graph calendars (Windows time
                zone names from CLDR's windowsZones.xml, Unicode License)
     mime/      Builds outgoing MIME messages (shared by raw-message adapters)
-    fake/      In-memory provider: tests and the demo account
+    fake/      In-memory provider: tests and the demo accounts
   accounts/    Account registry: one auth session + provider per account
   data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy;
                draft saving and sending; calendar sources, events, answers and changes

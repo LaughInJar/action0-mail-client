@@ -116,6 +116,35 @@ describe("parseHash / formatRoute", () => {
       search,
     });
   });
+
+  it("keeps All inboxes with its context account as one list", () => {
+    const unified = { ...route, unified: true as const };
+    const hash = formatRoute(unified);
+    expect(hash.startsWith("#/all/")).toBe(true);
+    expect(parseHash(hash)).toEqual(unified);
+    const other = {
+      accountId: asAccountId("gmail:b@example.com"),
+      mailboxId: asMailboxId("INBOX"),
+      unified: true as const,
+    };
+    expect(sameList(unified, other)).toBe(true);
+    expect(sameList(unified, route)).toBe(false);
+    expect(
+      sameList(other, { ...other, search: { text: "x", everywhere: false } }),
+    ).toBe(false);
+    expect(parseHash("#/all")).toBeNull();
+  });
+
+  it("names the account of a full-screen draft", () => {
+    const composing = {
+      ...route,
+      compose: "draft-1",
+      composeAccount: asAccountId("gmail:b@example.com"),
+    };
+    expect(parseHash(formatRoute(composing))).toEqual(composing);
+    // Without a composer the account means nothing.
+    expect(parseHash(`${formatRoute(route)}?ca=x`)).toEqual(route);
+  });
 });
 
 describe("createHashRouter", () => {

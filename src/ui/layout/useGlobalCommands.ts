@@ -11,6 +11,7 @@ import { SEARCH_FIELD_ID } from "../messages/ListToolbar";
 import type { Breakpoint } from "./useBreakpoint";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
+import { ALL_INBOXES_FROM, useOpenAllInboxes } from "../mailboxes/allInboxes";
 import { dayKey } from "../calendar/dates";
 
 /** Id of the scroll container of the reader, for the scroll shortcuts. */
@@ -36,6 +37,8 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
   const accountId = route?.accountId ?? accounts[0]?.account.id;
   const { data: mailboxes } = useMailboxList(accountId);
   const t = useT();
+  const openAllInboxes = useOpenAllInboxes();
+  const severalAccounts = accounts.length >= ALL_INBOXES_FROM;
 
   const commands = useMemo((): Command[] => {
     const reader = () => document.getElementById(READER_SCROLL_ID);
@@ -65,6 +68,19 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
 
     return [
       ...goTo,
+      ...(severalAccounts
+        ? [
+            {
+              id: "go.all-inboxes",
+              group: "goTo" as const,
+              description: t.shortcuts.goAllInboxes,
+              keys: ["g u"],
+              run: () => {
+                openAllInboxes();
+              },
+            },
+          ]
+        : []),
       {
         id: "go.calendar",
         group: "goTo",
@@ -138,7 +154,16 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
         },
       },
     ];
-  }, [accountId, breakpoint, mailboxes, router, store, t]);
+  }, [
+    accountId,
+    breakpoint,
+    mailboxes,
+    openAllInboxes,
+    router,
+    severalAccounts,
+    store,
+    t,
+  ]);
 
   useCommands(commands);
 }

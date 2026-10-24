@@ -13,7 +13,12 @@ import { createDemoCalendar } from "../providers/fake/demoCalendar";
 import { createDemoData } from "../providers/fake/demoData";
 import type { FakeCalendarData } from "../providers/fake/FakeCalendarProvider";
 import type { FakeMailData } from "../providers/fake/FakeMailProvider";
-import { createDemoModule, DEMO_ACCOUNT } from "../providers/fake/module";
+import { createWorkDemoData } from "../providers/fake/demoWork";
+import {
+  createDemoModule,
+  DEMO_ACCOUNT,
+  DEMO_WORK_ACCOUNT,
+} from "../providers/fake/module";
 import { UI_STATE_KEY } from "../state/uiStore";
 import { mockViewport, type Viewport } from "./viewport";
 
@@ -48,6 +53,9 @@ export interface RenderAppOptions {
    * remind in tests that don't expect it, whatever the time of day).
    */
   readonly reminders?: boolean;
+  /** Also the second demo account (Outlook-like folders), as if restored. */
+  readonly workAccount?: boolean;
+  readonly workData?: () => FakeMailData;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -65,17 +73,24 @@ export function renderApp({
   calendar = () => createDemoCalendar(TEST_NOW),
   syncedReminders = false,
   reminders = false,
+  workAccount = false,
+  workData = () => createWorkDemoData(TEST_NOW),
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
   if (hash !== undefined) window.history.replaceState(null, "", `/${hash}`);
-  if (signedIn) saveAccounts(window.localStorage, [DEMO_ACCOUNT]);
+  if (signedIn)
+    saveAccounts(window.localStorage, [
+      DEMO_ACCOUNT,
+      ...(workAccount ? [DEMO_WORK_ACCOUNT] : []),
+    ]);
 
   const services = createAppServices({
     modules: modules ?? [
       createDemoModule({
         latencyMs: 0,
         data,
+        workData,
         arrivalEveryMs: false,
         // Events around TEST_NOW (week of Monday 2026-10-12).
         calendar,
@@ -105,6 +120,16 @@ export function renderApp({
 export function demoHash(mailboxId: string, messageId?: string): string {
   const account = encodeURIComponent(DEMO_ACCOUNT.id);
   return `#/${account}/${mailboxId}${messageId === undefined ? "" : `/${messageId}`}`;
+}
+
+/** Hash route of All inboxes, with a message of an account open (or none). */
+export function unifiedHash(
+  accountId = DEMO_ACCOUNT.id,
+  inboxId = "inbox",
+  messageId?: string,
+): string {
+  const account = encodeURIComponent(accountId);
+  return `#/all/${account}/${inboxId}${messageId === undefined ? "" : `/${messageId}`}`;
 }
 
 /** Keeps any settings stored for the test, with event reminders off. */

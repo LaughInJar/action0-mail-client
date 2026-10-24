@@ -18,6 +18,8 @@ const en = {
     `The attachments add up to ${size}; the limit is ${limit}. Remove some to send.`,
   tooBigToAdd: (count: number, size: string, limit: string) =>
     `With ${plural(count, "this file", "these files")} the mail would carry ${size} of attachments; the limit is ${limit}.`,
+  tooBigForAccount: (email: string, limit: string) =>
+    `The attachments are too big for ${email}: its limit is ${limit}.`,
   tooBigToAttach: (size: string, limit: string) =>
     `Too big to attach: the mail would carry ${size}; the limit is ${limit}.`,
   retry: "Retry",
@@ -108,6 +110,8 @@ const de: typeof en = {
     `Die Anhänge sind zusammen ${size} groß, erlaubt sind ${limit}. Entferne welche, um zu senden.`,
   tooBigToAdd: (count, size, limit) =>
     `Mit ${plural(count, "dieser Datei", "diesen Dateien")} hätte die Mail ${size} an Anhängen, erlaubt sind ${limit}.`,
+  tooBigForAccount: (email, limit) =>
+    `Die Anhänge sind zu groß für ${email}: erlaubt sind ${limit}.`,
   tooBigToAttach: (size, limit) =>
     `Zu groß zum Anhängen: Die Mail hätte ${size}, erlaubt sind ${limit}.`,
   retry: "Wiederholen",

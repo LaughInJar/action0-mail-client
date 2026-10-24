@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { asMessageId } from "../core/ids";
+import { asAccountId, asDraftId, asMessageId, messageKey } from "../core/ids";
 import { DEFAULT_SETTINGS } from "./settings";
 import { MemoryStorage } from "../test/memoryStorage";
 import { COLUMN_LIMITS, createUiStore, UI_STATE_KEY } from "./uiStore";
@@ -22,8 +22,11 @@ describe("uiStore persistence", () => {
     setListOrder("oldest");
     setFolderFilter("secret-filter");
     toggleNode("account:x");
-    enterList("acct/inbox", asMessageId("secret-message-id"));
-    toggle(asMessageId("selected-id"));
+    enterList(
+      "acct/inbox",
+      messageKey(asAccountId("a"), asMessageId("secret-message-id")),
+    );
+    toggle(messageKey(asAccountId("a"), asMessageId("selected-id")));
     allowRemoteContent(asMessageId("allowed-id"));
 
     const persisted = JSON.parse(storage.getItem(UI_STATE_KEY) ?? "{}") as {
@@ -36,6 +39,7 @@ describe("uiStore persistence", () => {
       settings: DEFAULT_SETTINGS,
       // Ids and times of dismissed or snoozed reminders, no content.
       reminderMarks: {},
+      accountColors: {},
     });
     expect(storage.dump()).not.toMatch(
       /secret-message-id|selected-id|allowed-id|secret-filter/,
@@ -92,7 +96,7 @@ describe("uiStore persistence", () => {
 
   it("resets focus and selection when entering another list", () => {
     const store = createUiStore(undefined);
-    store.getState().toggle(asMessageId("a"));
+    store.getState().toggle(messageKey(asAccountId("x"), asMessageId("a")));
     store.getState().enterList("acct/sent", null);
     expect(store.getState()).toMatchObject({
       listKey: "acct/sent",
@@ -100,5 +104,26 @@ describe("uiStore persistence", () => {
       anchorId: null,
     });
     expect(store.getState().selectedIds.size).toBe(0);
+  });
+
+  it("ignores a save that finishes after the composer moved to another account", () => {
+    const store = createUiStore(undefined);
+    const session = store
+      .getState()
+      .openComposer({ accountId: asAccountId("a"), kind: "new", dirty: true });
+    store.getState().markComposerSaving(session.key);
+    // From changed meanwhile: the draft now belongs to account b.
+    store.getState().openComposer({
+      ...session,
+      accountId: asAccountId("b"),
+      dirty: true,
+    });
+    store.getState().markComposerSaved(session.key, asAccountId("a"), {
+      revision: 99,
+      draftId: asDraftId("old-draft"),
+    });
+    const composer = store.getState().composer;
+    expect(composer?.draftId).toBeUndefined();
+    expect(composer?.savedRevision).toBeLessThan(composer?.revision ?? 0);
   });
 });

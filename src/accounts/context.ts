@@ -1,4 +1,10 @@
-import { createContext, useContext, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import type { AuthSession, AuthStatus } from "../auth/types";
 import type { AccountId } from "../core/ids";
 import type { AccountRegistry } from "./AccountRegistry";
@@ -43,6 +49,38 @@ export function useAuthStatus(
   return useSyncExternalStore(
     auth?.subscribe ?? noSubscription,
     () => auth?.status,
+  );
+}
+
+/**
+ * The accounts among `handles` whose sessions can make requests (signed
+ * in); re-renders when that changes.
+ */
+export function useSignedIn(
+  handles: readonly AccountHandle[],
+): ReadonlySet<AccountId> {
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const unsubscribes = handles.map((handle) =>
+        handle.auth.subscribe(listener),
+      );
+      return () => {
+        for (const unsubscribe of unsubscribes) unsubscribe();
+      };
+    },
+    [handles],
+  );
+  // A string, so the snapshot only changes when the answer does.
+  const signedIn = useSyncExternalStore(subscribe, () =>
+    JSON.stringify(
+      handles.flatMap((handle) =>
+        handle.auth.status === "signed-in" ? [handle.account.id] : [],
+      ),
+    ),
+  );
+  return useMemo(
+    () => new Set(JSON.parse(signedIn) as AccountId[]),
+    [signedIn],
   );
 }
 

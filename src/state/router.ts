@@ -19,21 +19,37 @@ export interface RouteSearch {
 /**
  * Navigation state kept in the URL hash:
  * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]][&compose=…]`,
- * or `null` for `#/` (on phones: the folder tree). With a search,
- * `mailboxId` is the mailbox it was started from. A `settings` flag after
- * it (see {@link formatLocation}) means Settings is open over the route.
+ * or `#/all/…` for All inboxes, or `null` for `#/` (on phones: the folder
+ * tree). With a search, `mailboxId` is the mailbox it was started from. A
+ * `settings` flag after it (see {@link formatLocation}) means Settings is
+ * open over the route.
  */
 export type Route = {
+  /**
+   * The account in context. In All inboxes: the account of the open (or
+   * last opened) message, so the reader, replies and `g i` follow it.
+   */
   readonly accountId: AccountId;
+  /** The mailbox listed; in All inboxes the context account's Inbox. */
   readonly mailboxId: MailboxId;
   readonly messageId?: MessageId;
+  /**
+   * All inboxes: the list is every account's Inbox merged, and
+   * `accountId`/`mailboxId` only say whose message is open.
+   */
+  readonly unified?: true;
   readonly search?: RouteSearch;
   /**
    * A full-screen composer is open (tablets and phones), so Back closes it:
    * `new`, or the id of its draft so a reload can reopen it. Opaque.
    */
   readonly compose?: string;
+  /** The account of the draft in `compose` (a reload resumes it there). */
+  readonly composeAccount?: AccountId;
 } | null;
+
+/** The first path segment of All inboxes (account ids always contain ":"). */
+const UNIFIED = "all";
 
 /** The calendar's views. */
 export type CalendarView = "day" | "week" | "month" | "agenda";
@@ -117,20 +133,27 @@ export function parseHash(hash: string): Route {
   if (parseCalendarHash(hash)) return null;
   const [path, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
   if (!path) return null;
-  const segments = path.split("/").map(safeDecode);
+  const all = path.split("/").map(safeDecode);
+  const unified = all[0] === UNIFIED;
+  const segments = unified ? all.slice(1) : all;
   const [account, mailbox, message] = segments;
   if (!account || !mailbox || segments.length > 3) return null;
   const params = new URLSearchParams(query);
   const text = params.get("q") ?? "";
   const compose = params.get("compose");
+  const composeAccount = params.get("ca");
   return {
     accountId: asAccountId(account),
     mailboxId: asMailboxId(mailbox),
     ...(message ? { messageId: asMessageId(message) } : {}),
+    ...(unified ? { unified: true } : {}),
     ...(text.trim()
       ? { search: { text, everywhere: params.get("in") === "all" } }
       : {}),
     ...(compose ? { compose } : {}),
+    ...(compose && composeAccount
+      ? { composeAccount: asAccountId(composeAccount) }
+      : {}),
   };
 }
 
@@ -140,23 +163,34 @@ export function formatRoute(route: Route): string {
   const segments = [route.accountId, route.mailboxId, route.messageId].filter(
     (segment): segment is NonNullable<typeof segment> => segment !== undefined,
   );
-  const path = segments.map((segment) => encodeURIComponent(segment));
-  const { search, compose } = route;
+  const path = [
+    ...(route.unified ? [UNIFIED] : []),
+    ...segments.map((segment) => encodeURIComponent(segment)),
+  ];
+  const { search, compose, composeAccount } = route;
   const params = new URLSearchParams();
   if (search?.text.trim()) {
     params.set("q", search.text);
     if (search.everywhere) params.set("in", "all");
   }
-  if (compose) params.set("compose", compose);
+  if (compose) {
+    params.set("compose", compose);
+    if (composeAccount) params.set("ca", composeAccount);
+  }
   const query = params.toString();
   return `#/${path.join("/")}${query ? `?${query}` : ""}`;
 }
 
-/** True if both routes show the same list: mailbox and search (ignoring the message). */
+/**
+ * True if both routes show the same list: mailbox and search (ignoring the
+ * message). All inboxes is one list, whichever account is in context.
+ */
 export function sameList(a: Route, b: Route): boolean {
+  const unified = a?.unified === true;
   return (
-    a?.accountId === b?.accountId &&
-    a?.mailboxId === b?.mailboxId &&
+    unified === (b?.unified === true) &&
+    (unified ||
+      (a?.accountId === b?.accountId && a?.mailboxId === b?.mailboxId)) &&
     a?.search?.text.trim() === b?.search?.text.trim() &&
     a?.search?.everywhere === b?.search?.everywhere
   );

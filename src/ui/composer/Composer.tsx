@@ -7,6 +7,8 @@ import { buildMailDocument } from "../../security/mailDocument";
 import { sanitizeMailHtml } from "../../security/sanitize";
 import { fromAddress } from "../../core/compose";
 import type { Sender } from "../../core/model";
+import type { OutgoingAttachment } from "../../core/compose";
+import { errorMessage } from "../common/errorMessage";
 import { useSendersOf } from "../../data/senders";
 import { useUi, useUiStore } from "../../state/context";
 import type { ComposerSession, UiActions } from "../../state/uiStore";
@@ -207,27 +209,57 @@ function ComposerWindow({
     accountId: AccountId,
     sending: Pick<ComposerSession, "from" | "signature">,
   ) => {
-    if (accountId === session.accountId) return;
+    const from = session.accountId;
+    if (accountId === from) return;
+    const target = accounts.find((handle) => handle.account.id === accountId);
+    const max =
+      target?.provider.capabilities.maxAttachmentBytes ??
+      Number.POSITIVE_INFINITY;
+    if (sentBytes(session) > max) {
+      setProblem(
+        t.composer.tooBigForAccount(
+          target?.account.email ?? "",
+          megabytes(max, t.locale),
+        ),
+      );
+      return;
+    }
     // The draft moves: delete it in the old account, save it in the new one.
-    void sync
-      .discard(key, session.accountId, session.draftId)
-      .catch(() => undefined);
-    const { draftId, ...rest } = session;
-    store.getState().openComposer({
-      ...rest,
-      ...sending,
-      accountId,
-      ...(rest.threading
-        ? {
-            threading: {
-              references: rest.threading.references,
-              ...(rest.threading.inReplyTo
-                ? { inReplyTo: rest.threading.inReplyTo }
-                : {}),
-            },
-          }
-        : {}),
-      dirty: true,
+    const move = (loaded: readonly OutgoingAttachment[]) => {
+      const current = store.getState().composer;
+      // Closed, or moved elsewhere meanwhile.
+      if (current?.key !== key || current.accountId !== from) return;
+      void sync.discard(key, from, current.draftId).catch(() => undefined);
+      const bytes = new Map(loaded.map((part) => [part.id, part.content]));
+      const { draftId, ...rest } = current;
+      store.getState().openComposer({
+        ...rest,
+        ...sending,
+        accountId,
+        // Parts of the old account's mail come along as bytes.
+        attachments: rest.attachments.map((part) => {
+          const content = part.content ?? bytes.get(part.id);
+          return content ? { ...part, content } : part;
+        }),
+        ...(rest.threading
+          ? {
+              threading: {
+                references: rest.threading.references,
+                ...(rest.threading.inReplyTo
+                  ? { inReplyTo: rest.threading.inReplyTo }
+                  : {}),
+              },
+            }
+          : {}),
+        dirty: true,
+      });
+    };
+    if (session.attachments.every((part) => part.content)) {
+      move(session.attachments);
+      return;
+    }
+    sync.loadParts(from, session.attachments).then(move, (error: unknown) => {
+      setProblem(t.composer.couldntSave(errorMessage(error, t)));
     });
   };
 

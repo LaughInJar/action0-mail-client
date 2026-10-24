@@ -113,6 +113,9 @@ export const MessageRow = memo(function MessageRow({
         )
       )}
       {view.flagged && <span className="sr-only">{l.starred}</span>}
+      {view.account && (
+        <span className="sr-only">{l.inAccount(view.account.email)}</span>
+      )}
     </>
   );
 
@@ -121,10 +124,10 @@ export const MessageRow = memo(function MessageRow({
       id={domId}
       role="option"
       aria-selected={selected}
-      data-message-id={view.id}
+      data-row-key={view.key}
       draggable={draggable}
       className={[
-        "group flex cursor-default gap-3 border-b border-zinc-100 px-3 select-none dark:border-zinc-800/70",
+        "group relative flex cursor-default gap-3 border-b border-zinc-100 px-3 select-none dark:border-zinc-800/70",
         compact
           ? "items-center py-1.5 pointer-coarse:min-h-11"
           : "py-2.5 pointer-coarse:py-3",
@@ -138,6 +141,13 @@ export const MessageRow = memo(function MessageRow({
           : "",
       ].join(" ")}
     >
+      {view.account && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ backgroundColor: view.account.color }}
+        />
+      )}
       <span
         className={`flex w-4 shrink-0 justify-center ${compact ? "" : "pt-1.5"}`}
       >

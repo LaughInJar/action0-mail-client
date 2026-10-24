@@ -4,7 +4,7 @@ import {
   useAccounts,
   useAuthStatus,
 } from "../../accounts/context";
-import type { MessageId } from "../../core/ids";
+import { messageRef, type MessageKey } from "../../core/ids";
 import { useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
 import { MailActionButtons } from "../actions/MailActionButtons";
@@ -15,7 +15,11 @@ import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { ListToolbar } from "./ListToolbar";
 import { MessageList } from "./MessageList";
-import { everywhereMailbox, useCurrentList } from "./useCurrentList";
+import {
+  everywhereMailbox,
+  routeOfRow,
+  useCurrentList,
+} from "./useCurrentList";
 import { useT } from "../../i18n/context";
 
 /** Column (b): header, search and message list of the current mailbox. */
@@ -26,13 +30,14 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     rows,
     conversations,
     mailboxes,
-    isolating,
     mailbox,
     scope,
     order,
     listKey,
+    unified,
+    sources,
+    unavailable,
   } = useCurrentList();
-  const drafts = mailboxes?.find((m) => m.role === "drafts")?.id;
   const t = useT();
   const l = t.list;
   const router = useRouter();
@@ -42,6 +47,8 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const status = useAuthStatus(handle?.auth);
   const search = route?.search;
   const everywhere = everywhereMailbox(mailboxes);
+  // What's listed, by name (where a search runs).
+  const here = unified ? l.allInboxes : mailbox?.name;
   const isolated = scope?.role === "trash" || scope?.role === "junk";
   const selectedCount = useUi((state) => state.selectedIds.size);
   const clearSelection = useUi((state) => state.clearSelection);
@@ -52,19 +59,19 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const compose = useComposeActions();
   const isDrafts = scope?.role === "drafts" && compose.canCompose;
   const onOpen = useCallback(
-    (id: MessageId) => {
-      store.getState().focusOnly(id);
+    (key: MessageKey) => {
+      store.getState().focusOnly(key);
       // Drafts open in the composer.
       if (isDrafts) {
-        compose.editDraft(id);
+        compose.editDraft(messageRef(key));
         return;
       }
       const current = router.getRoute();
       // On phones the reader is its own screen, reachable with Back.
       if (breakpoint === "narrow" && current)
-        router.navigate({ ...current, messageId: id });
+        router.navigate(routeOfRow(current, key, sources));
     },
-    [breakpoint, router, store, isDrafts, compose],
+    [breakpoint, router, store, isDrafts, compose, sources],
   );
   const loadMore = useCallback(() => {
     void fetchNextPage();
@@ -73,7 +80,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   let body;
   if (!route) body = <Note>{l.chooseFolder}</Note>;
   else if (!handle) body = <Note>{t.errors.reasons.notConnected({})}</Note>;
-  else if (!rows && status !== "signed-in")
+  else if (!rows && status !== "signed-in" && !unified)
     body = <Note>{l.reconnectToSee}</Note>;
   else if (list.isPending)
     body = (
@@ -99,13 +106,12 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   else if (rows.length === 0 && search)
     body = (
       <Note>
-        {search.everywhere || !mailbox
+        {search.everywhere || !here
           ? l.noMatch(conversations, search.text)
-          : l.noMatchIn(conversations, search.text, mailbox.name)}
+          : l.noMatchIn(conversations, search.text, here)}
         {!search.everywhere &&
-          everywhere &&
-          mailbox &&
-          mailbox.id !== everywhere.id && (
+          (unified ||
+            (everywhere && mailbox && mailbox.id !== everywhere.id)) && (
             <>
               {" "}
               <button
@@ -129,14 +135,17 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     body = (
       <MessageList
         key={listKey}
-        accountId={route.accountId}
         allowDrag={!isolated}
         rows={rows}
+        sources={sources}
+        showAccounts={unified}
         mailbox={scope}
-        isolating={isolating}
-        drafts={drafts}
         {...(listKey === null ? {} : { listKey })}
-        {...(search ? { label: l.results(search.text) } : {})}
+        {...(search
+          ? { label: l.results(search.text) }
+          : unified
+            ? { label: l.messagesIn(l.allInboxes) }
+            : {})}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
         fetchNextPage={loadMore}
@@ -144,8 +153,8 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         enterOpens={breakpoint === "narrow" || isDrafts}
         {...(actions.canStar
           ? {
-              onToggleStar: (id: MessageId) => {
-                actions.toggleStar([id]);
+              onToggleStar: (key: MessageKey) => {
+                actions.toggleStar([key]);
               },
             }
           : {})}
@@ -181,9 +190,9 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         ) : (
           <div className="min-w-0 flex-1 px-2">
             <h2 className="truncate text-sm font-semibold">
-              {search ? l.results(search.text) : (mailbox?.name ?? "")}
+              {search ? l.results(search.text) : (here ?? "")}
             </h2>
-            {accounts.length > 1 && handle && (
+            {accounts.length > 1 && handle && !unified && (
               <p className="truncate text-xs text-zinc-500">
                 {handle.account.email}
               </p>
@@ -201,11 +210,38 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           label={l.refresh}
           icon="refresh"
           spinning={list.isFetching}
-          disabled={!route || status !== "signed-in"}
+          disabled={!route || (status !== "signed-in" && !unified)}
           onClick={() => void list.refetch()}
         />
       </header>
-      {route && <ListToolbar mailbox={mailbox} everywhere={everywhere} />}
+      {route && (
+        <ListToolbar
+          mailbox={mailbox}
+          everywhere={everywhere}
+          unified={unified}
+        />
+      )}
+      {unavailable.length > 0 && (
+        <div
+          role="note"
+          className="border-b border-zinc-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-zinc-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          {unavailable.map((accountId) => {
+            const unavailableHandle = accounts.find(
+              (candidate) => candidate.account.id === accountId,
+            );
+            if (!unavailableHandle) return null;
+            const { email } = unavailableHandle.account;
+            return (
+              <p key={accountId}>
+                {unavailableHandle.auth.status === "signed-in"
+                  ? l.couldntLoad(email)
+                  : l.needsReconnect(email)}
+              </p>
+            );
+          })}
+        </div>
+      )}
       {selectedCount > 0 && (
         <div
           role="group"

@@ -24,6 +24,8 @@ export function notifyArrivals(
     router.navigate({
       accountId,
       mailboxId: inboxId,
+      // In All inboxes it opens there; otherwise in its account's Inbox.
+      ...(router.getRoute()?.unified ? { unified: true } : {}),
       ...(messageId === undefined ? {} : { messageId }),
     });
   };

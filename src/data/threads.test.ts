@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { asMailboxId, asMessageId, asThreadId } from "../core/ids";
+import {
+  asAccountId,
+  asMailboxId,
+  asMessageId,
+  asThreadId,
+  messageKey,
+} from "../core/ids";
 import type { Mailbox, MessageSummary, ThreadSummary } from "../core/model";
 import { rowsLeaving, threadRows } from "./listRows";
 import {
@@ -11,6 +17,8 @@ import {
   type MessageChange,
   type ThreadListData,
 } from "./optimistic";
+
+const ACCOUNT = asAccountId("gmail:me@example.com");
 
 const box = (id: string, extra: Partial<Mailbox> = {}): Mailbox => ({
   id: asMailboxId(id),
@@ -69,7 +77,7 @@ describe("conversation rows", () => {
   it("show where any message is, keyed by the oldest message", () => {
     expect(threadBelongsTo(inbox, t1, isolating)).toBe(true);
     expect(threadBelongsTo(sent, t1, isolating)).toBe(true);
-    const [row] = threadRows([t1], inbox, isolating);
+    const [row] = threadRows(ACCOUNT, [t1], inbox, isolating);
     // The newest message shown in the Inbox's conversation is my reply.
     expect(row).toMatchObject({ id: "a1", summary: { id: "a2" } });
   });
@@ -78,10 +86,10 @@ describe("conversation rows", () => {
     const archived = change(a1, { mailboxIds: [] });
     const patched = patchThreadList(list(t2, t1), inbox, [archived], isolating);
     expect(order(patched)).toEqual(["t2"]);
-    const rows = threadRows([t2, t1], inbox, isolating);
-    expect([...rowsLeaving(rows, inbox, [archived], isolating)]).toEqual([
-      "a1",
-    ]);
+    const rows = threadRows(ACCOUNT, [t2, t1], inbox, isolating);
+    expect([
+      ...rowsLeaving(rows, ACCOUNT, inbox, [archived], isolating),
+    ]).toEqual([messageKey(ACCOUNT, asMessageId("a1"))]);
 
     const undone = patchThreadList(
       patched,
@@ -124,9 +132,9 @@ describe("conversation rows", () => {
   it("keep trashed messages out of other lists' rows", () => {
     const trashed = message("a3", "t1", 1, ["trash"]);
     const thread = { ...t1, messages: [a1, a2, trashed] };
-    const [row] = threadRows([thread], inbox, isolating);
+    const [row] = threadRows(ACCOUNT, [thread], inbox, isolating);
     expect(row?.summary.id).toBe("a2");
-    const [inTrash] = threadRows([thread], trash, isolating);
+    const [inTrash] = threadRows(ACCOUNT, [thread], trash, isolating);
     expect(inTrash?.summary.id).toBe("a3");
   });
 });

@@ -1,10 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useAccounts } from "../../accounts/context";
-import type { Mailbox } from "../../core/model";
-import { queryKeys } from "../../data/keys";
 import { useT } from "../../i18n/context";
 import { usePlatform } from "../../platform/context";
+import { inboxUnread } from "../mailboxes/allInboxes";
 
 /** The title without unread mail. */
 export const APP_TITLE = "action0";
@@ -23,15 +22,11 @@ export function useDocumentTitle(): void {
 
   useEffect(() => {
     const update = () => {
-      let unread = 0;
-      let expired = false;
-      for (const { account, auth } of accounts) {
-        if (auth.status === "expired") expired = true;
-        const inbox = queryClient
-          .getQueryData<readonly Mailbox[]>(queryKeys.mailboxes(account.id))
-          ?.find((mailbox) => mailbox.role === "inbox");
-        unread += inbox?.counts?.unread ?? 0;
-      }
+      const unread = inboxUnread(
+        queryClient,
+        accounts.map((handle) => handle.account.id),
+      );
+      const expired = accounts.some(({ auth }) => auth.status === "expired");
       const title = expired
         ? t.layout.titleReconnect(APP_TITLE)
         : unread > 0

@@ -47,6 +47,7 @@ import { useCommands } from "../../keyboard/context";
 import type { Command } from "../../keyboard/registry";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useNavigationDefaults } from "./useNavigationDefaults";
+import { useRememberAccountColors } from "../accounts/accountColors";
 import { useT } from "../../i18n/context";
 
 /** The calendar, loaded when it's first opened. */
@@ -89,6 +90,7 @@ function MailApp() {
       notifyArrivals(arrivals, router, t, platform.notifications);
   });
   useDocumentTitle();
+  useRememberAccountColors();
   const undo = useUndo(actions, compose);
 
   useEffect(() => {

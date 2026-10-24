@@ -10,13 +10,25 @@ import {
 } from "react";
 import { useAccounts, useAuthStatus } from "../../accounts/context";
 import type { AccountHandle } from "../../accounts/types";
-import { asAccountId, asMailboxId, type AccountId } from "../../core/ids";
+import {
+  asAccountId,
+  asMailboxId,
+  messageRef,
+  type AccountId,
+} from "../../core/ids";
 import type { Mailbox, MailboxRole } from "../../core/model";
 import { isOwnMailbox } from "../../data/mailboxActions";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { sameList } from "../../state/router";
 import { findFolded } from "../../lib/text";
 import { useMailActions } from "../actions/useMailActions";
+import { useAccountColors } from "../accounts/accountColors";
+import { useCurrentList } from "../messages/useCurrentList";
+import {
+  ALL_INBOXES_FROM,
+  useInboxUnread,
+  useOpenAllInboxes,
+} from "./allInboxes";
 import { Icon, type IconName } from "../common/Icon";
 import { useLongPress } from "../messages/useLongPress";
 import {
@@ -30,10 +42,14 @@ import { FOLDER_FILTER_ID } from "./FolderFilter";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
 
-/** The tree item currently under a drag, and whether the drop would only add a label. */
+/**
+ * The tree item currently under a drag, and whether the drop would only
+ * add a label, or isn't possible (a mailbox of another account).
+ */
 interface DropHighlight {
   readonly key: string;
   readonly copy: boolean;
+  readonly otherAccount?: boolean;
 }
 
 const DropContext = createContext<DropHighlight | null>(null);
@@ -82,6 +98,8 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const toggleNode = useUi((state) => state.toggleNode);
   const store = useUiStore();
   const actions = useMailActions();
+  const { sources } = useCurrentList();
+  const openAllInboxes = useOpenAllInboxes();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
   const a = useT().accounts;
@@ -131,17 +149,25 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     const dragging = store.getState().dragging;
     if (!item || !dragging) return undefined;
     const { key = "", accountId, mailboxId, assignable, role } = item.dataset;
-    if (accountId !== dragging.accountId || mailboxId === undefined)
-      return undefined;
+    if (accountId === undefined || mailboxId === undefined) return undefined;
     if (assignable !== "true") return undefined;
+    // The mailbox they're listed in isn't a target.
     const current = router.getRoute();
-    if (current?.accountId === accountId && current.mailboxId === mailboxId)
-      return undefined;
+    const listed = current?.unified
+      ? sources.get(asAccountId(accountId))?.scope?.id
+      : current?.accountId === accountId
+        ? current.mailboxId
+        : undefined;
+    if (listed === mailboxId) return undefined;
     return {
       key,
       role,
       mailboxId: asMailboxId(mailboxId),
-      ids: dragging.ids,
+      keys: dragging.keys,
+      // Mail can't move between accounts.
+      otherAccount: dragging.keys.some(
+        (dragged) => messageRef(dragged).accountId !== accountId,
+      ),
     };
   };
 
@@ -159,6 +185,15 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       setDrop(null);
       return;
     }
+    if (target.otherAccount) {
+      event.dataTransfer.dropEffect = "none";
+      setDrop((current) =>
+        current?.key === target.key && current.otherAccount === true
+          ? current
+          : { key: target.key, copy: false, otherAccount: true },
+      );
+      return;
+    }
     event.preventDefault();
     const copy = wantsCopy(event, target.role);
     event.dataTransfer.dropEffect = copy ? "copy" : "move";
@@ -172,12 +207,12 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     const target = dropTargetOf(event.target);
     setDrop(null);
-    if (!target) return;
+    if (!target || target.otherAccount) return;
     event.preventDefault();
     store.getState().setDragging(null);
     if (wantsCopy(event, target.role))
-      actions.setLabels([target.mailboxId], [], target.ids);
-    else actions.moveTo(target.mailboxId, target.ids);
+      actions.setLabels([target.mailboxId], [], target.keys);
+    else actions.moveTo(target.mailboxId, target.keys);
   };
   const routeAccountKnown = accounts.some(
     (handle) => handle.account.id === route?.accountId,
@@ -191,6 +226,13 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     const menuButton = target.closest("[data-label-menu]");
     if (menuButton) {
       openMenu(item, menuButton);
+      return;
+    }
+    if (item.dataset.unified === "true") {
+      if (openAllInboxes()) {
+        store.getState().setFolderFilter("");
+        onNavigate?.();
+      }
       return;
     }
     const {
@@ -318,6 +360,9 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     >
       <FilterContext value={filter}>
         <DropContext value={drop}>
+          {accounts.length >= ALL_INBOXES_FROM && (
+            <AllInboxesItem selected={route?.unified === true} />
+          )}
           {accounts.map((handle, index) => (
             <AccountBranch
               key={handle.account.id}
@@ -349,6 +394,11 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const key = `account:${account.id}`;
   const expanded = filter !== "" || !toggledNodes.has(key);
   const a = useT().accounts;
+  // Only needed to tell accounts apart in All inboxes.
+  const accounts = useAccounts();
+  const colors = useAccountColors();
+  const color =
+    accounts.length >= ALL_INBOXES_FROM ? colors.get(account.id) : undefined;
 
   let body;
   if (!expanded) body = null;
@@ -385,7 +435,16 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
         className={`${rowClass(false)} pl-2`}
       >
         <Chevron expanded={expanded} />
-        <Icon name="user" className="size-4 shrink-0 text-zinc-500" />
+        <span className="relative shrink-0">
+          <Icon name="user" className="size-4 text-zinc-500" />
+          {color && (
+            <span
+              aria-hidden="true"
+              className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-zinc-50 dark:ring-zinc-950"
+              style={{ backgroundColor: color }}
+            />
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-zinc-600 dark:text-zinc-300">
           {account.email}
         </span>
@@ -397,6 +456,45 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
       </div>
       {body}
     </>
+  );
+}
+
+/** "All inboxes": every account's Inbox in one list. */
+function AllInboxesItem({ selected }: { readonly selected: boolean }) {
+  const filter = useContext(FilterContext);
+  const unread = useInboxUnread();
+  const a = useT().accounts;
+  const name = a.allInboxes;
+  const match = filter === "" || findFolded(name, filter) !== undefined;
+  if (!match) return null;
+  return (
+    <div
+      role="treeitem"
+      aria-level={1}
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
+      data-key="all-inboxes"
+      data-unified="true"
+      data-selectable="true"
+      data-has-children="false"
+      data-match={filter === "" ? undefined : true}
+      className={`${rowClass(selected)} pl-2`}
+    >
+      <span className="size-4 shrink-0" />
+      <Icon name="inbox" className="size-4 shrink-0" />
+      <span
+        className={`min-w-0 flex-1 truncate ${unread > 0 ? "font-semibold" : ""}`}
+      >
+        <Highlighted text={name} query={filter} />
+      </span>
+      {unread > 0 && (
+        <span className="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+          <span className="sr-only">, </span>
+          {unread}
+          <span className="sr-only">{a.unread}</span>
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -430,7 +528,9 @@ function MailboxBranch({
     hasChildren &&
     (filter !== "" || expandedByDefault(mailbox) !== toggledNodes.has(key));
   const selected =
-    route?.accountId === accountId && route.mailboxId === mailbox.id;
+    route?.unified !== true &&
+    route?.accountId === accountId &&
+    route.mailboxId === mailbox.id;
   const badge = badgeCount(mailbox);
   const drop = useContext(DropContext);
   const dropHere = drop?.key === key;
@@ -457,7 +557,7 @@ function MailboxBranch({
         data-editable={editable || undefined}
         aria-haspopup={editable ? "menu" : undefined}
         aria-keyshortcuts={editable ? "Shift+F10" : undefined}
-        className={`${rowClass(selected)} ${dropHere ? "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20" : ""}`}
+        className={`${rowClass(selected)} ${dropHere ? (drop.otherAccount ? "ring-2 ring-zinc-400" : "bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/20") : ""}`}
         style={{ paddingLeft: `${(depth - 1) * 0.875 + 0.5}rem` }}
       >
         {hasChildren ? (
@@ -478,8 +578,14 @@ function MailboxBranch({
           <Highlighted text={mailbox.name} query={filter} />
         </span>
         {dropHere && (
-          <span className="shrink-0 rounded bg-blue-600 px-1.5 py-px text-[0.6875rem] font-semibold text-white">
-            {drop.copy ? a.addLabelHere : a.moveHere}
+          <span
+            className={`shrink-0 rounded px-1.5 py-px text-[0.6875rem] font-semibold text-white ${drop.otherAccount ? "bg-zinc-500" : "bg-blue-600"}`}
+          >
+            {drop.otherAccount
+              ? a.otherAccount
+              : drop.copy
+                ? a.addLabelHere
+                : a.moveHere}
           </span>
         )}
         {badge !== undefined && (

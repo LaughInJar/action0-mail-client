@@ -10,6 +10,7 @@ import {
   type FakeCalendarData,
 } from "./FakeCalendarProvider";
 import { FakeMailProvider, type FakeMailData } from "./FakeMailProvider";
+import { createWorkArrival, createWorkDemoData, WORK_EMAIL } from "./demoWork";
 
 /** The demo account. */
 export const DEMO_ACCOUNT: Account = {
@@ -18,12 +19,24 @@ export const DEMO_ACCOUNT: Account = {
   email: DEMO_EMAIL,
 };
 
+/**
+ * The second demo account (Outlook-like folders), so All inboxes can be
+ * tried. It needs no sign-in: added with `AccountRegistry.addKnown`.
+ */
+export const DEMO_WORK_ACCOUNT: Account = {
+  id: asAccountId(`demo:${WORK_EMAIL}`),
+  type: "demo",
+  email: WORK_EMAIL,
+};
+
 /** Options of {@link createDemoModule}. */
 export interface DemoModuleOptions {
   /** Simulated latency per call, so loading states are visible. */
   readonly latencyMs?: number;
   /** Replaces the generated demo content (used by tests). */
   readonly data?: () => FakeMailData;
+  /** Replaces the second demo account's content (used by tests). */
+  readonly workData?: () => FakeMailData;
   /** A new message arrives this often (ms); `false` for none. */
   readonly arrivalEveryMs?: number | false;
   /** Clock for arrivals (tests). */
@@ -42,6 +55,7 @@ export interface DemoModuleOptions {
 export function createDemoModule({
   latencyMs = 150,
   data = createDemoData,
+  workData = createWorkDemoData,
   arrivalEveryMs = 2 * 60_000,
   now,
   calendar = () => createDemoCalendar(now?.() ?? Date.now()),
@@ -55,22 +69,39 @@ export function createDemoModule({
     connect: () =>
       Promise.resolve({ account: DEMO_ACCOUNT, auth: new StaticAuthSession() }),
     restore: () => new StaticAuthSession(),
-    createCalendar: () =>
-      new FakeCalendarProvider(calendar(), {
-        latencyMs,
-        access: calendarAccess,
-        guestNotices,
-        syncedReminders,
-      }),
-    createProvider: () =>
-      new FakeMailProvider(data(), {
+    createCalendar: (account) => {
+      const work = account.email === WORK_EMAIL;
+      return new FakeCalendarProvider(
+        work
+          ? {
+              calendars: [],
+              events: [],
+              me: { address: WORK_EMAIL },
+              now: now?.() ?? Date.now(),
+            }
+          : calendar(),
+        {
+          latencyMs,
+          access: calendarAccess,
+          guestNotices,
+          syncedReminders,
+        },
+      );
+    },
+    createProvider: (account) => {
+      const work = account.email === WORK_EMAIL;
+      return new FakeMailProvider(work ? workData() : data(), {
         latencyMs,
         ...(now ? { now } : {}),
         ...(arrivalEveryMs === false
           ? {}
           : {
-              arrivals: { everyMs: arrivalEveryMs, create: createDemoArrival },
+              arrivals: work
+                ? // Less often than the first account, so both show up.
+                  { everyMs: arrivalEveryMs * 1.5, create: createWorkArrival }
+                : { everyMs: arrivalEveryMs, create: createDemoArrival },
             }),
-      }),
+      });
+    },
   };
 }

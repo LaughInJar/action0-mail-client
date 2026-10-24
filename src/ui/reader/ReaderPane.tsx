@@ -1,5 +1,12 @@
 import { useId, type ReactNode } from "react";
-import type { AccountId, MessageId, ThreadId } from "../../core/ids";
+import {
+  messageKey,
+  messageRef,
+  type AccountId,
+  type MessageId,
+  type MessageRef,
+  type ThreadId,
+} from "../../core/ids";
 import type { Mailbox } from "../../core/model";
 import { isMailError } from "../../core/errors";
 import { useMessage } from "../../data/hooks";
@@ -12,7 +19,12 @@ import { READER_SCROLL_ID } from "../layout/useGlobalCommands";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { MailActionButtons } from "../actions/MailActionButtons";
 import { useMailActions } from "../actions/useMailActions";
-import { listKeyOf, useCurrentList } from "../messages/useCurrentList";
+import {
+  keyOfRoute,
+  listKeyOf,
+  useCurrentList,
+} from "../messages/useCurrentList";
+import { AccountLine } from "./AccountLine";
 import { ConversationView } from "./ConversationView";
 import { Icon } from "../common/Icon";
 import {
@@ -33,7 +45,7 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const route = useRoute();
   const t = useT();
   const r = t.reader;
-  const { conversations, rows, scope } = useCurrentList();
+  const { rows, sources, unified } = useCurrentList();
   const router = useRouter();
   const listKey = listKeyOf(
     route,
@@ -46,10 +58,10 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const selectedCount = useUi((state) => state.selectedIds.size);
 
   // Phones show exactly the message in the URL; larger screens show the cursor.
-  const messageId =
-    breakpoint === "narrow"
-      ? route?.messageId
-      : (focusedId ?? route?.messageId);
+  const routeKey = keyOfRoute(route);
+  const openKey = breakpoint === "narrow" ? routeKey : (focusedId ?? routeKey);
+  const open = openKey === null ? undefined : messageRef(openKey);
+  const messageId = open?.messageId;
 
   const back =
     breakpoint === "narrow"
@@ -68,7 +80,7 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
       </Placeholder>
     );
   }
-  if (!route || messageId === undefined) {
+  if (!route || open === undefined || messageId === undefined) {
     return (
       <Placeholder title={r.noMessageSelected}>
         {r.navigationHint.before}{" "}
@@ -80,22 +92,28 @@ export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
       </Placeholder>
     );
   }
-  if (conversations)
+  // The open row's account: in All inboxes not necessarily the route's yet.
+  const { accountId } = open;
+  const source = sources.get(accountId);
+  const account = unified ? { inAccount: true as const } : {};
+  if (source?.conversations)
     return (
       <ConversationRow
-        key={messageId}
-        accountId={route.accountId}
+        key={openKey}
+        accountId={accountId}
         rowId={messageId}
-        threadId={rows?.find((row) => row.id === messageId)?.thread?.id}
-        mailbox={scope}
+        threadId={rows?.find((row) => row.key === openKey)?.thread?.id}
+        mailbox={source.scope}
+        {...account}
         {...(back ? { onBack: back } : {})}
       />
     );
   return (
     <MessageView
-      key={messageId}
-      accountId={route.accountId}
+      key={openKey}
+      accountId={accountId}
       messageId={messageId}
+      {...account}
       {...(back ? { onBack: back } : {})}
     />
   );
@@ -110,12 +128,15 @@ function ConversationRow({
   rowId,
   threadId,
   mailbox,
+  inAccount = false,
   onBack,
 }: {
   readonly accountId: AccountId;
   readonly rowId: MessageId;
   readonly threadId: ThreadId | undefined;
   readonly mailbox: Mailbox | undefined;
+  /** Name the account (All inboxes). */
+  readonly inAccount?: boolean;
   readonly onBack?: () => void;
 }) {
   const t = useT();
@@ -138,6 +159,7 @@ function ConversationRow({
       rowId={rowId}
       threadId={id}
       mailbox={mailbox}
+      inAccount={inAccount}
       {...(onBack ? { onBack } : {})}
     />
   );
@@ -146,10 +168,17 @@ function ConversationRow({
 interface MessageViewProps {
   readonly accountId: AccountId;
   readonly messageId: MessageId;
+  /** Name the account (All inboxes). */
+  readonly inAccount?: boolean;
   readonly onBack?: () => void;
 }
 
-function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
+function MessageView({
+  accountId,
+  messageId,
+  inAccount = false,
+  onBack,
+}: MessageViewProps) {
   const t = useT();
   const subjectId = useId();
   const { data: message, error, refetch } = useMessage(accountId, messageId);
@@ -159,13 +188,17 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   useMarkReadOnView(
     message,
     (id) => {
-      actions.setSeen(true, { ids: [id], silent: true });
+      actions.setSeen(true, {
+        keys: [messageKey(accountId, id)],
+        silent: true,
+      });
     },
     markReadDelayMs(markRead),
   );
   const inbox = mailboxes?.find((mailbox) => mailbox.role === "inbox");
   const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
   const compose = useComposeActions();
+  const canWrite = compose.canWriteFrom(accountId);
   const drafts = mailboxes?.find((mailbox) => mailbox.role === "drafts");
   const isDraft =
     !!message && !!drafts && message.mailboxIds.includes(drafts.id);
@@ -176,6 +209,7 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
   if (message) {
     content = (
       <article aria-labelledby={subjectId}>
+        {inAccount && <AccountLine accountId={accountId} />}
         <MessageHeader
           message={message}
           mailboxes={mailboxes}
@@ -194,10 +228,10 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
         <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />
-        {compose.canCompose && (
+        {canWrite && (
           <AnswerButtons
             compose={compose}
-            messageId={message.id}
+            message={{ accountId, messageId: message.id }}
             isDraft={isDraft}
           />
         )}
@@ -237,14 +271,14 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           />
         )}
         <div className="flex-1" />
-        {message && compose.canCompose && (
+        {message && canWrite && (
           <>
             {isDraft ? (
               <IconButton
                 label={t.reader.editDraft}
                 icon="pencil"
                 onClick={() => {
-                  compose.editDraft(message.id);
+                  compose.editDraft({ accountId, messageId: message.id });
                 }}
               />
             ) : (
@@ -253,21 +287,27 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
                   label={t.actions.replyButton}
                   icon="reply"
                   onClick={() => {
-                    compose.reply(message.id, "reply");
+                    compose.reply(
+                      { accountId, messageId: message.id },
+                      "reply",
+                    );
                   }}
                 />
                 <IconButton
                   label={t.actions.replyAllButton}
                   icon="reply-all"
                   onClick={() => {
-                    compose.reply(message.id, "reply-all");
+                    compose.reply(
+                      { accountId, messageId: message.id },
+                      "reply-all",
+                    );
                   }}
                 />
                 <IconButton
                   label={t.actions.forwardButton}
                   icon="forward"
                   onClick={() => {
-                    compose.forward(message.id);
+                    compose.forward({ accountId, messageId: message.id });
                   }}
                 />
               </>
@@ -279,6 +319,7 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
           <MailActionButtons
             actions={actions}
             message={message}
+            accountId={accountId}
             archivable={inInbox}
           />
         )}
@@ -296,11 +337,11 @@ function MessageView({ accountId, messageId, onBack }: MessageViewProps) {
 /** Big Reply / Reply all / Forward buttons below the message (touch friendly). */
 function AnswerButtons({
   compose,
-  messageId,
+  message,
   isDraft,
 }: {
   compose: ComposeActions;
-  messageId: MessageId;
+  message: MessageRef;
   isDraft: boolean;
 }) {
   const t = useT();
@@ -313,7 +354,7 @@ function AnswerButtons({
           type="button"
           className={button}
           onClick={() => {
-            compose.editDraft(messageId);
+            compose.editDraft(message);
           }}
         >
           <Icon name="pencil" className="size-4" />
@@ -327,7 +368,7 @@ function AnswerButtons({
         type="button"
         className={button}
         onClick={() => {
-          compose.reply(messageId, "reply");
+          compose.reply(message, "reply");
         }}
       >
         <Icon name="reply" className="size-4" />
@@ -337,7 +378,7 @@ function AnswerButtons({
         type="button"
         className={button}
         onClick={() => {
-          compose.reply(messageId, "reply-all");
+          compose.reply(message, "reply-all");
         }}
       >
         <Icon name="reply-all" className="size-4" />
@@ -347,7 +388,7 @@ function AnswerButtons({
         type="button"
         className={button}
         onClick={() => {
-          compose.forward(messageId);
+          compose.forward(message);
         }}
       >
         <Icon name="forward" className="size-4" />

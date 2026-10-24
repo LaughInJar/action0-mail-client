@@ -1,7 +1,8 @@
-import type { MessageId } from "../core/ids";
+import type { MessageKey } from "../core/ids";
 
 /**
- * Focus and selection in the message list.
+ * Focus and selection in the message list, by {@link MessageKey} (rows
+ * of All inboxes come from several accounts).
  *
  * - `focusedId` is the cursor: the message shown in the reader.
  * - `selectedIds` is the multi-selection. When it is empty, actions apply to
@@ -9,9 +10,9 @@ import type { MessageId } from "../core/ids";
  * - `anchorId` is where Shift-range selection starts.
  */
 export interface SelectionState {
-  readonly focusedId: MessageId | null;
-  readonly selectedIds: ReadonlySet<MessageId>;
-  readonly anchorId: MessageId | null;
+  readonly focusedId: MessageKey | null;
+  readonly selectedIds: ReadonlySet<MessageKey>;
+  readonly anchorId: MessageKey | null;
 }
 
 export const EMPTY_SELECTION: SelectionState = {
@@ -23,7 +24,7 @@ export const EMPTY_SELECTION: SelectionState = {
 /** Plain click / tap: show this message and drop any multi-selection. */
 export function focusOnly(
   _state: SelectionState,
-  id: MessageId,
+  id: MessageKey,
 ): SelectionState {
   return { focusedId: id, selectedIds: new Set(), anchorId: id };
 }
@@ -31,7 +32,7 @@ export function focusOnly(
 /** Moves the cursor (keyboard navigation). Keeps the selection. */
 export function moveFocus(
   state: SelectionState,
-  orderedIds: readonly MessageId[],
+  orderedIds: readonly MessageKey[],
   delta: number,
 ): SelectionState {
   // Nothing open after a removal ("back to the list"): continue from there.
@@ -54,7 +55,7 @@ export function moveFocus(
 /** Moves the cursor to an absolute position (Home/End). Keeps the selection. */
 export function focusAt(
   state: SelectionState,
-  orderedIds: readonly MessageId[],
+  orderedIds: readonly MessageKey[],
   index: number,
 ): SelectionState {
   const target = orderedIds.at(index);
@@ -63,7 +64,7 @@ export function focusAt(
 }
 
 /** Ctrl/Cmd-click, `x`, or a tap in selection mode: toggles one message. */
-export function toggle(state: SelectionState, id: MessageId): SelectionState {
+export function toggle(state: SelectionState, id: MessageKey): SelectionState {
   const selectedIds = new Set(state.selectedIds);
   if (selectedIds.has(id)) selectedIds.delete(id);
   else selectedIds.add(id);
@@ -76,8 +77,8 @@ export function toggle(state: SelectionState, id: MessageId): SelectionState {
  */
 export function selectRange(
   state: SelectionState,
-  orderedIds: readonly MessageId[],
-  id: MessageId,
+  orderedIds: readonly MessageKey[],
+  id: MessageKey,
 ): SelectionState {
   const anchor = state.anchorId ?? state.focusedId ?? id;
   return {
@@ -90,7 +91,7 @@ export function selectRange(
 /** Shift+j / Shift+↓: moves the cursor and extends the range selection to it. */
 export function extendFocus(
   state: SelectionState,
-  orderedIds: readonly MessageId[],
+  orderedIds: readonly MessageKey[],
   delta: number,
 ): SelectionState {
   const target = neighbour(state.focusedId, orderedIds, delta);
@@ -109,10 +110,10 @@ export function clearSelection(state: SelectionState): SelectionState {
 }
 
 function neighbour(
-  current: MessageId | null,
-  orderedIds: readonly MessageId[],
+  current: MessageKey | null,
+  orderedIds: readonly MessageKey[],
   delta: number,
-): MessageId | undefined {
+): MessageKey | undefined {
   if (orderedIds.length === 0) return undefined;
   const index = current === null ? -1 : orderedIds.indexOf(current);
   if (index === -1) return orderedIds[0];
@@ -121,10 +122,10 @@ function neighbour(
 }
 
 function range(
-  orderedIds: readonly MessageId[],
-  from: MessageId,
-  to: MessageId,
-): MessageId[] {
+  orderedIds: readonly MessageKey[],
+  from: MessageKey,
+  to: MessageKey,
+): MessageKey[] {
   const start = orderedIds.indexOf(from);
   const end = orderedIds.indexOf(to);
   if (start === -1 || end === -1) return [to];
@@ -140,10 +141,10 @@ function range(
  * below. Otherwise nothing.
  */
 export function nextAfterRemoval(
-  orderedIds: readonly MessageId[],
-  removed: ReadonlySet<MessageId>,
+  orderedIds: readonly MessageKey[],
+  removed: ReadonlySet<MessageKey>,
   direction: "below" | "above" = "below",
-): MessageId | null {
+): MessageKey | null {
   const indices = orderedIds.flatMap((id, index) =>
     removed.has(id) ? [index] : [],
   );
@@ -168,8 +169,8 @@ export function nextAfterRemoval(
  */
 export function removeFromList(
   state: SelectionState,
-  removed: ReadonlySet<MessageId>,
-  next: MessageId | null,
+  removed: ReadonlySet<MessageKey>,
+  next: MessageKey | null,
   { open = true }: { open?: boolean } = {},
 ): SelectionState {
   const selectedIds = new Set(

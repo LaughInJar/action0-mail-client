@@ -63,3 +63,31 @@ export const asDraftId = (value: string): DraftId => value as DraftId;
 export const asSyncToken = (value: string): SyncToken => value as SyncToken;
 /** Brands a raw string as a {@link Cursor}. */
 export const asCursor = (value: string): Cursor => value as Cursor;
+
+/**
+ * Identifies a message across accounts (All inboxes lists several): the
+ * account and the message id together. Made by {@link messageKey} and read
+ * back only by {@link messageRef}; the ids inside stay opaque.
+ */
+export type MessageKey = Brand<string, "MessageKey">;
+
+/** The {@link MessageKey} of a message of an account. */
+export const messageKey = (
+  accountId: AccountId,
+  messageId: MessageId,
+): MessageKey => JSON.stringify([accountId, messageId]) as MessageKey;
+
+/** A message of an account. */
+export interface MessageRef {
+  readonly accountId: AccountId;
+  readonly messageId: MessageId;
+}
+
+/** The account and message a {@link MessageKey} names. */
+export function messageRef(key: MessageKey): MessageRef {
+  const [accountId, messageId] = JSON.parse(key) as [string, string];
+  return {
+    accountId: asAccountId(accountId),
+    messageId: asMessageId(messageId),
+  };
+}

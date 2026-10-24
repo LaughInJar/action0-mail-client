@@ -39,6 +39,11 @@ const en = {
   unread: "Unread, ",
   hasAttachments: ", has attachments",
   starred: ", starred",
+  inAccount: (email: string) => `, in ${email}`,
+  allInboxes: "All inboxes",
+  needsReconnect: (email: string) =>
+    `${email} needs reconnecting, so its messages aren’t shown.`,
+  couldntLoad: (email: string) => `Couldn’t load the messages of ${email}.`,
 };
 
 const de: typeof en = {
@@ -82,6 +87,12 @@ const de: typeof en = {
   unread: "Ungelesen, ",
   hasAttachments: ", mit Anhang",
   starred: ", mit Stern",
+  inAccount: (email) => `, in ${email}`,
+  allInboxes: "Alle Posteingänge",
+  needsReconnect: (email) =>
+    `${email} muss neu verbunden werden, deshalb fehlen seine Nachrichten.`,
+  couldntLoad: (email) =>
+    `Die Nachrichten von ${email} konnten nicht geladen werden.`,
 };
 
 export const list = { en, de };

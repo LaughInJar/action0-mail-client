@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { asMessageId, type MessageId } from "../core/ids";
+import { type MessageKey } from "../core/ids";
 import {
   clearSelection,
   EMPTY_SELECTION,
@@ -15,13 +15,13 @@ import {
   type SelectionState,
 } from "./selection";
 
-const ids = ["a", "b", "c", "d", "e"].map(asMessageId);
+const ids = ["a", "b", "c", "d", "e"].map((id) => id as MessageKey);
 const [a, b, c, d] = ids as [
-  MessageId,
-  MessageId,
-  MessageId,
-  MessageId,
-  MessageId,
+  MessageKey,
+  MessageKey,
+  MessageKey,
+  MessageKey,
+  MessageKey,
 ];
 const selected = (state: SelectionState) => [...state.selectedIds].sort();
 
@@ -85,7 +85,8 @@ describe("selection", () => {
 });
 
 describe("nextAfterRemoval", () => {
-  const set = (...items: string[]) => new Set(items.map(asMessageId));
+  const set = (...items: string[]) =>
+    new Set(items.map((id) => id as MessageKey));
 
   it("takes the next message below the last removed one", () => {
     expect(nextAfterRemoval(ids, set("b"))).toBe("c");
@@ -108,7 +109,8 @@ describe("nextAfterRemoval", () => {
 });
 
 describe("removeFromList", () => {
-  const set = (...items: string[]) => new Set(items.map(asMessageId));
+  const set = (...items: string[]) =>
+    new Set(items.map((id) => id as MessageKey));
 
   it("keeps the rest of the selection and the cursor when other rows leave", () => {
     const state = { focusedId: a, selectedIds: set("a", "b"), anchorId: a };

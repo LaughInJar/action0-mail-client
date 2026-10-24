@@ -1,6 +1,9 @@
 import { useCallback, useMemo } from "react";
 import {
+  infiniteQueryOptions,
+  queryOptions,
   skipToken,
+  useQueries,
   useQueryClient,
   useInfiniteQuery,
   useQuery,
@@ -47,16 +50,63 @@ const NO_ACCOUNT = "" as AccountId;
 const NO_MAILBOX = "" as MailboxId;
 const NO_MESSAGE = "" as MessageId;
 
-/** All mailboxes of an account, in provider display order. Persisted briefly. */
-export function useMailboxes(accountId: AccountId | undefined) {
-  const handle = useReadyHandle(accountId);
-  return useQuery({
-    queryKey: queryKeys.mailboxes(accountId ?? NO_ACCOUNT),
+/** Query options of an account's mailboxes (`handle` only while it can make requests). */
+function mailboxesOptions(
+  accountId: AccountId,
+  handle: AccountHandle | undefined,
+) {
+  return queryOptions({
+    queryKey: queryKeys.mailboxes(accountId),
     queryFn: handle
       ? ({ signal }) => handle.provider.listMailboxes(signal)
       : skipToken,
     staleTime: 60_000,
     meta: { persist: true },
+  });
+}
+
+/** All mailboxes of an account, in provider display order. Persisted briefly. */
+export function useMailboxes(accountId: AccountId | undefined) {
+  const handle = useReadyHandle(accountId);
+  return useQuery(mailboxesOptions(accountId ?? NO_ACCOUNT, handle));
+}
+
+/** What {@link useMailboxesOf} knows of an account's mailboxes. */
+export interface AccountMailboxes {
+  readonly data: readonly Mailbox[] | undefined;
+  readonly isPending: boolean;
+  readonly error: Error | null;
+}
+
+/**
+ * The mailboxes of several accounts (`ready`: those whose sessions can
+ * make requests; the others only get what's cached).
+ */
+export function useMailboxesOf(
+  handles: readonly AccountHandle[],
+  ready: ReadonlySet<AccountId>,
+): ReadonlyMap<AccountId, AccountMailboxes> {
+  return useQueries({
+    queries: handles.map((handle) =>
+      mailboxesOptions(
+        handle.account.id,
+        ready.has(handle.account.id) ? handle : undefined,
+      ),
+    ),
+    combine: (results) =>
+      new Map(
+        handles.map((handle, index) => {
+          const result = results[index];
+          return [
+            handle.account.id,
+            {
+              data: result?.data,
+              isPending: result?.isPending ?? true,
+              error: result?.error ?? null,
+            },
+          ] as const;
+        }),
+      ),
   });
 }
 
@@ -72,7 +122,7 @@ const NO_LIST: ListSpec = { mailboxId: NO_MAILBOX, order: "newest" };
  * bring back rows that just left (e.g. a list observed anew by the reader
  * right after archiving). Like the live sync, they catch up afterwards.
  */
-function useNotWhileMutating() {
+export function useNotWhileMutating() {
   const queryClient = useQueryClient();
   return useMemo(() => {
     const idle = () => queryClient.isMutating() === 0;
@@ -93,7 +143,29 @@ export function useMessageList(
   const quiet = useNotWhileMutating();
   return useInfiniteQuery({
     ...quiet,
-    queryKey: queryKeys.messageList(accountId ?? NO_ACCOUNT, spec ?? NO_LIST),
+    ...messageListOptions(accountId ?? NO_ACCOUNT, handle, spec),
+    select: flattenPages,
+  });
+}
+
+/**
+ * Query options of a message list (`handle` only while it can make
+ * requests). Shared by {@link useMessageList} and All inboxes, so both
+ * use the same cache entries.
+ */
+export function messageListOptions(
+  accountId: AccountId,
+  handle: AccountHandle | undefined,
+  spec: ListSpec | undefined,
+) {
+  return infiniteQueryOptions<
+    Page<MessageSummary>,
+    Error,
+    InfiniteData<Page<MessageSummary>, Cursor | undefined>,
+    ReturnType<typeof queryKeys.messageList>,
+    Cursor | undefined
+  >({
+    queryKey: queryKeys.messageList(accountId, spec ?? NO_LIST),
     queryFn:
       handle && spec
         ? ({ pageParam, signal }) =>
@@ -109,8 +181,7 @@ export function useMessageList(
             )
         : skipToken,
     initialPageParam: undefined as Cursor | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    select: flattenPages,
+    getNextPageParam: (lastPage: Page<MessageSummary>) => lastPage.nextCursor,
     staleTime: 30_000,
     meta: { persist: spec?.search === undefined },
   });
@@ -125,11 +196,29 @@ export function useThreadList(
   spec: ListSpec | undefined,
 ) {
   const handle = useReadyHandle(accountId);
-  const supported = handle?.provider.capabilities.threads === true;
   const quiet = useNotWhileMutating();
   return useInfiniteQuery({
     ...quiet,
-    queryKey: queryKeys.threadList(accountId ?? NO_ACCOUNT, spec ?? NO_LIST),
+    ...threadListOptions(accountId ?? NO_ACCOUNT, handle, spec),
+    select: flattenThreadPages,
+  });
+}
+
+/** Query options of a conversation list, like {@link messageListOptions}. */
+export function threadListOptions(
+  accountId: AccountId,
+  handle: AccountHandle | undefined,
+  spec: ListSpec | undefined,
+) {
+  const supported = handle?.provider.capabilities.threads === true;
+  return infiniteQueryOptions<
+    Page<ThreadSummary>,
+    Error,
+    InfiniteData<Page<ThreadSummary>, Cursor | undefined>,
+    ReturnType<typeof queryKeys.threadList>,
+    Cursor | undefined
+  >({
+    queryKey: queryKeys.threadList(accountId, spec ?? NO_LIST),
     queryFn:
       handle && spec && supported
         ? ({ pageParam, signal }) =>
@@ -145,8 +234,7 @@ export function useThreadList(
             )
         : skipToken,
     initialPageParam: undefined as Cursor | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    select: flattenThreadPages,
+    getNextPageParam: (lastPage: Page<ThreadSummary>) => lastPage.nextCursor,
     staleTime: 30_000,
     meta: { persist: spec?.search === undefined },
   });

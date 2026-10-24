@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { readConfig } from "./app/config";
 import { IcsCalendarProvider } from "./providers/ical/IcsCalendarProvider";
+import { DEMO_ACCOUNT, DEMO_WORK_ACCOUNT } from "./providers/fake/module";
 import {
   createAppServices,
   createDefaultModules,
@@ -58,16 +59,18 @@ const services = createAppServices({
     : {}),
 });
 
-// `?demo` in the URL connects the demo account (no sign-in involved).
+// `?demo` in the URL connects the demo accounts that aren't yet (no
+// sign-in involved).
 const url = new URL(window.location.href);
 if (url.searchParams.has("demo")) {
   url.searchParams.delete("demo");
   window.history.replaceState(window.history.state, "", url);
-  if (
-    !services.registry.list().some((handle) => handle.account.type === "demo")
-  ) {
-    void services.registry.add("demo");
-  }
+  const first = services.registry.get(DEMO_ACCOUNT.id)
+    ? Promise.resolve()
+    : services.registry.add("demo");
+  void first.then(() => {
+    services.registry.addKnown(DEMO_WORK_ACCOUNT);
+  });
 }
 
 const root = document.getElementById("root");

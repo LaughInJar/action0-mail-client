@@ -14,6 +14,8 @@ const en = {
   signedOut: "signed out",
   addLabelHere: "Add label",
   moveHere: "Move here",
+  otherAccount: "Other account",
+  allInboxes: "All inboxes",
   /** After a mailbox's count, for screen readers ("3 unread"). */
   drafts: (n: number): string => (n === 1 ? " draft" : " drafts"),
   unread: " unread",
@@ -261,6 +263,8 @@ const de: typeof en = {
   signedOut: "abgemeldet",
   addLabelHere: "Label hinzufügen",
   moveHere: "Hierher verschieben",
+  otherAccount: "Anderes Konto",
+  allInboxes: "Alle Posteingänge",
   drafts: (n) => (n === 1 ? " Entwurf" : " Entwürfe"),
   unread: " ungelesen",
   actionsFor: (name) => `Aktionen für ${name}`,
