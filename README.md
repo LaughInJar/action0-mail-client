@@ -110,7 +110,7 @@ Things to know:
 - Attachments: up to 25 MB per mail for work and school accounts, 20 MB for Outlook.com. Files over 3 MB go up in pieces through an upload session.
 - Live updates follow every folder with Graph's change lists ("delta"); changes to mail older than 30 days that were made elsewhere show up when the folder is opened again, except read/unread state and moves, which always come through.
 - Conversations are Outlook's own (what Outlook web groups together). Graph can't list conversations, so the app groups the folder's messages itself; a page of conversations takes a few more requests than a page of messages.
-- Outlook's categories and Focused/Other come later.
+- Outlook's Focused/Other comes later.
 - Calendar access has its own consent: accounts connected before the calendar show **Allow calendar** in the calendar's column (one popup); new accounts consent while connecting.
 
 ## Calendars by address (iCal)
@@ -148,7 +148,7 @@ The same app, as a desktop app built with [Tauri](https://tauri.app) (`src-tauri
 | `npm run app:build` | Builds installers for this system into `src-tauri/target/release/bundle/`        |
 | `npm run app:icon`  | Regenerates the app icons from `public/favicon.svg` (only when the icon changes) |
 
-You need Rust (1.90 or newer) and, on Linux, WebKitGTK 4.1, librsvg and libayatana-appindicator (Debian/Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev`; Gentoo: `net-libs/webkit-gtk:4.1 dev-libs/libayatana-appindicator`). See Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS and Windows.
+You need Rust (1.90 or newer) and, on Linux, WebKitGTK 4.1, librsvg and libayatana-appindicator (Debian/Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev`, as in CI; Gentoo: `net-libs/webkit-gtk:4.1 dev-libs/libayatana-appindicator`). See Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS and Windows.
 
 ### Signing in from the desktop app
 
@@ -161,7 +161,7 @@ The desktop app needs its own OAuth registrations, because Google and Microsoft 
 
 Pushing a version tag builds installers for Linux (AppImage, .deb, .rpm), Windows (installer) and macOS (universal .dmg) into a **draft** GitHub Release (`.github/workflows/release.yml`):
 
-1. Set `"version"` in `package.json` (the app takes it from there), merge, then tag: `git tag v0.2.0 && git push origin v0.2.0`.
+1. Set `"version"` in `package.json` (the app takes it from there) and in `src-tauri/Cargo.toml` (and refresh `src-tauri/Cargo.lock`, since CI builds with `--locked`), merge, then tag: `git tag v0.2.0 && git push origin v0.2.0`. See [docs/releasing.md](docs/releasing.md) for the full checklist.
 2. Check the draft release and publish it. Installed apps find the update through the release's `latest.json`.
 
 Updates are signed. Create the key pair once with `npx tauri signer generate -w ~/.tauri/action0-updater.key`, put the public key into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and add the private key (the file's content) and its password as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep the private key safe: without it, installed apps can't be updated. Optionally, set the repository variables `VITE_MICROSOFT_CLIENT_ID` and `VITE_GOOGLE_DESKTOP_CLIENT_ID` (and the secret `VITE_GOOGLE_DESKTOP_CLIENT_SECRET`) to build your clients into the app. The installers aren't code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first start.
@@ -198,6 +198,7 @@ The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](
 | <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                               |
 | <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                        |
 | <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail                    |
+| <kbd>g</kbd> then <kbd>u</kbd>                                              | Go to All inboxes (with two or more accounts)             |
 | <kbd>/</kbd>                                                                | Search mail (Enter or ↓: to the results, Esc: end search) |
 | <kbd>g</kbd> then <kbd>f</kbd>                                              | Filter folders (Enter opens the first match)              |
 | <kbd>c</kbd>                                                                | Write a new mail                                          |
@@ -231,63 +232,17 @@ In the folder tree, <kbd>Shift</kbd>+<kbd>F10</kbd> (or the Menu key), a right-c
 
 ## Architecture
 
-```
-src/
-  core/        Domain model, MailProvider and CalendarProvider interfaces, errors, reply
-               rules. No dependencies.
-  auth/        AuthSession interface; google/ = Google Identity Services token client,
-               microsoft/ = MSAL (loaded on first use), native/ = the desktop app's
-               sign-in (done by its native side)
-  providers/
-    gmail/     Gmail REST adapter: HTTP client (retries, concurrency limit),
-               label mapping, MIME parsing, mappers, drafts, People API
-    microsoft/ Microsoft Graph adapter: HTTP client ($batch, throttling, immutable
-               ids), folder mapping, mappers, drafts and upload sessions, delta sync
-    ical/      iCal subscriptions: fetched from the browser, parsed with ical.js
-    */calendar Calendar adapters: Google Calendar API, Graph calendars (Windows time
-               zone names from CLDR's windowsZones.xml, Unicode License)
-    mime/      Builds outgoing MIME messages (shared by raw-message adapters)
-    fake/      In-memory provider: tests and the demo accounts
-  accounts/    Account registry: one auth session + provider per account
-  data/        Server-state cache (TanStack Query): query keys, hooks, persistence policy;
-               draft saving and sending; calendar sources, events, answers and changes
-  compose/     Outgoing mail HTML: quoting, plain-text version, composer content
-  state/       UI state (Zustand): focus, selection, layout; hash router
-  i18n/        Interface texts in English and German (texts/), language choice, useT()
-  keyboard/    Central shortcut registry
-  security/    HTML sanitizing (DOMPurify) and the mail iframe document (CSP)
-  ui/          React components: layout, mailboxes, messages, reader, composer, calendar, help
-  platform/    What differs between the web app and the desktop app (links, files,
-               notifications, icons, tray): web.ts, desktop/ (Tauri, loaded only there)
-  app/         Composition root: wires providers, registry, cache and UI together
-src-tauri/     The desktop app's native side (Rust): sign-in with the system browser,
-               the token vault, network requests, tray, single instance, mailto:
-```
+action0 is a React app with no server of its own: it signs in with OAuth and calls the providers' APIs straight from the browser (or, in the desktop app, through its native side). The interface depends only on provider-agnostic contracts in `src/core` (a JMAP-style mailbox model where a message has a set of mailboxes of kind label, folder or view, and writes are _intents_ that each provider translates). TanStack Query caches server state, Zustand holds UI state, and every change is applied optimistically with undo.
 
-Rules, enforced by ESLint where possible:
-
-- The UI, data and state layers depend only on the provider-agnostic contracts in `src/core`. Concrete providers are wired up in `src/app`.
-- Providers do no caching; the data layer does.
-- IDs and pagination cursors are opaque strings that only their provider interprets.
-- Everything the interface says comes from `src/i18n/texts`, where each area keeps its English and German texts side by side; the German ones are typed against the English ones, so a missing text fails the build. Components read them with `useT()`. ESLint flags words written directly into `src/ui` (JSX text, labels, titles, toast messages). Errors carry a `reason` that the UI translates; messages from Google are shown as Google wrote them.
-
-### Labels and folders
-
-The domain model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc8621): a message belongs to a _set_ of mailboxes. Each mailbox has a kind:
-
-- `label` — non-exclusive (Gmail labels),
-- `folder` — exclusive, one per message (Exchange, IMAP),
-- `view` — computed, like Gmail's "All Mail" or "Starred".
-
-An optional role (`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged`, `important`) lets the UI treat special mailboxes the same way for every provider. Read/unread and starred are flags, not mailboxes. Write operations are _intents_ (`src/core/intents.ts`) such as _archive_ or _set flags_ that each provider translates into its own API calls: in Gmail, archive removes the `INBOX` label; Outlook (Graph) moves the message to its Archive folder. Undo of a move, trash or spam in a folder account moves the message back to the folder it came from. The data layer applies intents optimistically to the cache and rolls them back if the provider refuses. Mailboxes say whether users may move messages in and out (`assignable`): Inbox and your labels are, Sent, Drafts and computed views are not. The user's own mailboxes (assignable, without a role) can be created, renamed, moved, recoloured, hidden and deleted where the provider supports it (`manageMailboxes`). Gmail stores only label paths ("Work/Clients"), so renaming or moving a label renames every label inside it too.
+The full picture, with the module map, the import rules, and how a click travels to the provider and back, is in [docs/architecture.md](docs/architecture.md); the domain model is in [docs/domain-model.md](docs/domain-model.md).
 
 ### What is stored where
 
-| Where          | What                                                                                                                                                                                                                                                                  | How long                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions                                        | Until reload                        |
-| sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                           | Tab session, ≤ 10 min for the cache |
-| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked) | Until sign-out                      |
+| Where          | What                                                                                                                                                                                                                                                                                                                                                                      | How long                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Memory         | Message bodies, inline images, which messages may load remote images; what you're writing and its files (they save to the account's Drafts, never to browser storage); opened attachments (a few minutes); contact suggestions                                                                                                                                            | Until reload                        |
+| sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                                                                                                                               | Tab session, ≤ 10 min for the cache |
+| localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked), dismissed and snoozed event reminders (ids and times, until the event ends), each account's colour | Until sign-out                      |
 
 Tokens never go to localStorage, and mail content is never stored long-term. In the desktop app, refresh tokens are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start.
 
@@ -299,8 +254,18 @@ Tokens never go to localStorage, and mail content is never stored long-term. In 
 
 The production build also sets a strict CSP for the app itself. It lets the app connect to any https address (`connect-src https:`) for one reason: one-click unsubscribe sends a POST to the sender's server. That request carries no cookies and no referrer, and the app never reads the answer. Frames are limited to Google's sign-in, Microsoft's sign-in (MSAL renews tokens in a hidden frame) and the app's own `redirect.html`, where Microsoft's sign-in returns.
 
+## Documentation
+
+The developer documentation is in [`docs/`](docs/README.md):
+
+- [Architecture](docs/architecture.md), [domain model](docs/domain-model.md) and [providers](docs/providers.md)
+- [Design decisions](docs/decisions.md): why it's built this way
+- [Development](docs/development.md) and [testing](docs/testing.md)
+- [Building and deploying](docs/building-and-deploying.md) and [releasing](docs/releasing.md)
+- [The desktop app](docs/desktop-app.md) and [security](docs/security.md)
+
 ## Tests and CI
 
-Tests use Vitest and React Testing Library and live next to the code (`*.test.ts(x)`). Provider APIs are always mocked: the Gmail adapter is tested against [MSW](https://mswjs.io/) HTTP mocks (unhandled requests fail the test), the UI against the in-memory provider.
+Tests use Vitest and React Testing Library and live next to the code (`*.test.ts(x)`). Provider APIs are always mocked: the Gmail and Microsoft Graph adapters are tested against [MSW](https://mswjs.io/) HTTP mocks (unhandled requests fail the test), the UI against the in-memory provider.
 
 GitHub Actions runs typecheck, lint, format check, tests and build on every pull request and push to `main`, and checks the desktop app's Rust code (`cargo fmt`, `clippy`, `cargo test`) (`.github/workflows/ci.yml`). The desktop app's native side (sign-in, vault, network requests) has Rust unit tests in `src-tauri/src`; the interface's desktop behaviour is tested with a fake `Platform`. To make these checks mandatory for merging, add the **check** job as a required status check in the repository's branch protection rules.

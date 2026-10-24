@@ -79,7 +79,6 @@ export function AppProviders({
   );
 }
 
-/** True while a modal dialog is shown (closed drawers are `inert`). */
 /** Inside an element with `data-own-keys` (the composer), single keys are text, not shortcuts. */
 function ownsKeys(target: EventTarget | null): boolean {
   return (
@@ -87,6 +86,7 @@ function ownsKeys(target: EventTarget | null): boolean {
   );
 }
 
+/** True while a modal dialog is shown (closed drawers are `inert`). */
 function isModalOpen(): boolean {
   return Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
     (dialog) => dialog.closest("[inert]") === null,
