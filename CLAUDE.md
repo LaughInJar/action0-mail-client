@@ -20,14 +20,13 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 1. Gmail, read-only: Gmail REST API, `gmail.readonly` scope, Google Identity Services (GIS) token model.
 2. Gmail features added one at a time: archive, move/label, compose, reply, search, and so on.
 3. Exchange Online through Microsoft Graph: MSAL.js, SPA auth code flow with PKCE.
-4. IMAP/SMTP (and CalDAV). Browsers can't open raw TCP connections, so these come only to the desktop app, through its native side, with no proxy (see the desktop app decisions). Keep the provider abstraction ready for such an adapter so it can be added without restructuring.
+4. IMAP/SMTP (and CalDAV). Browsers can't open raw TCP connections, so these come only to the desktop and Android apps, through their native side, with no proxy (see the desktop app decisions). Keep the provider abstraction ready for such an adapter so it can be added without restructuring.
 
 ## Backlog
 
 Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
 
 1. iOS app (needs an Apple Developer account).
-2. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
 
 ## Architecture rules
 
@@ -187,7 +186,7 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - The existing Settings → Reading switch (one for all accounts, per browser) now covers Microsoft accounts. Conversations are Outlook's own (its conversation ID); list, reader, keys, search and live updates behave as for Gmail.
   - In folder accounts, archive, move, delete and spam on a conversation act on its messages in the current folder (like Outlook; sent replies stay in Sent Items); in views (Flagged, All mail) on all of its messages. Read/unread and star act on the whole conversation as before.
 - **Calendar decisions:**
-  - First calendar feature: view, tick/untick, event details and Accept / Maybe / Decline (in the calendar and in invitation mails). Creating and editing events is the next feature; CalDAV comes with a small self-hosted proxy later (also the base for IMAP); event reminders later.
+  - First calendar feature: view, tick/untick, event details and Accept / Maybe / Decline (in the calendar and in invitation mails). Creating and editing events is the next feature; CalDAV comes later through the apps' native side, like IMAP (no proxy); event reminders later.
   - Sources: Google Calendar API and Microsoft Graph calendars of every account, and iCal URLs (also `webcal://`) that load only when their server allows browser access (CORS), with a clear message otherwise. iCal URLs are saved in this browser with the settings (they can be secret; marked in the list, Remove offered), refreshed every 15 min.
   - Calendar access is optional per account (separate scopes/consent): mail keeps working, the calendar list offers "Allow calendar" per account; new accounts are asked when they connect.
   - A Mail | Calendar switch at the top left, part of the URL (Back works); `g c` / `g i`. Left column: small month, calendars grouped by account with colour and checkbox (remembered per browser); drawer on phones and tablets.
@@ -258,3 +257,10 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Reader: one AI panel above the mail (above the thread in conversation view, covering the whole conversation). Summarize (`b`, a toolbar button that is the first to move into ⋯, the ⋯ and context menus) streams a summary with Stop, Copy, Try again, Close; a question field below keeps a short chat while the mail is open (`q` focuses it); Reply with AI opens a reply with the composer's AI field. Answers in the app's language.
   - Composer: ✨ in the editor toolbar or Ctrl/⌘+J opens an instruction field above the editor with quick actions (Shorter, More formal, Friendlier, Fix spelling & grammar, Translate to…). Empty draft: writes the mail (replies from the original); selection: rewrites it; otherwise applies to the whole draft. The text goes straight into the editor as it streams (Stop, Try again, Undo; Ctrl+Z; typing on keeps it); signature and quote are never touched. Replies and rewrites in the language of the mail or draft unless the instruction says otherwise.
   - Mail goes to the AI only on a click, as plain text (From, To, Cc, date, subject, text; no attachments, images or hidden HTML); long threads are cut to the newest messages and the panel says so. A one-time note per service says what's sent where. Answers stay in memory only. The AI has no actions, and its output is shown and inserted as plain text, never HTML. A demo AI with canned answers. Everything ships in one PR.
+- **IMAP/SMTP decisions:**
+  - "Other mail server" accounts in the desktop and Android apps (the web app says they're app-only), done in Rust (`async-imap`, `mail-parser`, a small own SMTP client, because `lettre` can't use action0's TLS checks and trusted certificates) behind the provider contract; new mail is built by the existing `buildMessage`. No mail on disk: everything loads from the server, cached in memory only.
+  - Adding: the address, then the settings found like Thunderbird (the provider's autoconfig, Mozilla's ISPDB, which learns only the domain, then MX), shown and editable; typing them in always works. Gmail and Microsoft addresses are offered their own account types. Password or app password, with links to known providers' app-password pages. Only TLS or required STARTTLS. An untrusted certificate can be trusted once while adding the account, for that account only and revocably; a different one later is refused. Password and settings live in the native vault; a password that stops working shows Reconnect.
+  - Yahoo/AOL OAuth (XOAUTH2/OAUTHBEARER) is built now with a configurable client ID, like Google's setup (Yahoo approves mail registrations by hand); otherwise app passwords.
+  - Parity with Outlook accounts plus conversations: special-use roles (or names, German ones included), a Flagged view, read/unread, star (IMAP's flag), move, archive (creates "Archive" if there's none), Trash, Junk, delete forever, empty, mark all read; folder management (deleting a folder moves it into Trash, like Thunderbird); server search with `from:`, `to:`, `subject:`, `is:unread`, `is:starred` and words ("Everywhere": all folders but Trash and Junk); sending over SMTP with a copy in Sent, drafts in Drafts, the server's size limit, signatures kept in the app, From = the account's address, suggestions from recent mail; unsubscribe, show original, All inboxes. Invitations show without answer buttons until CalDAV.
+  - Conversations from Message-ID / In-Reply-To / References (or the server's thread ids); opening one also finds the replies in Sent and messages in Archive.
+  - New mail: checks like the other accounts (CONDSTORE/QRESYNC where the server has them), IDLE on the Inbox in the desktop app, and Android's background check covers IMAP. Stable message ids from the server (EMAILID, X-GM-MSGID) where it has them, else tracked by action0 while it runs. Everything ships in one PR.

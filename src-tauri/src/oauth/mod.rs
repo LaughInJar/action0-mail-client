@@ -20,9 +20,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
 use crate::vault::{LazyVault, StoredAccount, Vault};
-#[cfg(desktop)]
-use loopback::Loopback;
-use loopback::PageTexts;
+use loopback::{Answer, Loopback, PageTexts};
 use pkce::{Pkce, random_token};
 use providers::{Client, Provider, TokenError, TokenResponse, claims, has_scopes};
 
@@ -546,6 +544,100 @@ fn authorize_url(request: &SignInRequest, redirect_uri: &str, pkce: &Pkce, state
     )
 }
 
+/// The code a sign-in came back with, or why there's none.
+pub(crate) fn callback_code(
+    params: &HashMap<String, String>,
+    state: Option<&str>,
+) -> Result<String, AuthError> {
+    if let Some(state) = state
+        && params.get("state").map(String::as_str) != Some(state)
+    {
+        return Err(AuthError::Provider("The sign-in didn't match.".into()));
+    }
+    if let Some(error) = params.get("error") {
+        let description = params
+            .get("error_description")
+            .cloned()
+            .unwrap_or_else(|| error.clone());
+        return Err(match error.as_str() {
+            "access_denied" => AuthError::Denied(description),
+            _ => AuthError::Provider(description),
+        });
+    }
+    params
+        .get("code")
+        .cloned()
+        .ok_or_else(|| AuthError::Provider("No code came back.".into()))
+}
+
+/// Where the browser comes back to after a sign-in on a loopback address.
+pub(crate) struct Callback<'a> {
+    /// The loopback path.
+    pub path: &'a str,
+    /// The query parameter that marks the answer (`code`, `state`).
+    pub required: &'a str,
+    /// The page the browser shows afterwards (desktop).
+    #[cfg_attr(target_os = "android", allow(dead_code))]
+    pub page: &'a PageTexts,
+    /// The app's link that closes the sign-in tab (Android:
+    /// `msauth://<package>/<link>`).
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub link: &'a str,
+}
+
+/// Opens `url` in the browser and waits for it to come back to the
+/// loopback address: the query.
+#[cfg(desktop)]
+pub(crate) async fn browser_round_trip(
+    app: &AppHandle,
+    loopback: &Loopback,
+    url: &str,
+    callback: &Callback<'_>,
+    cancelled: oneshot::Receiver<()>,
+) -> Result<HashMap<String, String>, AuthError> {
+    open_browser(app, url)?;
+    tokio::select! {
+        result = tokio::time::timeout(
+            SIGN_IN_TIMEOUT,
+            loopback.wait_for(callback.path, callback.required, Answer::Page(callback.page)),
+        ) => match result {
+            Ok(Ok(params)) => Ok(params),
+            Ok(Err(error)) => Err(AuthError::Network(error.to_string())),
+            Err(_) => Err(AuthError::Cancelled("The sign-in timed out.".into())),
+        },
+        _ = cancelled => Err(AuthError::Cancelled("Another sign-in started.".into())),
+    }
+}
+
+/// Opens `url` in a browser tab and waits for it to come back to the
+/// loopback address: the query. The loopback address sends the browser on
+/// to the app's own link, which closes the tab and brings the app back.
+#[cfg(target_os = "android")]
+pub(crate) async fn browser_round_trip(
+    app: &AppHandle,
+    loopback: &Loopback,
+    url: &str,
+    callback: &Callback<'_>,
+    cancelled: oneshot::Receiver<()>,
+) -> Result<HashMap<String, String>, AuthError> {
+    let back = format!("msauth://{}/{}", app.config().identifier, callback.link);
+    let done = format!("{back}?done");
+    let (tab_url, tab_back) = (url.to_string(), back);
+    let tab = kotlin(app, move |side| side.auth_tab(&tab_url, &tab_back));
+    tokio::pin!(tab);
+    tokio::select! {
+        biased;
+        result = loopback.wait_for(callback.path, callback.required, Answer::Redirect(&done)) => {
+            result.map_err(|error| AuthError::Network(error.to_string()))
+        }
+        result = &mut tab => match result {
+            Err(error) => Err(error),
+            Ok(_) => Err(AuthError::Cancelled("The sign-in didn't come back.".into())),
+        },
+        _ = cancelled => Err(AuthError::Cancelled("Another sign-in started.".into())),
+    }
+}
+
 /// Calls the Kotlin side, with its refusals as the UI tells them apart.
 #[cfg(target_os = "android")]
 pub(crate) async fn kotlin<T: Send + 'static>(
@@ -691,6 +783,29 @@ mod tests {
         assert_eq!(
             token_error("<html>", 502),
             AuthError::Provider("HTTP 502".into())
+        );
+    }
+
+    #[test]
+    fn reads_what_the_sign_in_brought_back() {
+        let params = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        assert_eq!(
+            callback_code(&params(&[("code", "c"), ("state", "s")]), Some("s")),
+            Ok("c".into())
+        );
+        assert!(callback_code(&params(&[("code", "c"), ("state", "x")]), Some("s")).is_err());
+        assert_eq!(
+            callback_code(&params(&[("error", "access_denied")]), None),
+            Err(AuthError::Denied("access_denied".into()))
+        );
+        assert_eq!(
+            callback_code(&params(&[("code", "c")]), None),
+            Ok("c".into())
         );
     }
 

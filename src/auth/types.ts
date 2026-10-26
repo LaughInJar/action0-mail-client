@@ -27,12 +27,23 @@ export interface AuthSession {
   getAccessToken(): Promise<string>;
 
   /**
+   * What signing in again takes: the browser (OAuth, the default), or a
+   * password the user types (mail server accounts), which the interface
+   * asks for and passes to {@link signIn}.
+   */
+  readonly reauth?: "browser" | "password";
+
+  /**
    * Interactive (re-)authentication. Must be called from a user gesture,
    * because it may open a popup. Concurrent calls share one attempt. With
    * `askAgain`, optional permissions the user declined before are asked
-   * for again (e.g. "Allow editing" for signatures).
+   * for again (e.g. "Allow editing" for signatures); `password` is the new
+   * password of a session whose {@link reauth} is `password`.
    */
-  signIn(options?: { readonly askAgain?: boolean }): Promise<void>;
+  signIn(options?: {
+    readonly askAgain?: boolean;
+    readonly password?: string;
+  }): Promise<void>;
 
   /** Revokes and forgets the credentials. */
   signOut(): Promise<void>;

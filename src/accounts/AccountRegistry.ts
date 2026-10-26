@@ -85,12 +85,13 @@ export class AccountRegistry {
 
   /**
    * Connects a new account interactively. Must be called from a user
-   * gesture. Re-adding a known account replaces its session.
+   * gesture. Re-adding a known account replaces its session. `input` is
+   * passed to the module (a mail server account's setup).
    */
-  async add(type: ProviderType): Promise<AccountHandle> {
+  async add(type: ProviderType, input?: unknown): Promise<AccountHandle> {
     const module = this.#modules.get(type);
     if (!module) throw new Error(`No provider module for "${type}"`);
-    const { account, auth } = await module.connect();
+    const { account, auth } = await module.connect(input);
     const handle = handleOf(module, account, auth);
     const index = this.#handles.findIndex((h) => h.account.id === account.id);
     this.#handles =

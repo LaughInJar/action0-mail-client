@@ -55,6 +55,17 @@ The AI assistant ([ai.md](ai.md)) uses the user's own AI service, so its keys ar
 - **Mail that tries to instruct the AI.** A mail can contain text like "ignore your instructions and…". The mail goes to the AI between markers it's told to treat as data, but that's a mitigation, not a guarantee. What limits the damage is that the AI can't do anything: it has no tools or actions, its answer is shown as React elements (paragraphs, lists, bold) and inserted into the composer as editor nodes, never parsed as HTML, and nothing it writes is sent without the user.
 - **Answers** stay in memory (the panel's state in the UI store), never in browser storage.
 
+## Mail server accounts
+
+IMAP/SMTP accounts ([imap.md](imap.md)) exist only in the apps, where the native side talks to the servers.
+
+- **Passwords and sign-ins** (an IMAP password or a Yahoo/AOL refresh token) go from the wizard straight to the native side and are kept only in `imap.vault`, encrypted with the vault key; the UI never reads them back. Without a keychain they last until the app quits, like the other accounts.
+- **Encryption is required**: TLS from the start or STARTTLS that has to succeed; capabilities seen before STARTTLS are thrown away (they could be injected); a login never goes out in plain text.
+- **Certificates.** The system's trust store decides. A certificate it refuses can be trusted only while adding the account, after the user saw its fingerprint, names, issuer and dates, and only for that account (RFC 8314); its SHA-256 is kept in the vault, accepted besides the system's, and can be forgotten in the Accounts panel. A different untrusted certificate later is refused, with no way to click through.
+- **Looking up settings** sends the address's domain (never the address or password) to the provider's own autoconfig host and to Mozilla's ISPDB (`autoconfig.thunderbird.net`), and asks DNS for its MX records (desktop).
+- **No mail on disk**: lists, messages and attachments are fetched when needed and cached in memory only.
+- **SMTP** gets the message without its Bcc header; the copy kept in Sent has it, as other clients do. Addresses that would inject SMTP commands are refused.
+
 ## What is stored where
 
 The README has the summary table. In detail, by key:
@@ -87,7 +98,7 @@ The query cache (`src/data/queryClient.ts`) persists only queries marked `meta: 
 
 **Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values, the AI assistant's answers and the models services offer.
 
-**Desktop app, on disk:** the encrypted vaults (`accounts.vault`, and `ai.vault` for the AI assistant's keys and sign-ins), PDFs opened with another app (emptied at every start), the window-state plugin's window geometry, and the web view's own localStorage and sessionStorage with the keys above. See [Desktop specifics](#desktop-specifics).
+**Desktop app, on disk:** the encrypted vaults (`accounts.vault`, `imap.vault` for IMAP accounts' settings and passwords or Yahoo/AOL refresh tokens, and `ai.vault` for the AI assistant's keys and sign-ins), PDFs opened with another app (emptied at every start), the window-state plugin's window geometry, and the web view's own localStorage and sessionStorage with the keys above. See [Desktop specifics](#desktop-specifics).
 
 ## HTML mail
 

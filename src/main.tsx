@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { readConfig } from "./app/config";
+import { createMailServerAccounts } from "./app/mailServers";
 import { IcsCalendarProvider } from "./providers/ical/IcsCalendarProvider";
 import { DEMO_ACCOUNT, DEMO_WORK_ACCOUNT } from "./providers/fake/module";
 import {
@@ -34,6 +35,7 @@ const nativeServices = native && {
   native: { bridge: native.auth, accounts: native.accounts },
   fetch: native.fetch,
   android: native.platform.kind === "android",
+  imap: native.imap,
 };
 const services = createAppServices({
   modules: createDefaultModules(
@@ -55,6 +57,13 @@ const services = createAppServices({
     ? {
         platform: native.platform,
         ai: native.ai,
+        createMailServers: (registry) =>
+          createMailServerAccounts({
+            registry,
+            bridge: native.imap.bridge,
+            config,
+            settings: localStorage,
+          }),
         icsFactory: (subscription) =>
           new IcsCalendarProvider(subscription, { fetch: native.fetch }),
       }

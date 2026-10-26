@@ -24,6 +24,7 @@ import {
   type NativeStart,
 } from "./common";
 import { createNativeAiBackend } from "./ai";
+import { createNativeImapBridge } from "./imap";
 import { createNativeFetch } from "./nativeFetch";
 
 /** Native events, with listeners added and removed synchronously. */
@@ -76,10 +77,12 @@ export async function startDesktop(
   page: () => SignedInPage,
 ): Promise<NativeStart> {
   const auth = createAuthBridge(invoke, page);
-  const [info, kept, compose] = await Promise.all([
+  const imap = createNativeImapBridge(invoke, page);
+  const [info, kept, compose, imapKept] = await Promise.all([
     invoke<{ os: string; version: string }>("shell_info"),
     auth.kept(),
     invoke<string[]>("shell_take_compose"),
+    imap.accounts().catch(() => ({ persistent: true, accounts: [] })),
   ]);
 
   let notificationsGranted = await isPermissionGranted().catch(() => false);
@@ -100,6 +103,7 @@ export async function startDesktop(
     composing.emit(typeof link === "string" ? link : "");
   });
   const polls = relay("a0://poll");
+  const imapChanges = relay("imap-changed");
   const closedToTray = relay("a0://closed-to-tray");
   const openExternal = (url: string) => {
     void openUrl(url).catch(() => undefined);
@@ -151,10 +155,17 @@ export async function startDesktop(
         )
         .catch(() => undefined);
     },
-    onPollRequest: (listener) =>
-      polls.subscribe(() => {
-        listener();
-      }),
+    // The tray asks, and IMAP's IDLE says an Inbox changed.
+    onPollRequest: (listener) => {
+      const stops = [polls, imapChanges].map((source) =>
+        source.subscribe(() => {
+          listener();
+        }),
+      );
+      return () => {
+        for (const stop of stops) stop();
+      };
+    },
     onCompose: composing.subscribe,
     desktop: {
       version: info.version,
@@ -208,5 +219,11 @@ export async function startDesktop(
     auth,
     accounts: new Map(kept.accounts.map((account) => [account.key, account])),
     ai: createNativeAiBackend(invoke, page),
+    imap: {
+      bridge: imap,
+      accounts: new Map(
+        imapKept.accounts.map((account) => [account.key, account]),
+      ),
+    },
   };
 }

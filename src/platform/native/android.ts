@@ -22,6 +22,7 @@ import {
   type NativeStart,
 } from "./common";
 import { createNativeAiBackend } from "./ai";
+import { createNativeImapBridge } from "./imap";
 import { createNativeFetch } from "./nativeFetch";
 
 /** Where new releases are announced (the APK is on the release page). */
@@ -77,7 +78,8 @@ export async function startAndroid(
   page: () => SignedInPage,
 ): Promise<NativeStart> {
   const auth = createAuthBridge(invoke, page);
-  const [info, kept, permission] = await Promise.all([
+  const imap = createNativeImapBridge(invoke, page);
+  const [info, kept, permission, imapKept] = await Promise.all([
     invoke<{
       os: string;
       version: string;
@@ -89,6 +91,7 @@ export async function startAndroid(
     invoke<string>("mobile_notification_permission", { ask: false }).catch(
       () => "denied",
     ),
+    imap.accounts().catch(() => ({ persistent: true, accounts: [] })),
   ]);
   const fetch = createNativeFetch(invoke);
   let notificationsGranted = permission === "granted";
@@ -230,5 +233,11 @@ export async function startAndroid(
     auth,
     accounts: new Map(kept.accounts.map((account) => [account.key, account])),
     ai: createNativeAiBackend(invoke, page),
+    imap: {
+      bridge: imap,
+      accounts: new Map(
+        imapKept.accounts.map((account) => [account.key, account]),
+      ),
+    },
   };
 }

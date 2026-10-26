@@ -4,6 +4,7 @@
 mod ai;
 mod background;
 mod files;
+pub mod imap;
 #[cfg(target_os = "android")]
 mod mobile;
 mod net;
@@ -38,12 +39,17 @@ pub fn run() {
         });
         #[cfg(target_os = "android")]
         let keys = Box::new(mobile::KeystoreKey(app.handle().clone()));
-        // The accounts and the AI assistant's keys: two files, one key.
+        // The accounts, IMAP accounts and the AI assistant's keys: three
+        // files, one key.
         let keys: std::sync::Arc<dyn vault::KeyStore> =
             std::sync::Arc::new(vault::SharedKey::new(keys));
         app.manage(oauth::Auth::new(
             http.clone(),
             vault::LazyVault::new(data.join("accounts.vault"), keys.clone()),
+        ));
+        app.manage(imap::Imap::new(
+            http.clone(),
+            vault::LazyVault::new(data.join("imap.vault"), keys.clone()),
         ));
         app.manage(ai::Ai::new(
             http.clone(),
@@ -53,6 +59,9 @@ pub fn run() {
         files::clear(app.handle());
         #[cfg(desktop)]
         shell::setup(app.handle())?;
+        // IDLE on the IMAP accounts' Inboxes.
+        #[cfg(desktop)]
+        imap::watch_inboxes(app.handle());
         Ok(())
     });
 
@@ -74,6 +83,16 @@ pub fn run() {
             ai::ai_abort,
             ai::ai_openrouter_sign_in,
             ai::ai_chatgpt_sign_in,
+            imap::imap_discover,
+            imap::imap_connect,
+            imap::imap_accounts,
+            imap::imap_reconnect,
+            imap::imap_remove,
+            imap::imap_forget_certificate,
+            imap::imap_send,
+            imap::imap_call,
+            imap::imap_bytes,
+            imap::imap_append,
             shell::shell_configure,
             shell::shell_set_unread,
             shell::shell_take_compose,
@@ -100,6 +119,16 @@ pub fn run() {
         ai::ai_abort,
         ai::ai_openrouter_sign_in,
         ai::ai_chatgpt_sign_in,
+        imap::imap_discover,
+        imap::imap_connect,
+        imap::imap_accounts,
+        imap::imap_reconnect,
+        imap::imap_remove,
+        imap::imap_forget_certificate,
+        imap::imap_send,
+        imap::imap_call,
+        imap::imap_bytes,
+        imap::imap_append,
         mobile::mobile_info,
         mobile::mobile_open_file,
         mobile::mobile_share_file,

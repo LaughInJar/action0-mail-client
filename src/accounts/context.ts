@@ -9,7 +9,18 @@ import type { AuthSession, AuthStatus } from "../auth/types";
 import type { AccountId } from "../core/ids";
 import type { AccountRegistry } from "./AccountRegistry";
 import type { AccountHandle, ProviderModule, ProviderSetup } from "./types";
+import type { MailServerAccounts } from "./mailServer";
 import type { ProviderType } from "../core/model";
+
+/** Mail server (IMAP/SMTP) accounts, in the apps; absent in the web app. */
+export const MailServerAccountsContext = createContext<
+  MailServerAccounts | undefined
+>(undefined);
+
+/** Adding mail server accounts, if this app can (the apps only). */
+export function useMailServerAccounts(): MailServerAccounts | undefined {
+  return useContext(MailServerAccountsContext);
+}
 
 /** Provides the {@link AccountRegistry} to the UI. */
 export const AccountRegistryContext = createContext<AccountRegistry | null>(

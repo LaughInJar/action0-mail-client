@@ -61,6 +61,8 @@ export type MailErrorReason =
   | "folderNeedsName"
   | "folderExists"
   | "folderInsideItself"
+  | "mailTooBig"
+  | "mailRejected"
   | "attachmentUploadBlocked"
   | "attachmentUploadInterrupted"
   | "wrongAccount"

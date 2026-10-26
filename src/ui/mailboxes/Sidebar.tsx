@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import {
   useAccountHandle,
   useAccountRegistry,
   useAccounts,
+  useMailServerAccounts,
 } from "../../accounts/context";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
@@ -14,6 +16,7 @@ import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 import { useT } from "../../i18n/context";
 import { APP_TITLE } from "../sync/useDocumentTitle";
 import { mailboxTexts } from "../labels/mailboxTexts";
+import { useAsk } from "../common/useAsk";
 
 /** Column (a): app title, account/mailbox tree and account management. */
 export function Sidebar({ onNavigate }: MailboxTreeProps) {
@@ -134,6 +137,12 @@ function AccountsPanel() {
             <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-300">
               {account.email}
             </span>
+            {account.type === "imap" && (
+              <ForgetCertificate
+                accountId={account.id}
+                address={account.email}
+              />
+            )}
             <button
               type="button"
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
@@ -162,5 +171,55 @@ function AccountsPanel() {
         </li>
       </ul>
     </details>
+  );
+}
+
+/**
+ * "Forget certificate" for a mail server account whose certificate the
+ * user trusted while adding it (the system doesn't).
+ */
+function ForgetCertificate({
+  accountId,
+  address,
+}: {
+  readonly accountId: string;
+  readonly address: string;
+}) {
+  const servers = useMailServerAccounts();
+  const ask = useAsk();
+  const t = useT();
+  const q = t.imap.forgetQuestion;
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void servers
+      ?.info(accountId)
+      .then((info) => {
+        if (current) setPinned(info?.pinned === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [servers, accountId]);
+  if (!servers || !pinned) return null;
+  return (
+    <button
+      type="button"
+      className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 pointer-coarse:min-h-11"
+      onClick={() => {
+        void ask({
+          title: q.title,
+          message: q.message(address),
+          options: [{ value: "forget", label: q.confirm, tone: "danger" }],
+        }).then(async (answer) => {
+          if (answer !== "forget") return;
+          await servers.forgetCertificate(accountId);
+          setPinned(false);
+        });
+      }}
+    >
+      {t.imap.forgetCertificate}
+    </button>
   );
 }

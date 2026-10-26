@@ -54,6 +54,9 @@ const enReasons: Reasons = {
   folderExists: (p) =>
     `There’s already a folder called “${p.name ?? ""}” here.`,
   folderInsideItself: () => "A folder can’t go inside itself.",
+  mailTooBig: () =>
+    "The mail server refused the mail: it’s too big. Remove some attachments.",
+  mailRejected: (p) => `The mail server refused the mail: ${p.detail ?? ""}`,
   attachmentUploadBlocked: (p) =>
     `“${p.name ?? ""}” couldn’t be uploaded: Outlook’s upload server didn’t answer. Files of up to 3 MB always work.`,
   attachmentUploadInterrupted: (p) =>
@@ -127,6 +130,10 @@ const deReasons: Reasons = {
   folderNeedsName: () => "Ein Ordner braucht einen Namen.",
   folderExists: (p) => `Hier gibt es schon einen Ordner „${p.name ?? ""}“.`,
   folderInsideItself: () => "Ein Ordner kann nicht in sich selbst liegen.",
+  mailTooBig: () =>
+    "Der Mailserver hat die Mail abgelehnt: Sie ist zu groß. Entferne ein paar Anhänge.",
+  mailRejected: (p) =>
+    `Der Mailserver hat die Mail abgelehnt: ${p.detail ?? ""}`,
   attachmentUploadBlocked: (p) =>
     `„${p.name ?? ""}“ konnte nicht hochgeladen werden: Der Upload-Server von Outlook hat nicht geantwortet. Dateien bis 3 MB klappen immer.`,
   attachmentUploadInterrupted: (p) =>

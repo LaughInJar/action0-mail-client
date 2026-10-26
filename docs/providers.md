@@ -97,8 +97,13 @@ export interface AuthSession {
   readonly expiresAt: number | undefined;
   /** Never opens UI: rejects with `MailError("auth-required")` if interaction is needed. */
   getAccessToken(): Promise<string>;
+  /** What signing in again takes: the browser (default) or a password the UI asks for. */
+  readonly reauth?: "browser" | "password";
   /** Interactive (re-)authentication, from a user gesture. */
-  signIn(options?: { readonly askAgain?: boolean }): Promise<void>;
+  signIn(options?: {
+    readonly askAgain?: boolean;
+    readonly password?: string;
+  }): Promise<void>;
   signOut(): Promise<void>;
   /** Called by the HTTP layer when the provider rejects the token (HTTP 401). */
   markExpired(): void;
@@ -113,6 +118,7 @@ A `ScopedSession` adds permissions that are asked for only when needed (calendar
 | `GoogleAuthSession`    | `src/auth/google/GoogleAuthSession.ts`       | Gmail in the browser: Google Identity Services token model, one-hour tokens, no refresh token; refreshed on the next click or key near expiry (`src/auth/refreshOnInteraction.ts`) |
 | `MicrosoftAuthSession` | `src/auth/microsoft/MicrosoftAuthSession.ts` | Microsoft in the browser: MSAL.js (loaded on first use), renews silently; `tokenFor(scopes)` gets calendar tokens                                                                  |
 | `NativeAuthSession`    | `src/auth/native/NativeAuthSession.ts`       | Both, in the desktop app: the native side signs in through the system browser and keeps the refresh token                                                                          |
+| `ImapSession`          | `src/providers/imap/ImapSession.ts`          | IMAP/SMTP accounts in the apps: the native side keeps the password or Yahoo/AOL sign-in and logs in itself; `reauth: "password"` makes the Reconnect bar ask for a new password    |
 | `StaticAuthSession`    | `src/auth/staticSession.ts`                  | The demo accounts, tests, and single calls with a freshly obtained token                                                                                                           |
 
 The Google and Microsoft sessions and the native one also implement `ScopedSession`. Token storage and the desktop vault are covered in [security.md](security.md) and [desktop-app.md](desktop-app.md).
@@ -127,8 +133,8 @@ export interface ProviderModule {
   readonly label: string;
   /** Loads what connect() needs, so it can open its popup inside the click. */
   readonly prepare?: () => Promise<void>;
-  /** Adds a new account interactively, from a user gesture. */
-  connect(): Promise<{ account: Account; auth: AuthSession }>;
+  /** Adds a new account interactively, from a user gesture (`input`: a mail server account's setup). */
+  connect(input?: unknown): Promise<{ account: Account; auth: AuthSession }>;
   /** Recreates the session of a known account without user interaction. */
   restore(account: Account): AuthSession;
   createProvider(account: Account, auth: AuthSession): MailProvider;
@@ -154,7 +160,7 @@ A `ProviderSetup` (same file) lets the user configure a provider at runtime, suc
 
 - `restore()` recreates the accounts persisted in localStorage. Accounts whose module isn't registered (for example, no Google client ID yet) stay _dormant_: still persisted, not loaded.
 - `registerModule(module)` adds or replaces a module at runtime (after the user entered a client ID) and wakes its dormant accounts.
-- `add(type)` connects a new account through the module, from a user gesture. Re-adding a known account replaces its session.
+- `add(type, input?)` connects a new account through the module, from a user gesture; `input` is what the user entered for it (the IMAP wizard's settings and password). Re-adding a known account replaces its session.
 - `addKnown(account)` adds an account whose session the module can restore without signing in (the second demo account).
 - `remove(id)` forgets the account, calls `onRemove` (the composition root drops its cached data) and signs out.
 - `list()`, `get(id)`, `availableModules()` and `subscribe(listener)` read it.
@@ -360,6 +366,32 @@ One poll sends all delta links in one `$batch`. New or deleted folders in the tr
 - `listSenders` returns only the account's own address, with the signature stored in this browser; `updateSignature` writes it there (`capabilities.signatureStore` is `browser`).
 - Outlook's invitations, cancellations and answers are event messages: `getMessage` reads the event's `iCalUId` and maps `meetingMessageType` to the invitation's `method` (`toInvitation`). A failed lookup just leaves the invitation out.
 
+## IMAP and SMTP
+
+`src/providers/imap/` serves "Other mail server" accounts, in the desktop and Android apps only: a browser can't open IMAP or SMTP connections. The native side (`src-tauri/src/imap/`, see [desktop-app.md](desktop-app.md#imap-and-smtp)) keeps the connections, the password or Yahoo/AOL sign-in and the server settings, speaks IMAP and SMTP, and parses mail; the TypeScript side turns that into the mailbox model. The developer overview is [imap.md](imap.md).
+
+### Bridge and module
+
+`bridge.ts` is the contract with the native side: the `imap_call` operations and their JSON (folders, list, threads, thread, message, flags, move, delete, empty, markAllRead, folder management, changes), raw bytes for messages and parts, `append` and `send`. Adding accounts uses the provider-neutral shapes of `src/accounts/mailServer.ts` (settings, discovery, setup, certificate, `MailServerError`), which the wizard sees through `MailServerAccounts` (`src/app/mailServers.ts`, provided only in the apps). `src/platform/native/imap.ts` implements the bridge over Tauri commands.
+
+`createImapModule` (`module.ts`) knows the accounts the native side kept at start (their settings and names). `connect(setup)` adds an account with what the wizard collected; account ids are `imap:<address>`. `ImapSession` has no tokens: it's `expired` once the server refuses the login, and `signIn({ password })` stores a new one (Yahoo/AOL: a new browser sign-in).
+
+### Folders, lists and changes
+
+The native side lists folders with their roles (special-use flags, else names), unread counts, and two views: `v:flagged` (Flagged) and the hidden `v:all` that "Everywhere" searches. Message ids stay the same when mail moves (the server's `EMAILID`/`X-GM-MSGID`, or a location id the native side tracks), cursors and sync tokens are its own opaque strings, and search text (`from:`, `to:`, `subject:`, `is:unread`, `is:starred`, words) is translated to IMAP SEARCH there. `ImapProvider` passes these through and maps the JSON to domain values (`mappers.ts`), List-Unsubscribe and invitation parts included.
+
+### Changing mail
+
+Like Graph: archive, trash and spam move into the folder with that role, which `#roleFolder` creates ("Archive", "Trash", "Junk") the first time an account doesn't have one; undo, untrash and not-spam move into the Inbox, because IMAP doesn't remember where a message was. Folders can be created, renamed and moved; deleting one moves it into Trash, or deletes it for good when it's in Trash already. Only Trash and Junk can be emptied.
+
+### Drafts and sending
+
+`saveDraft` builds the message with `buildMessage` (its own `Message-ID` and `Date`) and appends it to Drafts with `\Draft \Seen`, deleting the version before; the draft's id is its message's. `sendDraft` builds it once more, sends it over SMTP without the Bcc header (`withoutBcc`), appends a copy with Bcc to Sent (unless the SMTP server keeps one itself, as Gmail's does), and deletes the draft. Attachments of other messages are fetched through `getAttachment`. The size limit is the SMTP server's `SIZE`, less a third for encoding.
+
+### Senders and signatures
+
+The account sends from its own address with the name given when adding it (aliases aren't supported yet). Signatures are kept in this app under `a0.settings.signatures.<accountId>`, like Microsoft's. There are no contacts (`contacts: false`): address suggestions come from recent mail.
+
 ## Calendars
 
 Each account module creates a calendar provider next to the mail provider (`createCalendar`); iCal subscriptions get one each through the `IcsFactory` (`src/data/calendar.ts`, wired in `src/app/services.ts` and, with the native `fetch`, in `src/main.tsx`). The data layer treats both as calendar _sources_, keyed by the account id or `ics:<subscription id>`.
@@ -440,7 +472,7 @@ Opening the app with `/?demo` adds the first account through `registry.add("demo
 
 ## Adding a provider
 
-The checklist below is written with IMAP in mind, which the roadmap plans for the desktop app (see [decisions.md](decisions.md)), but it applies to any provider. Follow the way of working in [CLAUDE.md](../CLAUDE.md#how-we-work-mandatory): plan, outline, implement, test, one feature at a time.
+The checklist below applies to any provider; the IMAP provider is the most recent example of following it. Follow the way of working in [CLAUDE.md](../CLAUDE.md#how-we-work-mandatory): plan, outline, implement, test, one feature at a time.
 
 1. **Provider type.** Add the type to `ProviderType` (`src/core/model.ts`) and to `PROVIDER_TYPES` in `src/accounts/accountStorage.ts`; otherwise saved accounts of that type are dropped when the list is loaded.
 2. **Capabilities.** Decide `capabilities` honestly (see [Capabilities](domain-model.md#capabilities)). An IMAP account is a folder account: `mailboxKinds` with `folder` (and `view` if you add computed views), and `mailboxEditing.folder` for what folder management allows. Set `threads` only if conversations can be listed; set `contacts`, `senders` and `signatureStore` to match what the server offers. Turn off what you can't do: the UI hides it.
@@ -452,7 +484,7 @@ The checklist below is written with IMAP in mind, which the roadmap plans for th
 8. **Auth session.** Implement `AuthSession` (and `ScopedSession` for permissions asked on demand), or reuse one. `getAccessToken` never opens UI; the HTTP layer calls `markExpired()` when the server rejects the credentials. Credentials follow [security.md](security.md): never in localStorage, and in the desktop app long-lived secrets only on the native side.
 9. **Provider module.** Write a `ProviderModule` in `src/providers/<name>/module.ts`: `type`, `label`, `prepare` (load what `connect` needs before the click), `connect` (interactive, builds the `Account` with the id `<type>:<lowercased address>`), `restore`, `createProvider`, `createCalendar`. Accept an optional `fetch`, as the Gmail and Microsoft modules do, so the desktop app can route requests through its native side.
 10. **Wiring.** Register the module in `createDefaultModules` in `src/app/services.ts` (for the web app, the desktop app or both); if the provider needs configuration entered at runtime, add a `ProviderSetup` in `createDefaultSetups`. Browsers can't open TCP connections, so an IMAP provider needs a transport on the desktop app's native side (`src-tauri/`, exposed to the UI through `src/platform/native`); plan that with the feature.
-11. **Add account wizard.** The card list is `ACCOUNT_TYPE_CARDS` in `src/ui/accounts/accountTypes.ts` (IMAP already has a greyed-out `comingLater` card), with texts in `src/i18n/texts/accounts.ts`. `src/ui/accounts/AddAccountFlow.tsx` assumes every non-demo type is set up with an OAuth client and signed in with a popup; a provider with another setup (server, user name, password) needs its own steps there.
+11. **Add account wizard.** The card list is `ACCOUNT_TYPE_CARDS` in `src/ui/accounts/accountTypes.ts` (a `comingLater` card is greyed out), with texts in `src/i18n/texts/accounts.ts`. `src/ui/accounts/AddAccountFlow.tsx` sets OAuth providers up with a client ID and signs in with a popup; a provider with another setup gets its own steps, as mail servers do in `MailServerFlow.tsx`, and passes what was entered to `registry.add(type, input)`.
 12. **Errors and texts.** Add new causes to `MailErrorReason` (`src/core/errors.ts`) and describe them in English and German in `src/i18n/texts/errors.ts` (the typecheck fails otherwise). All other interface text goes into the catalogue too; see [development.md](development.md).
 13. **Tests.** Test the adapter in the Node environment (`// @vitest-environment node`) against a mock server with [MSW](https://mswjs.io/) and `server.listen({ onUnhandledFrame: "error" })`, so an unexpected request fails the test, as `GmailProvider.test.ts` and `GraphProvider.test.ts` do. A stateful fake server like `FakeGraph` (`src/test/graphServer.ts`) keeps tests of writes, drafts and delta sync readable. Never call real servers. Check that the provider's writes and `planChanges` agree. UI behaviour that depends on the provider's model can be tested with `FakeMailProvider` (folder mode is Outlook-like). See [testing.md](testing.md).
 14. **Docs.** Describe the adapter here, add setup steps to the README, and record the decisions in the decisions log in `CLAUDE.md`.

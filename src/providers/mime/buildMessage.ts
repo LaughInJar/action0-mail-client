@@ -1,7 +1,7 @@
 /**
  * Builds RFC 5322 / MIME messages for sending: 7-bit clean, CRLF line
  * endings, UTF-8 everywhere. Shared by adapters that send raw messages
- * (Gmail; later an IMAP/SMTP proxy).
+ * (Gmail, and IMAP/SMTP through the apps' native side).
  */
 import { formatAddress } from "../../core/addresses";
 import type { EmailAddress } from "../../core/model";
@@ -31,12 +31,28 @@ export interface OutgoingMessage {
   readonly references?: readonly string[];
   readonly attachments?: readonly MimeAttachment[];
   readonly date?: Date;
+  /** The message's own `Message-ID`, with angle brackets (see {@link newMessageId}). */
+  readonly messageId?: string;
 }
 
 /** Options of {@link buildMessage}. */
 export interface BuildOptions {
   /** Creates multipart boundaries (fixed in tests). */
   readonly boundary?: () => string;
+  /**
+   * Leaves the Bcc header out: the copy that goes over SMTP must not show
+   * it (the copy kept in Sent does).
+   */
+  readonly withoutBcc?: boolean;
+}
+
+/** A new `Message-ID` for mail from `address`: random, at its domain. */
+export function newMessageId(address: string): string {
+  const domain = address.split("@").at(-1) || "action0.invalid";
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  return `<${random}@${domain}>`;
 }
 
 const CRLF = "\r\n";
@@ -51,19 +67,21 @@ const randomBoundary = () =>
 /** Builds the raw message (headers and body), ready for an upload. */
 export function buildMessage(
   message: OutgoingMessage,
-  { boundary = randomBoundary }: BuildOptions = {},
+  { boundary = randomBoundary, withoutBcc = false }: BuildOptions = {},
 ): string {
   const headers: string[] = [];
   if (message.from) headers.push(addressHeader("From", [message.from]));
   for (const [name, list] of [
     ["To", message.to],
     ["Cc", message.cc],
-    ["Bcc", message.bcc],
+    ["Bcc", withoutBcc ? [] : message.bcc],
   ] as const) {
     if (list.length > 0) headers.push(addressHeader(name, list));
   }
   headers.push(foldHeader("Subject", encodeWords(message.subject)));
   if (message.date) headers.push(`Date: ${formatDate(message.date)}`);
+  if (message.messageId)
+    headers.push(foldHeader("Message-ID", message.messageId));
   if (message.inReplyTo)
     headers.push(foldHeader("In-Reply-To", message.inReplyTo));
   if (message.references?.length)

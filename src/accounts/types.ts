@@ -21,9 +21,10 @@ export interface ProviderModule {
 
   /**
    * Adds a new account interactively (the user picks and authorizes an
-   * account). Must be called from a user gesture.
+   * account). Must be called from a user gesture. Mail server accounts get
+   * what the user entered (a `MailServerSetup`) as `input`.
    */
-  connect(): Promise<{ account: Account; auth: AuthSession }>;
+  connect(input?: unknown): Promise<{ account: Account; auth: AuthSession }>;
 
   /** Recreates the session of a known account without user interaction. */
   restore(account: Account): AuthSession;

@@ -20,7 +20,7 @@ import type {
 } from "./ids";
 
 /** Every provider implementation the app knows about. */
-export type ProviderType = "gmail" | "microsoft" | "demo";
+export type ProviderType = "gmail" | "microsoft" | "imap" | "demo";
 
 /** A connected mail account. Contains no credentials. */
 export interface Account {

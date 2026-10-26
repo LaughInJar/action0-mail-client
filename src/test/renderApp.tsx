@@ -7,6 +7,10 @@ import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { App } from "../app/App";
 import type { AiBackend } from "../ai/backend";
 import { createAppServices } from "../app/services";
+import { readConfig } from "../app/config";
+import { createMailServerAccounts } from "../app/mailServers";
+import type { ImapBridge } from "../providers/imap/bridge";
+import { createImapModule } from "../providers/imap/module";
 import type { CalendarAccess } from "../core/calendar";
 import type { IcsFactory } from "../data/calendar";
 import type { Platform } from "../platform/types";
@@ -59,6 +63,8 @@ export interface RenderAppOptions {
   readonly workData?: () => FakeMailData;
   /** The AI backend (default: the browser's). */
   readonly ai?: AiBackend;
+  /** Mail server accounts through this bridge (as in the apps). */
+  readonly imap?: ImapBridge;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -79,6 +85,7 @@ export function renderApp({
   workAccount = false,
   workData = () => createWorkDemoData(TEST_NOW),
   ai,
+  imap,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
@@ -102,11 +109,31 @@ export function renderApp({
         guestNotices,
         syncedReminders,
       }),
+      ...(imap
+        ? [
+            createImapModule({
+              bridge: imap,
+              accounts: new Map(),
+              settings: window.localStorage,
+            }),
+          ]
+        : []),
     ],
     ...(setups ? { createSetups: setups } : {}),
     ...(icsFactory ? { icsFactory } : {}),
     ...(platform ? { platform } : {}),
     ...(ai ? { ai } : {}),
+    ...(imap
+      ? {
+          createMailServers: (registry: AccountRegistry) =>
+            createMailServerAccounts({
+              registry,
+              bridge: imap,
+              config: readConfig(),
+              settings: window.localStorage,
+            }),
+        }
+      : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,
