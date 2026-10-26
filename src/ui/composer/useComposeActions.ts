@@ -54,7 +54,12 @@ export interface ComposeActions {
    */
   readonly composeFrom: (mailto: string) => void;
   /** Answers a message, from its account. */
-  readonly reply: (message: MessageRef, mode: ReplyMode) => void;
+  /** Answers a message; `ai` opens the composer with its AI field (Reply with AI). */
+  readonly reply: (
+    message: MessageRef,
+    mode: ReplyMode,
+    options?: { readonly ai?: boolean },
+  ) => void;
   readonly forward: (message: MessageRef) => void;
   /** Continues a draft (a message in the drafts mailbox). */
   readonly editDraft: (message: MessageRef) => void;
@@ -348,7 +353,7 @@ export function useComposeActions(): ComposeActions {
         });
       },
 
-      reply: (original, mode) => {
+      reply: (original, mode, options) => {
         withMessage(original, c.couldntReply, (accountId, message, senders) => {
           const me = registry.get(accountId)?.account.email;
           const mine = [
@@ -367,6 +372,7 @@ export function useComposeActions(): ComposeActions {
             quote: replyQuote(message, quoteTexts),
             threading: threadingFor(message),
             focus: "body",
+            ...(options?.ai ? { ai: true } : {}),
           });
         });
       },

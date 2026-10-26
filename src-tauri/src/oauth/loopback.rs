@@ -16,6 +16,15 @@ pub struct PageTexts {
     pub failed: String,
 }
 
+/// How the browser is answered when it comes back.
+#[derive(Clone, Copy)]
+pub enum Answer<'a> {
+    /// A page with the text.
+    Page(&'a PageTexts),
+    /// A redirect (Android: to the app's own link, which closes the tab).
+    Redirect(&'a str),
+}
+
 /// A listener waiting for the browser.
 pub struct Loopback {
     v4: TcpListener,
@@ -40,6 +49,17 @@ impl Loopback {
         path: &str,
         texts: &PageTexts,
     ) -> std::io::Result<HashMap<String, String>> {
+        self.wait_for(path, "state", Answer::Page(texts)).await
+    }
+
+    /// Waits for the browser to come back to `path` with `required` (or an
+    /// `error`) in the query, and answers it. Returns the query parameters.
+    pub async fn wait_for(
+        &self,
+        path: &str,
+        required: &str,
+        answer: Answer<'_>,
+    ) -> std::io::Result<HashMap<String, String>> {
         loop {
             let (mut stream, _) = match &self.v6 {
                 Some(v6) => tokio::select! {
@@ -51,11 +71,16 @@ impl Loopback {
             let Some(target) = read_target(&mut stream).await else {
                 continue;
             };
-            match callback_params(&target, path) {
+            match callback_params(&target, path, required) {
                 Some(params) => {
-                    let ok = params.contains_key("code") && !params.contains_key("error");
-                    let text = if ok { &texts.done } else { &texts.failed };
-                    respond(&mut stream, "200 OK", &page(text)).await;
+                    match answer {
+                        Answer::Page(texts) => {
+                            let ok = params.contains_key("code") && !params.contains_key("error");
+                            let text = if ok { &texts.done } else { &texts.failed };
+                            respond(&mut stream, "200 OK", &page(text)).await;
+                        }
+                        Answer::Redirect(location) => redirect(&mut stream, location).await,
+                    }
                     return Ok(params);
                 }
                 None => respond(&mut stream, "404 Not Found", "").await,
@@ -88,20 +113,33 @@ pub fn request_target(head: &str) -> Option<String> {
     }
 }
 
-/// The query of a callback to `path`: only requests with a `state`.
-pub fn callback_params(target: &str, path: &str) -> Option<HashMap<String, String>> {
+/// The query of a callback to `path`: only requests with `required` (or
+/// an `error`) in it.
+pub fn callback_params(
+    target: &str,
+    path: &str,
+    required: &str,
+) -> Option<HashMap<String, String>> {
     let url = url::Url::parse(&format!("http://localhost{target}")).ok()?;
     if url.path() != path {
         return None;
     }
     let params: HashMap<String, String> = url.query_pairs().into_owned().collect();
-    params.contains_key("state").then_some(params)
+    (params.contains_key(required) || params.contains_key("error")).then_some(params)
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, body: &str) {
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
         body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.shutdown().await;
+}
+
+async fn redirect(stream: &mut TcpStream, location: &str) {
+    let response = format!(
+        "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
     );
     let _ = stream.write_all(response.as_bytes()).await;
     let _ = stream.shutdown().await;
@@ -133,12 +171,43 @@ mod tests {
 
     #[test]
     fn takes_only_callbacks_to_its_path() {
-        let params = callback_params("/desktop?code=a%2Fb&state=s1", "/desktop").unwrap();
+        let params = callback_params("/desktop?code=a%2Fb&state=s1", "/desktop", "state").unwrap();
         assert_eq!(params["code"], "a/b");
         assert_eq!(params["state"], "s1");
-        assert!(callback_params("/favicon.ico", "/desktop").is_none());
-        assert!(callback_params("/desktop?code=1", "/desktop").is_none());
-        assert!(callback_params("/?error=access_denied&state=s", "/").is_some());
+        assert!(callback_params("/favicon.ico", "/desktop", "state").is_none());
+        assert!(callback_params("/desktop?code=1", "/desktop", "state").is_none());
+        assert!(callback_params("/?error=access_denied&state=s", "/", "state").is_some());
+        // OpenRouter comes back with only a code.
+        assert!(callback_params("/callback?code=1", "/callback", "code").is_some());
+        assert!(callback_params("/callback?error=x", "/callback", "code").is_some());
+    }
+
+    #[tokio::test]
+    async fn redirects_the_browser_back_to_the_app() {
+        let loopback = Loopback::bind().await.unwrap();
+        let port = loopback.port;
+        let browser = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+            stream
+                .write_all(b"GET /callback?code=c HTTP/1.1\r\nHost: x\r\n\r\n")
+                .await
+                .unwrap();
+            let mut answer = String::new();
+            stream.read_to_string(&mut answer).await.unwrap();
+            answer
+        });
+        let params = loopback
+            .wait_for(
+                "/callback",
+                "code",
+                Answer::Redirect("msauth://app/ai?done"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(params["code"], "c");
+        let answer = browser.await.unwrap();
+        assert!(answer.starts_with("HTTP/1.1 302"));
+        assert!(answer.contains("Location: msauth://app/ai?done\r\n"));
     }
 
     #[test]

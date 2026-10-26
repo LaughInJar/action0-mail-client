@@ -21,6 +21,7 @@ import {
   waiting,
   type NativeStart,
 } from "./common";
+import { createNativeAiBackend } from "./ai";
 import { createNativeFetch } from "./nativeFetch";
 
 /** Where new releases are announced (the APK is on the release page). */
@@ -228,5 +229,6 @@ export async function startAndroid(
     fetch,
     auth,
     accounts: new Map(kept.accounts.map((account) => [account.key, account])),
+    ai: createNativeAiBackend(invoke, page),
   };
 }

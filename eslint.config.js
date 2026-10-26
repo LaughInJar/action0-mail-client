@@ -22,6 +22,13 @@ const providerImplementations = {
     "UI, data and state code must use the provider-agnostic contracts in src/core. Wire concrete providers in src/app.",
 };
 
+/** The AI assistant's protocols and backends: the UI knows its contracts only. */
+const aiImplementations = {
+  group: ["**/ai/protocols/**", "**/ai/webBackend", "**/ai/client"],
+  message:
+    "UI, data and state code use the AI contracts (src/ai/types, backend, services). Wire backends and protocols in src/app.",
+};
+
 /** Tauri's APIs: only the native platforms (`src/platform/native`: desktop, Android) talk to the native side. */
 const tauriApis = {
   group: ["@tauri-apps/*"],
@@ -103,7 +110,7 @@ export default defineConfig([
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: [providerImplementations, tauriApis] },
+        { patterns: [providerImplementations, aiImplementations, tauriApis] },
       ],
     },
   },

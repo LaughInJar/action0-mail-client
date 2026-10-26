@@ -1,6 +1,7 @@
 //! action0's native side: the web UI in a desktop window or an Android
 //! app, with sign-in, networking and the platform integration done here.
 
+mod ai;
 mod background;
 mod files;
 #[cfg(target_os = "android")]
@@ -30,16 +31,23 @@ pub fn run() {
 
     let app = builder.plugin(tauri_plugin_opener::init()).setup(|app| {
         let http = net::http_client();
-        let vault_path = app.path().app_data_dir()?.join("accounts.vault");
+        let data = app.path().app_data_dir()?;
         #[cfg(desktop)]
         let keys = Box::new(vault::OsKeyStore {
             service: app.config().identifier.clone(),
         });
         #[cfg(target_os = "android")]
         let keys = Box::new(mobile::KeystoreKey(app.handle().clone()));
+        // The accounts and the AI assistant's keys: two files, one key.
+        let keys: std::sync::Arc<dyn vault::KeyStore> =
+            std::sync::Arc::new(vault::SharedKey::new(keys));
         app.manage(oauth::Auth::new(
             http.clone(),
-            vault::LazyVault::new(vault_path, keys),
+            vault::LazyVault::new(data.join("accounts.vault"), keys.clone()),
+        ));
+        app.manage(ai::Ai::new(
+            http.clone(),
+            vault::LazyVault::new(data.join("ai.vault"), keys),
         ));
         app.manage(net::Requests::new(http));
         files::clear(app.handle());
@@ -59,6 +67,13 @@ pub fn run() {
             oauth::auth_sign_in,
             oauth::auth_token,
             oauth::auth_sign_out,
+            ai::ai_secrets,
+            ai::ai_save_key,
+            ai::ai_forget,
+            ai::ai_request,
+            ai::ai_abort,
+            ai::ai_openrouter_sign_in,
+            ai::ai_chatgpt_sign_in,
             shell::shell_configure,
             shell::shell_set_unread,
             shell::shell_take_compose,
@@ -78,6 +93,13 @@ pub fn run() {
         oauth::auth_sign_in,
         oauth::auth_token,
         oauth::auth_sign_out,
+        ai::ai_secrets,
+        ai::ai_save_key,
+        ai::ai_forget,
+        ai::ai_request,
+        ai::ai_abort,
+        ai::ai_openrouter_sign_in,
+        ai::ai_chatgpt_sign_in,
         mobile::mobile_info,
         mobile::mobile_open_file,
         mobile::mobile_share_file,

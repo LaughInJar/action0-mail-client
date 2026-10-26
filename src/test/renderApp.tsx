@@ -5,6 +5,7 @@ import { saveAccounts } from "../accounts/accountStorage";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import { App } from "../app/App";
+import type { AiBackend } from "../ai/backend";
 import { createAppServices } from "../app/services";
 import type { CalendarAccess } from "../core/calendar";
 import type { IcsFactory } from "../data/calendar";
@@ -56,6 +57,8 @@ export interface RenderAppOptions {
   /** Also the second demo account (Outlook-like folders), as if restored. */
   readonly workAccount?: boolean;
   readonly workData?: () => FakeMailData;
+  /** The AI backend (default: the browser's). */
+  readonly ai?: AiBackend;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -75,6 +78,7 @@ export function renderApp({
   reminders = false,
   workAccount = false,
   workData = () => createWorkDemoData(TEST_NOW),
+  ai,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
@@ -102,6 +106,7 @@ export function renderApp({
     ...(setups ? { createSetups: setups } : {}),
     ...(icsFactory ? { icsFactory } : {}),
     ...(platform ? { platform } : {}),
+    ...(ai ? { ai } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,

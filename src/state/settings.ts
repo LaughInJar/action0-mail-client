@@ -4,6 +4,7 @@
  * the provider instead.
  */
 
+import type { AiChoice, AiKind, AiServiceConfig } from "../ai/types";
 import type { IcsSubscription } from "../core/calendar";
 import type { LanguageSetting } from "../i18n/locale";
 
@@ -51,7 +52,18 @@ export interface AppSettings {
    * system's languages. Elsewhere the browser or the system decides.
    */
   readonly spellLanguages: readonly string[];
+  /** AI services set up (never their keys). */
+  readonly aiServices: readonly AiServiceConfig[];
+  /** The AI service and model last used in the reader and in the composer. */
+  readonly aiChoices: Readonly<Partial<Record<AiPlace, AiChoice>>>;
+  /** AI services whose first-use note was shown, by id. */
+  readonly aiNoticed: readonly string[];
+  /** The AI services and models used last, newest first (the picker's top). */
+  readonly aiRecent: readonly AiChoice[];
 }
+
+/** Where the AI is asked: about mail in the reader, or to write in the composer. */
+export type AiPlace = "reader" | "composer";
 
 /** The settings of a browser that never changed any. */
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -73,7 +85,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   eventReminders: true,
   spellcheck: true,
   spellLanguages: [],
+  aiServices: [],
+  aiChoices: {},
+  aiNoticed: [],
+  aiRecent: [],
 };
+
+/** How many recent AI choices the picker offers. */
+export const MAX_AI_RECENT = 5;
 
 /** Most trusted senders kept (the oldest are dropped first). */
 export const MAX_TRUSTED_SENDERS = 500;
@@ -90,6 +109,60 @@ const isRemoteImages = oneOf(["ask", "always", "trusted"] as const);
 const isUndoSend = oneOf(UNDO_SEND_CHOICES);
 const isLanguage = oneOf(["auto", "en", "de"] as const);
 const isCalendarView = oneOf(["week", "month", "agenda"] as const);
+const isAiKind = oneOf<AiKind>([
+  "anthropic",
+  "openai",
+  "gemini",
+  "openrouter",
+  "chatgpt",
+  "ollama",
+  "lmstudio",
+  "compatible",
+  "demo",
+]);
+
+/** AI services with a known kind; addresses only http(s). */
+function parseAiServices(value: unknown): AiServiceConfig[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown): AiServiceConfig[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { id, kind, name, baseUrl, remember, account } = entry as Record<
+      string,
+      unknown
+    >;
+    if (typeof id !== "string" || !isAiKind(kind)) return [];
+    return [
+      {
+        id,
+        kind,
+        ...(typeof name === "string" ? { name } : {}),
+        ...(typeof baseUrl === "string" && /^https?:\/\//.test(baseUrl)
+          ? { baseUrl }
+          : {}),
+        ...(remember === true ? { remember } : {}),
+        ...(typeof account === "string" ? { account } : {}),
+      },
+    ];
+  });
+}
+
+function parseAiChoice(value: unknown): AiChoice | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { service, model } = value as Record<string, unknown>;
+  return typeof service === "string" && typeof model === "string"
+    ? { service, model }
+    : undefined;
+}
+
+function parseAiChoices(value: unknown): AppSettings["aiChoices"] {
+  if (typeof value !== "object" || value === null) return {};
+  const choices: Partial<Record<AiPlace, AiChoice>> = {};
+  for (const place of ["reader", "composer"] as const) {
+    const choice = parseAiChoice((value as Record<string, unknown>)[place]);
+    if (choice) choices[place] = choice;
+  }
+  return choices;
+}
 
 function parseSubscriptions(value: unknown): IcsSubscription[] {
   if (!Array.isArray(value)) return [];
@@ -175,6 +248,16 @@ export function parseSettings(value: unknown): AppSettings {
             typeof tag === "string" && /^[a-z]{2,3}(-[A-Z]{2})?$/.test(tag),
         )
       : d.spellLanguages,
+    aiServices: parseAiServices(raw.aiServices),
+    aiChoices: parseAiChoices(raw.aiChoices),
+    aiNoticed: Array.isArray(raw.aiNoticed)
+      ? raw.aiNoticed.filter((id): id is string => typeof id === "string")
+      : d.aiNoticed,
+    aiRecent: Array.isArray(raw.aiRecent)
+      ? raw.aiRecent
+          .flatMap((entry) => parseAiChoice(entry) ?? [])
+          .slice(0, MAX_AI_RECENT)
+      : d.aiRecent,
   };
 }
 

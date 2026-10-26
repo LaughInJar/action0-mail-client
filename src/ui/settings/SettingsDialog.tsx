@@ -10,6 +10,8 @@ import { DesktopSettings } from "./DesktopSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
 import { SpellingSettings } from "./SpellingSettings";
+import { AiSettings } from "../ai/AiSettings";
+import { AI_SETTINGS_ID } from "../ai/aiSettingsLink";
 import { useT } from "../../i18n/context";
 import {
   browserLanguages,
@@ -40,8 +42,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
   const s = t.settings;
   const { desktop, mobile } = usePlatform();
+  const named = SECTIONS.map(([id, key]) => [id, s[key]] as const);
   const sections: (readonly [string, string])[] = [
-    ...SECTIONS.map(([id, key]) => [id, s[key]] as const),
+    // The AI assistant after Writing.
+    ...named.slice(0, 3),
+    [AI_SETTINGS_ID, t.ai.settings.section],
+    ...named.slice(3),
     ...(desktop || mobile
       ? [["settings-app", t.desktop.section] as const]
       : []),
@@ -206,6 +212,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             <SignatureSettings />
           </SettingsSection>
 
+          <AiSettings />
           <SettingsSection id="settings-notifications" title={s.notifications}>
             <Notifications
               enabled={settings.notifications}

@@ -27,8 +27,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
 
 1. iOS app (needs an Apple Developer account).
-2. Spell checker in the composer.
-3. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
+2. AI assistance: connect Claude, ChatGPT, Copilot or similar to summarize mail and help draft replies.
 
 ## Architecture rules
 
@@ -42,6 +41,7 @@ Features the user asked for, in order; each goes through the four steps when it'
 
 - Browser storage is only for settings, UI state and short-lived caches with a TTL. Never persist mail content long-term.
 - OAuth tokens live in memory or sessionStorage, **never** in localStorage. In the desktop app, refresh tokens live only in the OS keychain (handled in Rust); the UI only ever holds short-lived access tokens in memory.
+- AI service API keys in the web app live in sessionStorage; only when the user ticks "Remember in this browser" for that service does its key go into localStorage (the one opt-in exception). In the apps, AI keys and ChatGPT sign-ins live only in the vault.
 - HTML mail is sanitized (DOMPurify) and rendered in a sandboxed iframe. Remote images, and any other remote content, are blocked by default.
 
 ## UX principles
@@ -74,7 +74,7 @@ Features the user asked for, in order; each goes through the four steps when it'
 
 ## Code conventions
 
-- Module layout and import rules: see `docs/architecture.md`. ESLint enforces that `ui/`, `data/`, `state/`, `keyboard/` and `compose/` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`), and that only `src/platform/native/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
+- Module layout and import rules: see `docs/architecture.md`. ESLint enforces that `ui/`, `data/`, `state/`, `keyboard/` and `compose/` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`), that they never import the AI assistant's protocols, `ai/client` or `ai/webBackend` (wired in `src/app`), and that only `src/platform/native/` imports `@tauri-apps/*` (everything else uses the `Platform` interface).
 - Tests sit next to the code (`*.test.ts(x)`). Helpers live in `src/test/`. Gmail and Graph tests run in the Node environment against MSW (`onUnhandledFrame: "error"`); UI tests render the whole app with `renderApp()` and the in-memory provider.
 - Interfaces that get passed around as functions (subscribe, store actions, router) use function-typed properties, not method syntax (`@typescript-eslint/unbound-method`).
 
@@ -252,3 +252,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - The composer uses each platform's own spell checker; action0 turns it on where it's off and ships no dictionaries. Rationale: small, and it uses the system's dictionaries and personal word lists. No grammar, no check before sending.
   - Linux app: WebKitGTK checking with all chosen languages at once, from the hunspell dictionaries installed on the system (chosen in Settings, default from the system languages); suggestions in WebKitGTK's menu. macOS app: turned on (apps have it off by default), language detected by macOS. Windows app: Windows' display language (WebView2 offers no way to add more). Android: turned on explicitly; tapping an underlined word shows Android's suggestions. Web: the browser's checker and languages.
   - Settings → Writing → Spelling: on/off (on by default; mail body, subject, signatures, event title and description); the language list in the Linux app, elsewhere a note on where the languages are set.
+- **AI assistance decisions:**
+  - Services: Claude, OpenAI and Gemini with the user's API key; OpenRouter by signing in (PKCE, gives a key billed to the user's credit); Ollama, LM Studio and any other OpenAI-compatible server by URL (and key). Sign in with ChatGPT (the user's Go/Plus/Pro plan) in the desktop app through OpenAI's loopback sign-in, tokens only in the vault, with OpenAI's required notes ("Continue with ChatGPT", a one-time plan note, "Using ChatGPT plan · Manage usage"); on Android only if the same sign-in works there; never in the web app (OpenAI's rules). Copilot has no usable API (GitHub Models retired; Microsoft 365 Copilot's Chat API can't write text). Several services can be set up; every AI panel and field has a service/model picker (models from the service's own list, filterable; the last choice remembered per browser).
+  - Settings → AI assistant: add (key, sign-in or URL; Test loads the models) and remove services, a privacy note per service (Gemini's free tier may train on input). Web: keys for the session, or in localStorage when "Remember in this browser" is ticked for that service; apps: keys in the vault (a second encrypted file with the same keychain key). No AI buttons anywhere until a service is set up.
+  - Reader: one AI panel above the mail (above the thread in conversation view, covering the whole conversation). Summarize (`b`, a toolbar button that is the first to move into ⋯, the ⋯ and context menus) streams a summary with Stop, Copy, Try again, Close; a question field below keeps a short chat while the mail is open (`q` focuses it); Reply with AI opens a reply with the composer's AI field. Answers in the app's language.
+  - Composer: ✨ in the editor toolbar or Ctrl/⌘+J opens an instruction field above the editor with quick actions (Shorter, More formal, Friendlier, Fix spelling & grammar, Translate to…). Empty draft: writes the mail (replies from the original); selection: rewrites it; otherwise applies to the whole draft. The text goes straight into the editor as it streams (Stop, Try again, Undo; Ctrl+Z; typing on keeps it); signature and quote are never touched. Replies and rewrites in the language of the mail or draft unless the instruction says otherwise.
+  - Mail goes to the AI only on a click, as plain text (From, To, Cc, date, subject, text; no attachments, images or hidden HTML); long threads are cut to the newest messages and the panel says so. A one-time note per service says what's sent where. Answers stay in memory only. The AI has no actions, and its output is shown and inserted as plain text, never HTML. A demo AI with canned answers. Everything ships in one PR.

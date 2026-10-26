@@ -124,6 +124,20 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 
 **Trade-offs.** Underlines and suggestions look different on each platform, the Windows app checks only the display language, and the AppImage may not find the system's dictionaries outside Debian and Ubuntu.
 
+## AI with the user's own service, never through a server of ours
+
+**Context.** Users want summaries and help writing, with Claude, ChatGPT, Copilot or similar. action0 has no server, and mail is private.
+
+**Decision.** The user brings the service: an API key (Claude, OpenAI, Gemini, any OpenAI-compatible server), an OpenRouter sign-in, a ChatGPT sign-in in the apps (their plan instead of a key), or a model on their own computer. The client talks to it directly, speaking two protocols that cover almost everything (Anthropic's Messages and OpenAI's Chat Completions) plus ChatGPT's Responses API. Mail goes to it only on a click, as text, and the answer is shown or inserted as text.
+
+**Why not a service of ours.** A relay would need a server, accounts and billing, and every user's mail would pass through it. Using the user's own account keeps mail between them and the service they chose, and costs action0 nothing.
+
+**Why Copilot isn't there.** GitHub Models was retired, the Copilot SDK needs a server, and Microsoft 365 Copilot's Chat API needs a Copilot license and can't write text.
+
+**Keys in the browser.** A key in sessionStorage would have to be pasted every session, so the user may tick "Remember in this browser" for a service: the one opt-in exception to keeping secrets out of localStorage. In the apps keys stay in the native vault and never reach the web view.
+
+**Trade-offs.** OpenAI's API from a browser and the Android sign-ins depend on the services' behaviour; mail is only as private as the service the user picks (Settings shows each one's terms, and warns about Gemini's free tier); and a mail can try to instruct the AI, which can't act but could write something misleading the user then reads.
+
 ## All inboxes: per-account lists, merged; a context account
 
 **Context.** All inboxes shows every account's Inbox as one list, while everything else (reader, replies, shortcuts like `g i`) was built around one account per route.

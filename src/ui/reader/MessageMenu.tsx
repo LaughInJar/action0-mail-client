@@ -13,6 +13,9 @@ import { entriesOf, grouped } from "../common/menuEntries";
 import { useComposeActions } from "../composer/useComposeActions";
 import { answerItems } from "./answerItems";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { aiItems, useAiReaderActions } from "../ai/aiItems";
+import { aiTarget } from "../ai/useAi";
+import { useCurrentList } from "../messages/useCurrentList";
 
 /** Props of {@link MessageMenu}. */
 export interface MessageMenuProps {
@@ -40,6 +43,8 @@ export function MessageMenu({
   const store = useUiStore();
   const router = useRouter();
   const original = useOriginalActions();
+  const ai = useAiReaderActions();
+  const { sources } = useCurrentList();
   const t = useT();
   const m = t.menus;
   if (!message) return null;
@@ -51,6 +56,20 @@ export function MessageMenu({
   const answering = compose.canWriteFrom(accountId)
     ? entriesOf(answerItems(compose, ref, { isDraft, phone: false }, t))
     : [];
+  // In conversation view the panel covers the whole conversation.
+  const target =
+    sources.get(accountId)?.conversations && message.threadId !== undefined
+      ? aiTarget.thread(accountId, message.threadId)
+      : aiTarget.message(accountId, message.id);
+  const asking = entriesOf(
+    aiItems(
+      ai,
+      target,
+      compose.canWriteFrom(accountId) && !isDraft ? ref : undefined,
+      { phone: false },
+      t,
+    ),
+  );
   const acting = entriesOf(
     mailActionItems(
       actions,
@@ -109,6 +128,7 @@ export function MessageMenu({
       at={at}
       entries={grouped(
         answering,
+        asking,
         acting,
         sender,
         entriesOf(originalItems(original, ref, t)),

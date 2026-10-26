@@ -32,7 +32,7 @@ Everything that differs sits behind the `Platform` interface (`src/platform/type
 ```
             ui/  (React components, hooks that bind data + state to the screen)
              │
-   data/   state/   keyboard/   compose/   i18n/   security/   platform/
+   data/   state/   keyboard/   compose/   i18n/   security/   platform/   ai/
      │       │
  accounts/  ─── auth/ (sessions: Google, Microsoft, native)
      │
@@ -44,6 +44,7 @@ The rules, enforced by `eslint.config.js` where it can:
 - **`src/core` depends on nothing**: no React, TanStack, Zustand, and no `../` imports. It holds the domain model (`model.ts`), the provider contracts (`provider.ts`, `calendar.ts`), intents, errors and pure helpers (reply rules, recurrence, time zones, reminders, `mailto:` parsing).
 - **`ui`, `data`, `state`, `keyboard` and `compose` never import `providers/` or the concrete auth sessions (`auth/google/`, `auth/microsoft/`, `auth/native/`)**. They see accounts only through `AccountHandle` (`src/accounts/types.ts`): an account, its `AuthSession`, its `MailProvider` and optionally its `CalendarProvider`.
 - **Concrete providers are wired in `src/app`**, the composition root.
+- **The same goes for the AI assistant**: `ui`, `data`, `state`, `keyboard` and `compose` use its contracts (`src/ai/types.ts`, `backend.ts`, `services.ts`) and never import its protocols, `client.ts` or the web backend ([ai.md](ai.md)).
 - **Only `src/platform/native` imports `@tauri-apps/*`.**
 - **Providers do no caching**; the data layer (TanStack Query) does.
 - **IDs and cursors are opaque.** Only the provider that issued an ID interprets it. The UI combines account and message IDs into a `MessageKey` (`src/core/ids.ts`) but never looks inside the provider's part.
@@ -51,23 +52,24 @@ The rules, enforced by `eslint.config.js` where it can:
 
 ## Module map
 
-| Folder           | What lives there                                                                                                                                                                                                                                |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/core/`      | Domain model, `MailProvider` / `CalendarProvider` contracts, intents and their inverses, `MailError`, ids and keys, compose and reply rules, recurrence, time zones, reminders, `mailto:`                                                       |
-| `src/auth/`      | The `AuthSession` contract; `google/` (Google Identity Services token client), `microsoft/` (MSAL, loaded on first use), `native/` (sessions whose tokens come from the desktop app's native side)                                              |
-| `src/providers/` | Adapters: `gmail/` (Gmail and Google Calendar REST), `microsoft/` (Graph mail and calendar), `ical/` (iCal subscriptions), `mime/` (outgoing MIME), `fake/` (in-memory provider and the two demo accounts), plus each provider's `module.ts`    |
-| `src/accounts/`  | `AccountRegistry`: restores, adds and removes accounts, one session and provider per account; React hooks (`useAccounts`, `useSignedIn`, …)                                                                                                     |
-| `src/data/`      | Server state with TanStack Query: query keys, list and message hooks, the merged All inboxes list, optimistic intents and rollback, live sync, drafts and sending, mailbox management, calendar sources, events, edits and reminders            |
-| `src/state/`     | UI state with Zustand (`uiStore.ts`), settings (`settings.ts`), focus and selection (`selection.ts`), the hash router (`router.ts`), the event form                                                                                             |
-| `src/compose/`   | Outgoing mail HTML: quotes, signatures, the plain-text version, composer content                                                                                                                                                                |
-| `src/keyboard/`  | The central command registry: bindings, sequences (`g i`), the help dialog's data                                                                                                                                                               |
-| `src/i18n/`      | English and German texts (`texts/`), language choice, `useT()`                                                                                                                                                                                  |
-| `src/security/`  | DOMPurify sanitizing and the mail iframe document with its CSP                                                                                                                                                                                  |
-| `src/platform/`  | The `Platform` interface, the web implementation and the Tauri ones (`native/`: desktop, Android)                                                                                                                                               |
-| `src/ui/`        | React components: `layout/` (shell, columns, drawer, toasts), `mailboxes/` (folder tree), `messages/` (list), `reader/`, `composer/`, `actions/`, `pickers/`, `labels/`, `calendar/`, `settings/`, `reminders/`, `desktop/`, `help/`, `common/` |
-| `src/app/`       | The composition root (`services.ts`), configuration (`config.ts`), runtime provider setup (client IDs entered in the app), `App.tsx` and its providers                                                                                          |
-| `src/test/`      | Test helpers: `renderApp`, the fake Graph server, Gmail fixtures, storage and viewport fakes (see [testing.md](testing.md))                                                                                                                     |
-| `src-tauri/`     | The native side of the desktop and Android apps (see [desktop-app.md](desktop-app.md), [android.md](android.md))                                                                                                                                |
+| Folder           | What lives there                                                                                                                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/core/`      | Domain model, `MailProvider` / `CalendarProvider` contracts, intents and their inverses, `MailError`, ids and keys, compose and reply rules, recurrence, time zones, reminders, `mailto:`                                                              |
+| `src/auth/`      | The `AuthSession` contract; `google/` (Google Identity Services token client), `microsoft/` (MSAL, loaded on first use), `native/` (sessions whose tokens come from the desktop app's native side)                                                     |
+| `src/providers/` | Adapters: `gmail/` (Gmail and Google Calendar REST), `microsoft/` (Graph mail and calendar), `ical/` (iCal subscriptions), `mime/` (outgoing MIME), `fake/` (in-memory provider and the two demo accounts), plus each provider's `module.ts`           |
+| `src/accounts/`  | `AccountRegistry`: restores, adds and removes accounts, one session and provider per account; React hooks (`useAccounts`, `useSignedIn`, …)                                                                                                            |
+| `src/data/`      | Server state with TanStack Query: query keys, list and message hooks, the merged All inboxes list, optimistic intents and rollback, live sync, drafts and sending, mailbox management, calendar sources, events, edits and reminders                   |
+| `src/state/`     | UI state with Zustand (`uiStore.ts`), settings (`settings.ts`), focus and selection (`selection.ts`), the hash router (`router.ts`), the event form                                                                                                    |
+| `src/compose/`   | Outgoing mail HTML: quotes, signatures, the plain-text version, composer content                                                                                                                                                                       |
+| `src/keyboard/`  | The central command registry: bindings, sequences (`g i`), the help dialog's data                                                                                                                                                                      |
+| `src/i18n/`      | English and German texts (`texts/`), language choice, `useT()`                                                                                                                                                                                         |
+| `src/security/`  | DOMPurify sanitizing and the mail iframe document with its CSP                                                                                                                                                                                         |
+| `src/platform/`  | The `Platform` interface, the web implementation and the Tauri ones (`native/`: desktop, Android)                                                                                                                                                      |
+| `src/ai/`        | The AI assistant without React: contracts, service kinds, protocols (Anthropic, Chat Completions, Responses), streaming, the web backend, the demo AI, mail as text and prompts ([ai.md](ai.md))                                                       |
+| `src/ui/`        | React components: `layout/` (shell, columns, drawer, toasts), `mailboxes/` (folder tree), `messages/` (list), `reader/`, `composer/`, `actions/`, `pickers/`, `labels/`, `calendar/`, `settings/`, `reminders/`, `desktop/`, `help/`, `ai/`, `common/` |
+| `src/app/`       | The composition root (`services.ts`), configuration (`config.ts`), runtime provider setup (client IDs entered in the app), `App.tsx` and its providers                                                                                                 |
+| `src/test/`      | Test helpers: `renderApp`, the fake Graph server, Gmail fixtures, storage and viewport fakes (see [testing.md](testing.md))                                                                                                                            |
+| `src-tauri/`     | The native side of the desktop and Android apps (see [desktop-app.md](desktop-app.md), [android.md](android.md))                                                                                                                                       |
 
 ## The composition root
 
@@ -84,6 +86,7 @@ The rules, enforced by `eslint.config.js` where it can:
 | `setups`         | Provider setups the user can complete at runtime (Google and Microsoft client IDs entered in the Add account wizard)              |
 | `icsFactory`     | Creates the calendar provider of an iCal subscription (the desktop app passes its native `fetch`)                                 |
 | `platform`       | The web or desktop `Platform`                                                                                                     |
+| `ai`             | The AI assistant: its backend (keys in browser storage, or the apps' vault) and a client per set-up service ([ai.md](ai.md))      |
 
 `createDefaultModules()` decides which provider modules exist: Gmail and Microsoft when their client IDs are known (from the build, else from what the user entered in this browser), and always the demo module. When an account is removed, the registry drops all of its cached queries (every query key starts with `["acct", accountId]`).
 
@@ -130,7 +133,7 @@ Persistence (sessionStorage, ≤ 10 minutes) makes a reload show the last lists 
 
 ### UI state (Zustand)
 
-`src/state/uiStore.ts` holds what's on screen: the current list's key, focus, selection and anchor (by `MessageKey`), the composer session and pending sends, open pickers, menus and dialogs, toasts with their undo steps, drag state, column widths, tree expansion, list order, settings, reminder marks and account colours.
+`src/state/uiStore.ts` holds what's on screen: the current list's key, focus, selection and anchor (by `MessageKey`), the composer session and pending sends, the AI panel and its answers, open pickers, menus and dialogs, toasts with their undo steps, drag state, column widths, tree expansion, list order, settings, reminder marks and account colours.
 
 Only settings-like state is persisted to localStorage (`partialize`): column widths, tree expansion, list order, settings, reminder marks and account colours. Never mail content. Settings are parsed defensively on load (`src/state/settings.ts`), so an old or edited value can't break the app.
 

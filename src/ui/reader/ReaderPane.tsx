@@ -43,6 +43,9 @@ import { useUnsubscribe } from "./useUnsubscribe";
 import { useMessageMenu } from "./useMessageMenu";
 import { useMailboxList } from "../common/mailboxNames";
 import { useT } from "../../i18n/context";
+import { AiPanel } from "../ai/AiPanel";
+import { aiItems, useAiCommands, useAiReaderActions } from "../ai/aiItems";
+import { aiTarget } from "../ai/useAi";
 
 /** Column (c): the focused message, or a summary of the multi-selection. */
 export function ReaderPane({ breakpoint }: { breakpoint: Breakpoint }) {
@@ -211,6 +214,10 @@ function MessageView({
   const unsubscribe = useUnsubscribe();
   const unsubscribed = useUi((state) => state.unsubscribed.has(messageId));
   const handlers = useMessageMenu(accountId);
+  const ai = useAiReaderActions();
+  const target = aiTarget.message(accountId, messageId);
+  useAiCommands(ai, message ? target : undefined);
+  const answerable = canWrite && !isDraft;
   // The header has no click of its own: the long press needs no swallowing.
   const menuOf = (id: MessageId) => {
     const { consumeClick: _consume, onKeyDown: _keys, ...rest } = handlers(id);
@@ -240,6 +247,17 @@ function MessageView({
               : {})}
           />
         </div>
+        <AiPanel
+          target={target}
+          messages={[message]}
+          {...(answerable
+            ? {
+                onReply: () => {
+                  ai.reply({ accountId, messageId: message.id });
+                },
+              }
+            : {})}
+        />
         <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />
@@ -302,6 +320,13 @@ function MessageView({
                   actions,
                   { message, accountId, archivable: inInbox },
                   t.actions,
+                ),
+                ...aiItems(
+                  ai,
+                  target,
+                  answerable ? { accountId, messageId: message.id } : undefined,
+                  { phone: breakpoint === "narrow" },
+                  t,
                 ),
                 ...originalItems(
                   original,

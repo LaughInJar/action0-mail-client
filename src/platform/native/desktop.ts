@@ -23,6 +23,7 @@ import {
   waiting,
   type NativeStart,
 } from "./common";
+import { createNativeAiBackend } from "./ai";
 import { createNativeFetch } from "./nativeFetch";
 
 /** Native events, with listeners added and removed synchronously. */
@@ -206,5 +207,6 @@ export async function startDesktop(
     fetch: createNativeFetch(invoke),
     auth,
     accounts: new Map(kept.accounts.map((account) => [account.key, account])),
+    ai: createNativeAiBackend(invoke, page),
   };
 }
