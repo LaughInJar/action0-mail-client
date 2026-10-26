@@ -13,6 +13,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Icon, type IconName } from "../common/Icon";
 import { useT } from "../../i18n/context";
+import { useUi } from "../../state/context";
 
 /** An inline image to show at the drop or paste position. */
 export interface InlineImageRef {
@@ -187,6 +188,8 @@ export function RichTextEditor({
     filesAdded.current = onFiles;
   });
   const [linking, setLinking] = useState(false);
+  const spellcheck = useUi((state) => state.settings.spellcheck);
+  const spelling = useRef(spellcheck);
 
   const editor = useEditor({
     extensions: [
@@ -223,14 +226,16 @@ export function RichTextEditor({
         insertImages(view, view.state.selection.from, add(files));
         return true;
       },
-      attributes: {
+      // A function, so the spelling setting is read again on every update.
+      attributes: () => ({
         id,
         role: "textbox",
         "aria-multiline": "true",
         "aria-label": label,
+        spellcheck: String(spelling.current),
         class:
           "min-h-full px-4 py-3 text-sm leading-relaxed outline-none [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-300 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-600 dark:[&_blockquote]:text-zinc-400 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:m-0 [&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-zinc-400 [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_ul]:list-disc [&_ul]:pl-6",
-      },
+      }),
     },
     onUpdate: ({ editor: current }) => {
       changed.current(editorHtml(current));
@@ -261,6 +266,13 @@ export function RichTextEditor({
       editor.off("create", show);
     };
   }, [editor, imageUrls]);
+
+  // The spelling setting changed: an empty transaction applies it.
+  useEffect(() => {
+    if (spelling.current === spellcheck) return;
+    spelling.current = spellcheck;
+    if (editor.isInitialized) editor.view.dispatch(editor.state.tr);
+  }, [editor, spellcheck]);
 
   // The URLs belong to this editor's files; a later editor gets its own.
   const ownsImages = imageUrls !== undefined;

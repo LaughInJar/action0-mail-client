@@ -104,6 +104,7 @@ Commands Rust calls: `googleAuthorize`, `googleClear`, `authTab`, `signatureHash
 - **Back** goes through the web view's history (Tauri's `WryActivity` handles the Back gesture), which is the hash router's; at the start it leaves the app.
 - **Incoming intents.** `mailto:` (VIEW, SENDTO) becomes `onCompose`; SEND/SEND_MULTIPLE becomes `onShare` (files copied into `cache/shared/<id>/` on a background thread, then read once with `mobile_read_shared`); `action0://open?account=…&message=…` from a notification becomes `onOpen`, and `AndroidIntegration` opens the message in its account's Inbox. Intents before the UI listens wait in the plugin (`pending`).
 - **Files.** Opening, sharing and saving go through the cache and a `FileProvider` (`${applicationId}.fileprovider`), so other apps get a temporary read grant to one file.
+- **Spelling.** The Android web view doesn't always check spelling by default, so the editors set `spellcheck="true"` explicitly (from Settings → Writing). Android's spell checker (Settings → System → Keyboard → Spell checker) underlines, and tapping an underlined word shows its suggestions, "Add to dictionary" and "Delete".
 
 ## The Platform
 

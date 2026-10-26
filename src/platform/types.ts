@@ -165,4 +165,19 @@ export interface Platform {
   readonly desktop?: DesktopControls;
   /** The Android app's own controls. */
   readonly mobile?: MobileControls;
+  /**
+   * Spell checking whose languages action0 sets (the Linux app). Elsewhere
+   * the browser or the system decides, and Settings says where.
+   */
+  readonly spelling?: SpellingControls;
+}
+
+/** The languages the web view checks spelling in. */
+export interface SpellingControls {
+  /** The installed dictionaries, as language tags ("de-AT"). */
+  readonly dictionaries: () => Promise<readonly string[]>;
+  /** Checks with all of these at once; resolves to the ones that loaded. */
+  readonly setLanguages: (
+    languages: readonly string[],
+  ) => Promise<readonly string[]>;
 }

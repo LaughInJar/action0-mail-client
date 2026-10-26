@@ -164,6 +164,7 @@ function Form({
   const ask = useAsk();
   const actions = useEventActions();
   const form = useUi((state) => state.eventForm);
+  const spellcheck = useUi((state) => state.settings.spellcheck);
   const titleRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const ids = {
@@ -386,6 +387,7 @@ function Form({
             value={values.title}
             placeholder={c.titlePlaceholder}
             autoComplete="off"
+            spellCheck={spellcheck}
             onChange={(event) => {
               update({ title: event.target.value });
             }}
@@ -715,6 +717,7 @@ function Form({
           <input
             id={ids.location}
             value={values.location}
+            spellCheck={false}
             placeholder={c.locationPlaceholder}
             autoComplete="off"
             onChange={(event) => {

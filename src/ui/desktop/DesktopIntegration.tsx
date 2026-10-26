@@ -6,8 +6,10 @@ import { usePlatform } from "../../platform/context";
 import type { AppUpdate, DesktopControls } from "../../platform/types";
 import { useUi } from "../../state/context";
 import { useT } from "../../i18n/context";
+import { browserLanguages } from "../../i18n/locale";
 import { errorMessage } from "../common/errorMessage";
 import type { ComposeActions } from "../composer/useComposeActions";
+import { applySpelling } from "../settings/spelling";
 
 /** localStorage: the "still running in the tray" notice was shown. */
 const TRAY_NOTICE_KEY = "a0.settings.trayNoticeShown";
@@ -17,19 +19,31 @@ const UPDATE_CHECK_MS = 24 * 60 * 60 * 1000;
 /**
  * What the app does on the desktop besides the web app's job: tells the
  * shell the close-to-tray setting and the tray's texts, writes mails for
- * `mailto:` links, says once that closing keeps it in the tray, quits on
- * Ctrl/⌘+Q, and offers updates. Renders the update bar (desktop only).
+ * `mailto:` links, says once that closing keeps it in the tray, sets the
+ * spelling languages (Linux), quits on Ctrl/⌘+Q, and offers updates.
+ * Renders the update bar (desktop only).
  */
 export function DesktopIntegration({ compose }: { compose: ComposeActions }) {
   const platform = usePlatform();
-  const { desktop } = platform;
+  const { desktop, spelling } = platform;
   const closeToTray = useUi((state) => state.settings.closeToTray);
+  // As text, so reading the settings again doesn't count as a change.
+  const spellLanguages = useUi((state) => state.settings.spellLanguages.join());
   const t = useT();
   const { composeFrom } = compose;
 
   useEffect(() => {
     desktop?.configure({ closeToTray, texts: t.desktop.tray });
   }, [desktop, closeToTray, t]);
+
+  useEffect(() => {
+    if (!spelling) return;
+    const chosen = spellLanguages ? spellLanguages.split(",") : [];
+    void applySpelling(spelling, chosen, [
+      ...browserLanguages(),
+      t.locale,
+    ]).catch(() => undefined);
+  }, [spelling, spellLanguages, t.locale]);
 
   useEffect(() => platform.onCompose(composeFrom), [platform, composeFrom]);
 

@@ -189,6 +189,16 @@ export async function startDesktop(
         void invoke("shell_quit");
       },
     },
+    // Only WebKitGTK lets the app choose; macOS and Windows decide themselves.
+    ...(info.os === "linux"
+      ? {
+          spelling: {
+            dictionaries: () => invoke<string[]>("spelling_dictionaries"),
+            setLanguages: (languages: readonly string[]) =>
+              invoke<string[]>("spelling_set_languages", { languages }),
+          },
+        }
+      : {}),
   };
 
   return {

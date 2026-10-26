@@ -114,6 +114,16 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 
 **Trade-offs.** No push without a server, so background notifications can be late. Phones without Play services can't add Google accounts. Company tenants that require managed devices need Microsoft's broker, which this doesn't use. Kotlin code has no automated tests and is tried on the emulator. iOS follows as its own feature (it needs an Apple Developer account). See [android.md](android.md).
 
+## Spelling from the platform's own checker
+
+**Context.** Browsers check spelling on their own, but not every web view does: WebKitGTK and macOS's WebKit have it off in apps, WebView2 checks only the display language, and the Android web view doesn't always check.
+
+**Decision.** The editors use each platform's checker, and action0 turns it on where it's off: the Linux app sets WebKitGTK's languages (several at once, chosen in Settings from the installed hunspell dictionaries), the macOS app turns on checking while typing, Android gets `spellcheck="true"` explicitly. Settings → Writing turns it off, and says where the languages are set elsewhere.
+
+**Why not action0's own checker.** Shipping dictionaries (several megabytes each) and a checker in JavaScript or WebAssembly would look the same everywhere, but duplicate what the systems already do well, with their personal word lists and the phone keyboard's corrections. A grammar service like LanguageTool would send drafts to a server.
+
+**Trade-offs.** Underlines and suggestions look different on each platform, the Windows app checks only the display language, and the AppImage may not find the system's dictionaries outside Debian and Ubuntu.
+
 ## All inboxes: per-account lists, merged; a context account
 
 **Context.** All inboxes shows every account's Inbox as one list, while everything else (reader, replies, shortcuts like `g i`) was built around one account per route.

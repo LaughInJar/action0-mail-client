@@ -8,7 +8,17 @@ import type { Platform } from "../platform/types";
  */
 export function fakeDesktopPlatform({
   keychain = true,
-}: { readonly keychain?: boolean } = {}) {
+  os = "linux",
+  dictionaries = ["de-AT", "de-DE", "en-GB", "en-US"],
+  loads = true,
+}: {
+  readonly keychain?: boolean;
+  readonly os?: "linux" | "windows" | "macos";
+  /** The Linux app's installed dictionaries. */
+  readonly dictionaries?: readonly string[];
+  /** Whether the dictionaries load (else none does). */
+  readonly loads?: boolean;
+} = {}) {
   const polls = new Set<() => void>();
   const composes = new Set<(mailto: string) => void>();
   const closings = new Set<() => void>();
@@ -44,7 +54,7 @@ export function fakeDesktopPlatform({
     onCompose: subscribe(composes),
     desktop: {
       version: "0.1.0",
-      os: "linux",
+      os,
       keychain,
       configure: vi.fn(),
       onClosedToTray: subscribe(closings),
@@ -56,6 +66,16 @@ export function fakeDesktopPlatform({
       checkForUpdate: vi.fn(() => Promise.resolve(null)),
       quit: vi.fn(),
     },
+    ...(os === "linux"
+      ? {
+          spelling: {
+            dictionaries: vi.fn(() => Promise.resolve(dictionaries)),
+            setLanguages: vi.fn((languages: readonly string[]) =>
+              Promise.resolve(loads ? languages : []),
+            ),
+          },
+        }
+      : {}),
   } satisfies Platform;
   return {
     platform,

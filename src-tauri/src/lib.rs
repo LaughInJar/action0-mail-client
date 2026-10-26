@@ -9,6 +9,8 @@ mod net;
 pub mod oauth;
 #[cfg(desktop)]
 mod shell;
+#[cfg(desktop)]
+mod spelling;
 mod vault;
 
 use tauri::Manager;
@@ -17,6 +19,8 @@ use tauri::Manager;
 pub fn run() {
     // reqwest (and the updater) use rustls; it needs one crypto provider.
     let _ = rustls::crypto::ring::default_provider().install_default();
+    #[cfg(target_os = "macos")]
+    spelling::check_while_typing();
 
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
@@ -62,6 +66,8 @@ pub fn run() {
             shell::shell_quit,
             shell::shell_default_mail_app,
             shell::shell_open_file,
+            spelling::spelling_dictionaries,
+            spelling::spelling_set_languages,
         ]);
     #[cfg(target_os = "android")]
     let app = app.invoke_handler(tauri::generate_handler![
