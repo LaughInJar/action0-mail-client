@@ -17,7 +17,7 @@ import type { MailProvider } from "../core/provider";
 import { foldText } from "../lib/text";
 import { useReadyHandle } from "./hooks";
 import { queryKeys } from "./keys";
-import { fetchSenders } from "./senders";
+import { fetchCatchAll, fetchSenders } from "./senders";
 import type { MessageListData } from "./optimistic";
 
 /** A saved draft: its id and its message's current id. */
@@ -65,6 +65,10 @@ export interface DraftSync {
   ) => Promise<Message>;
   /** The addresses the account sends from, with signatures ([] if none). */
   readonly senders: (accountId: AccountId) => Promise<readonly Sender[]>;
+  /** Catch-all domains; `undefined` if the account's addresses aren't managed in action0. */
+  readonly catchAll: (
+    accountId: AccountId,
+  ) => Promise<readonly string[] | undefined>;
   /** The parts with their bytes loaded (kept in memory while composing). */
   readonly loadParts: (
     accountId: AccountId,
@@ -255,6 +259,7 @@ export function createDraftSync(
     getDraft: (accountId, id) => providerOf(accountId).getDraft(id),
     getMessage,
     senders: (accountId) => fetchSenders(queryClient, registry, accountId),
+    catchAll: (accountId) => fetchCatchAll(queryClient, registry, accountId),
     loadParts,
   };
 }

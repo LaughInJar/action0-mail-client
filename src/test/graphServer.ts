@@ -50,8 +50,14 @@ export class FakeGraph {
   };
   /** Upload chunks starting at this byte fail like a lost connection. */
   failUploadAt: number | undefined;
-  /** Answer the next requests to these paths (method + path) with this status. */
-  readonly failures = new Map<string, number>();
+  /**
+   * Answer the next requests to these paths (method + path) with this
+   * status (and Graph error code).
+   */
+  readonly failures = new Map<
+    string,
+    number | { readonly status: number; readonly code: string }
+  >();
   #version = 0;
   #nextId = 1;
   /** Membership changes: a message left `from` and/or is now in `to`. */
@@ -265,11 +271,13 @@ export class FakeGraph {
     const failure = this.failures.get(`${method} ${path}`);
     if (failure !== undefined) {
       this.failures.delete(`${method} ${path}`);
+      const { status, code } =
+        typeof failure === "number"
+          ? { status: failure, code: "Failure" }
+          : failure;
       return {
-        status: failure,
-        body: {
-          error: { code: "Failure", message: `HTTP ${String(failure)}` },
-        },
+        status,
+        body: { error: { code, message: `HTTP ${String(status)}` } },
       };
     }
     const notFound = {

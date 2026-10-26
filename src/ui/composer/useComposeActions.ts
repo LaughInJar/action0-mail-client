@@ -6,14 +6,15 @@ import { textToHtml } from "../../compose/html";
 import {
   attachmentFromFile,
   mailHtmlToEditor,
+  sendingAs,
   sentBytes,
+  type SendingAs,
 } from "../../compose/session";
 import { megabytes } from "../common/files";
 import {
   attachmentOf,
   defaultSender,
   forwardSubject,
-  fromAddress,
   replyFrom,
   replyRecipients,
   replySubject,
@@ -229,16 +230,15 @@ export function useComposeActions(): ComposeActions {
     const sendersOf = (accountId: AccountId) =>
       sync.senders(accountId).catch((): readonly Sender[] => []);
 
-    /** From and signature of a composer that sends as `sender`. */
-    const sendingAs = (sender: Sender | undefined) =>
-      sender
-        ? {
-            from: fromAddress(sender),
-            signature: { address: sender.address, html: sender.signature },
-          }
-        : {};
+    /** From, signature, Reply-To and Bcc copy of a new composer. */
+    const startingAs = (sender: Sender | undefined): Partial<SendingAs> =>
+      sender ? sendingAs(sender, { bcc: [] }) : {};
 
-    /** The full message and its account's senders, then `start` with them. */
+    /**
+     * The full message and the address to answer it from (one that isn't
+     * set up yet if the mail went to a +tag or catch-all address of yours),
+     * then `start` with them.
+     */
     const withMessage = (
       { accountId, messageId }: MessageRef,
       failure: string,
@@ -246,12 +246,22 @@ export function useComposeActions(): ComposeActions {
         accountId: AccountId,
         message: Message,
         senders: readonly Sender[],
+        from: Sender | undefined,
       ) => void,
     ) => {
       if (!canComposeIn(accountId)) return;
-      Promise.all([sync.getMessage(accountId, messageId), sendersOf(accountId)])
-        .then(([message, senders]) => {
-          start(accountId, message, senders);
+      Promise.all([
+        sync.getMessage(accountId, messageId),
+        sendersOf(accountId),
+        sync.catchAll(accountId).catch(() => []),
+      ])
+        .then(([message, senders, catchAll]) => {
+          const from = replyFrom(
+            message,
+            senders,
+            catchAll ? { catchAll } : undefined,
+          );
+          start(accountId, message, senders, from);
         })
         .catch(fail(failure));
     };
@@ -273,6 +283,7 @@ export function useComposeActions(): ComposeActions {
         kind: "draft",
         draftId: draft.id,
         ...(draft.from ? { from: draft.from } : {}),
+        ...(draft.replyTo ? { replyTo: draft.replyTo } : {}),
         // No block in the draft: none, or the user removed it; keep it so.
         signature:
           signature === undefined
@@ -317,13 +328,14 @@ export function useComposeActions(): ComposeActions {
         const composer = store.getState().composer;
         if (composer?.key !== session.key || composer.signature !== undefined)
           return;
-        store
-          .getState()
-          .updateComposer(
-            session.key,
-            sendingAs(defaultSender(senders)),
-            false,
-          );
+        store.getState().updateComposer(
+          session.key,
+          (() => {
+            const sender = defaultSender(senders);
+            return sender ? sendingAs(sender, composer) : {};
+          })(),
+          false,
+        );
       });
     };
 
@@ -354,41 +366,47 @@ export function useComposeActions(): ComposeActions {
       },
 
       reply: (original, mode, options) => {
-        withMessage(original, c.couldntReply, (accountId, message, senders) => {
-          const me = registry.get(accountId)?.account.email;
-          const mine = [
-            ...(me ? [me] : []),
-            ...senders.map((sender) => sender.address),
-          ];
-          const { to, cc } = replyRecipients(message, mode, mine);
-          open({
-            accountId,
-            kind: mode,
-            ...sendingAs(replyFrom(message, senders)),
-            to,
-            cc,
-            showCcBcc: cc.length > 0,
-            subject: replySubject(message.subject),
-            quote: replyQuote(message, quoteTexts),
-            threading: threadingFor(message),
-            focus: "body",
-            ...(options?.ai ? { ai: true } : {}),
-          });
-        });
+        withMessage(
+          original,
+          c.couldntReply,
+          (accountId, message, senders, from) => {
+            const me = registry.get(accountId)?.account.email;
+            const mine = [
+              ...(me ? [me] : []),
+              ...senders.map((sender) => sender.address),
+              ...(from ? [from.address] : []),
+            ];
+            const { to, cc } = replyRecipients(message, mode, mine);
+            const sending = startingAs(from);
+            open({
+              accountId,
+              kind: mode,
+              ...sending,
+              to,
+              cc,
+              showCcBcc: cc.length > 0 || sending.showCcBcc === true,
+              subject: replySubject(message.subject),
+              quote: replyQuote(message, quoteTexts),
+              threading: threadingFor(message),
+              focus: "body",
+              ...(options?.ai ? { ai: true } : {}),
+            });
+          },
+        );
       },
 
       forward: (original) => {
         withMessage(
           original,
           c.couldntForward,
-          (accountId, message, senders) => {
+          (accountId, message, _senders, from) => {
             const inline = new Set(
               referencedInlineImages(message).map((image) => image.id),
             );
             open({
               accountId,
               kind: "forward",
-              ...sendingAs(replyFrom(message, senders)),
+              ...startingAs(from),
               subject: forwardSubject(message.subject),
               quote: forwardQuote(message, quoteTexts),
               attachments: message.attachments

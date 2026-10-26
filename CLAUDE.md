@@ -26,7 +26,7 @@ Once a decision is approved, record it under "Decisions log" below so it persist
 
 Features the user asked for, in order; each goes through the four steps when it's next. Remove an entry once its PR is merged.
 
-1. iOS app (needs an Apple Developer account).
+_Empty. Shelved until the user brings it back: iOS app (needs an Apple Developer account)._
 
 ## Architecture rules
 
@@ -264,3 +264,9 @@ _Approved decisions go here, newest last, one line each with a short rationale._
   - Parity with Outlook accounts plus conversations: special-use roles (or names, German ones included), a Flagged view, read/unread, star (IMAP's flag), move, archive (creates "Archive" if there's none), Trash, Junk, delete forever, empty, mark all read; folder management (deleting a folder moves it into Trash, like Thunderbird); server search with `from:`, `to:`, `subject:`, `is:unread`, `is:starred` and words ("Everywhere": all folders but Trash and Junk); sending over SMTP with a copy in Sent, drafts in Drafts, the server's size limit, signatures kept in the app, From = the account's address, suggestions from recent mail; unsubscribe, show original, All inboxes. Invitations show without answer buttons until CalDAV.
   - Conversations from Message-ID / In-Reply-To / References (or the server's thread ids); opening one also finds the replies in Sent and messages in Archive.
   - New mail: checks like the other accounts (CONDSTORE/QRESYNC where the server has them), IDLE on the Inbox in the desktop app, and Android's background check covers IMAP. Stable message ids from the server (EMAILID, X-GM-MSGID) where it has them, else tracked by action0 while it runs. Everything ships in one PR.
+- **More From addresses decisions:**
+  - IMAP and Microsoft accounts get extra From addresses, kept in the app like their signatures (IMAP can't list aliases; Graph can't either). Gmail keeps its own send-as list.
+  - Settings → Writing lists each account's addresses with name, address, an optional Reply-To, "Bcc to myself" and its signature; add, edit (name, Reply-To, Bcc; the address itself is fixed once added), remove (not the account's own) and make default. The composer's From list ends with "Add an address…", which opens that place.
+  - Choosing an address sets its Reply-To header and puts it into Bcc when "Bcc to myself" is on (visible, removable), besides its signature.
+  - Replies go out from the address the mail was sent to: a set-up one, a `+tag` of one of yours, or any address at a domain the user marked as catch-all for that account (opt-in per domain, so public domains like gmx.at never count), with the default address's name, marked "not set up" in From with one-click "Add".
+  - IMAP sends with the chosen address as the SMTP sender, Microsoft with the message's From; a server that refuses shows its reason. No separate SMTP server per address.

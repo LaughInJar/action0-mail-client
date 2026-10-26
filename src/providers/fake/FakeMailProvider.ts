@@ -37,6 +37,7 @@ import type {
   MutationResult,
   NewMailbox,
   ProviderCapabilities,
+  SenderSettings,
 } from "../../core/provider";
 import { sleep } from "../../lib/sleep";
 import { foldText } from "../../lib/text";
@@ -61,6 +62,11 @@ export interface FakeMailData {
    * trash and spam move messages into the folder with that role.
    */
   readonly folders?: boolean;
+  /**
+   * The user manages the From addresses in action0 (like IMAP and Outlook
+   * accounts), and mail goes out from any address the draft names.
+   */
+  readonly editSenders?: boolean;
 }
 
 /** Options of {@link FakeMailProvider}. */
@@ -112,6 +118,7 @@ export class FakeMailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
+    editSenders: false,
     rawSource: true,
     signatureStore: "provider",
   };
@@ -124,6 +131,7 @@ export class FakeMailProvider implements MailProvider {
   /** Set to refuse signature changes as `unavailable` (a declined permission). */
   signaturesReadOnly = false;
   #senders: readonly Sender[];
+  #catchAll: readonly string[] = [];
   #mailboxes: readonly Mailbox[];
   readonly #attachments: Map<string, Blob>;
   readonly #latencyMs: number;
@@ -173,6 +181,7 @@ export class FakeMailProvider implements MailProvider {
     this.capabilities = {
       ...this.capabilities,
       contacts: data.contacts !== undefined,
+      editSenders: data.editSenders === true,
       ...(this.#folders
         ? {
             // Like Outlook: folders, and categories as labels.
@@ -696,7 +705,10 @@ export class FakeMailProvider implements MailProvider {
       threadId: draft.threading?.threadId ?? asThreadId(`t-${id}`),
       mailboxIds,
       from:
-        draft.from && this.#isMine(draft.from.address) ? draft.from : this.#me,
+        draft.from &&
+        (this.capabilities.editSenders || this.#isMine(draft.from.address))
+          ? draft.from
+          : this.#me,
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,
@@ -884,6 +896,38 @@ export class FakeMailProvider implements MailProvider {
         ? { ...sender, signature: html }
         : sender,
     );
+  }
+
+  async saveSenders(
+    senders: readonly SenderSettings[],
+    catchAll: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    if (!this.capabilities.editSenders)
+      throw new MailError("unavailable", "The demo's addresses are fixed.");
+    const signatures = new Map(
+      this.#senders.map((s) => [s.address.toLowerCase(), s.signature]),
+    );
+    const own = this.#me.address.toLowerCase();
+    const list = senders.some((s) => s.address.toLowerCase() === own)
+      ? senders
+      : [{ ...this.#me, isDefault: false }, ...senders];
+    const defaultIndex = Math.max(
+      0,
+      list.findIndex((s) => s.isDefault),
+    );
+    this.#senders = list.map((sender, index) => ({
+      ...sender,
+      isDefault: index === defaultIndex,
+      signature: signatures.get(sender.address.toLowerCase()) ?? "",
+    }));
+    this.#catchAll = catchAll.map((domain) => domain.toLowerCase());
+  }
+
+  async catchAllDomains(signal?: AbortSignal): Promise<readonly string[]> {
+    await this.#delay(signal);
+    return this.#catchAll;
   }
 
   #isMine(address: string): boolean {

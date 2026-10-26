@@ -5,6 +5,7 @@ import { isMailError } from "../../core/errors";
 import { asDraftId, asMailboxId, asMessageId } from "../../core/ids";
 import { MemoryStorage } from "../../test/memoryStorage";
 import { fakeImapBridge, imapMessage } from "../../test/imapBridge";
+import { SenderStore } from "../senderStore";
 import { ImapProvider } from "./ImapProvider";
 
 const me = "me@example.com";
@@ -22,8 +23,7 @@ function provider(
     address: me,
     name: "Me",
     service: "imap.example.com",
-    settings,
-    signatureKey: "a0.settings.signatures.imap:me@example.com",
+    senders: new SenderStore(settings, `imap:${me}`),
     onAuthFailed,
     ...extra,
   });
@@ -174,6 +174,32 @@ describe("ImapProvider", () => {
     expect(await imap.listSenders()).toEqual([
       { address: me, name: "Me", isDefault: true, signature: "<p>Me</p>" },
     ]);
+  });
+
+  it("sends from an added address with its Reply-To, as the SMTP sender too", async () => {
+    const { imap, sent } = provider();
+    await imap.saveSenders(
+      [{ address: "shop@example.com", name: "Shop", isDefault: false }],
+      ["example.com"],
+    );
+    expect((await imap.listSenders()).map((s) => s.address)).toEqual([
+      me,
+      "shop@example.com",
+    ]);
+    expect(await imap.catchAllDomains()).toEqual(["example.com"]);
+    const alias = {
+      ...draft,
+      from: { name: "Shop", address: "info@example.com" },
+      replyTo: [{ address: "desk@example.com" }],
+    };
+    const { id } = await imap.saveDraft(alias);
+    expect((await imap.getDraft(id)).replyTo).toEqual([
+      { address: "desk@example.com" },
+    ]);
+    await imap.sendDraft({ ...alias, id });
+    expect(sent[0]?.envelope.from).toBe("info@example.com");
+    expect(sent[0]?.raw).toContain("From: Shop <info@example.com>");
+    expect(sent[0]?.raw).toContain("Reply-To: desk@example.com");
   });
 
   it("turns a refused login into auth-required and says so", async () => {

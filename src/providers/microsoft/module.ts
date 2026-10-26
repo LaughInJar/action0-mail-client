@@ -18,6 +18,7 @@ import {
 } from "../../auth/microsoft/msal";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
+import { SenderStore } from "../senderStore";
 import { GraphHttp } from "./http";
 import { GraphCalendarProvider } from "./calendar";
 import { GraphProvider } from "./GraphProvider";
@@ -28,7 +29,7 @@ export interface MicrosoftModuleOptions {
   readonly clientId: string;
   /** Where MSAL's account hints live between reloads (sessionStorage). */
   readonly sessionStorage: Storage | undefined;
-  /** Where settings live (localStorage): the signatures of Microsoft accounts. */
+  /** Where settings live (localStorage): From addresses and signatures of Microsoft accounts. */
   readonly settings: Storage | undefined;
   /** Desktop app: sign in natively (system browser) instead of with MSAL. */
   readonly native?: NativeSignIn;
@@ -50,11 +51,6 @@ type CalendarSession = AuthSession &
     readonly loginHint: string;
     tokenFor(scopes: readonly string[]): Promise<string>;
   };
-
-/** localStorage key of an account's signatures (Graph can't store them). */
-export function signatureKey(accountId: string): string {
-  return `a0.settings.signatures.${accountId}`;
-}
 
 /** Wires Microsoft sign-in (MSAL) and the Graph provider into the account registry. */
 export function createMicrosoftModule({
@@ -84,8 +80,7 @@ export function createMicrosoftModule({
         personal:
           personal.has(account.id) ||
           /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email),
-        settings,
-        signatureKey: signatureKey(account.id),
+        senders: new SenderStore(settings, account.id),
         ...net,
       }),
   };

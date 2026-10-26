@@ -3,13 +3,14 @@
  * the HTML helpers need a browser DOM.
  */
 import { isValidAddress } from "../core/addresses";
-import type {
-  DraftInput,
-  OutgoingAttachment,
-  Threading,
+import {
+  fromAddress,
+  type DraftInput,
+  type OutgoingAttachment,
+  type Threading,
 } from "../core/compose";
 import type { DraftId } from "../core/ids";
-import type { EmailAddress } from "../core/model";
+import type { EmailAddress, Sender } from "../core/model";
 import { editorHtmlToMail, htmlToText } from "./html";
 import type { Quote } from "./quote";
 import {
@@ -34,6 +35,8 @@ export interface ComposerContent {
   readonly threading?: Threading;
   /** One of the account's addresses; the provider's default if absent. */
   readonly from?: EmailAddress;
+  /** Where replies should go (the From address's Reply-To), if anywhere else. */
+  readonly replyTo?: readonly EmailAddress[];
   /**
    * The signature block under the text, sent as it is. `null`: the user
    * removed it (changing From doesn't bring one back); absent: not known yet.
@@ -64,6 +67,44 @@ export function mailBody(
   };
 }
 
+/** The fields that follow the From address (see {@link sendingAs}). */
+export interface SendingAs {
+  readonly from: EmailAddress;
+  readonly signature: ComposerSignature | null;
+  readonly replyTo: readonly EmailAddress[];
+  readonly bcc: readonly EmailAddress[];
+  /** The Bcc copy was added, so Cc/Bcc should show. */
+  readonly showCcBcc?: true;
+}
+
+/**
+ * Sending from `sender`: its address, its signature (unless the user
+ * removed the block), its Reply-To, and its Bcc copy. The `previous`
+ * address's Bcc copy goes.
+ */
+export function sendingAs(
+  sender: Sender,
+  current: Pick<ComposerContent, "bcc" | "signature">,
+  previous?: Sender,
+): SendingAs {
+  const is = (address: string) => (other: EmailAddress) =>
+    other.address.toLowerCase() === address.toLowerCase();
+  const bcc = previous?.bccSelf
+    ? current.bcc.filter((other) => !is(previous.address)(other))
+    : current.bcc;
+  const copy = sender.bccSelf === true && !bcc.some(is(sender.address));
+  return {
+    from: fromAddress(sender),
+    signature:
+      current.signature === null
+        ? null
+        : { address: sender.address, html: sender.signature },
+    replyTo: sender.replyTo ? [sender.replyTo] : [],
+    bcc: copy ? [...bcc, { address: sender.address }] : bcc,
+    ...(copy ? { showCcBcc: true } : {}),
+  };
+}
+
 /** The signature HTML a composer sends ("" for none). */
 const signatureOf = (content: ComposerContent) => content.signature?.html ?? "";
 
@@ -86,6 +127,7 @@ export function draftInputOf(
   return {
     ...(id === undefined ? {} : { id }),
     ...(content.from ? { from: content.from } : {}),
+    ...(content.replyTo?.length ? { replyTo: content.replyTo } : {}),
     to: valid(content.to),
     cc: valid(content.cc),
     bcc: valid(content.bcc),

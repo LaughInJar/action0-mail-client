@@ -71,6 +71,12 @@ export interface ProviderCapabilities {
   readonly threads: boolean;
   /** Supports {@link MailProvider.listSenders}. */
   readonly senders: boolean;
+  /**
+   * The user manages the account's From addresses in action0
+   * ({@link MailProvider.saveSenders}): IMAP and Graph, which can't list
+   * aliases. Gmail lists its own send-as addresses.
+   */
+  readonly editSenders: boolean;
   /** Supports {@link MailProvider.getRawMessage} (a message's headers and source). */
   readonly rawSource: boolean;
   /**
@@ -170,6 +176,15 @@ export interface MailboxChange {
   readonly parentId?: MailboxId | null;
   readonly color?: MailboxColor | null;
   readonly hidden?: boolean;
+}
+
+/** A From address as the user set it up (its signature is saved apart). */
+export interface SenderSettings {
+  readonly address: string;
+  readonly name?: string;
+  readonly replyTo?: EmailAddress;
+  readonly bccSelf?: boolean;
+  readonly isDefault: boolean;
 }
 
 /**
@@ -402,6 +417,18 @@ export interface MailProvider {
   /** The addresses the account can send from, the default first. */
   listSenders(signal?: AbortSignal): Promise<readonly Sender[]>;
 
+  /**
+   * Replaces the account's From addresses (only if
+   * {@link ProviderCapabilities.editSenders}); the account's own address
+   * stays first. `catchAll`: domains whose every address is the user's.
+   */
+  saveSenders(
+    senders: readonly SenderSettings[],
+    catchAll: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Domains the user marked as catch-all ([] without `editSenders`). */
+  catchAllDomains(signal?: AbortSignal): Promise<readonly string[]>;
   /**
    * Replaces the signature of one of the {@link listSenders} addresses ("" for
    * none). Rejects with `unavailable` when the account didn't grant the

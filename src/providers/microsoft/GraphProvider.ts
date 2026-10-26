@@ -43,10 +43,11 @@ import type {
   MutationResult,
   NewMailbox,
   ProviderCapabilities,
+  SenderSettings,
 } from "../../core/provider";
 import { encodeBase64 } from "../../lib/base64url";
-import { readJson, writeJson } from "../../lib/storage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
+import { SenderStore, type OwnAddress } from "../senderStore";
 import {
   CATEGORIES_GROUP,
   categoryName,
@@ -129,14 +130,15 @@ export const MAX_PAGE_SIZE = 1000;
 const ORDER_SELECT =
   "id,conversationId,receivedDateTime,parentFolderId,flag,categories";
 
+/** Without a store (tests): nothing is kept. */
+const NO_SENDERS = new SenderStore(undefined, "");
+
 /** Options of {@link GraphProvider}. */
 export interface GraphProviderOptions {
   /** A personal account (Outlook.com): 20 MB of attachments instead of 25. */
   readonly personal?: boolean;
-  /** Where signatures live (localStorage), under {@link signatureKey}. */
-  readonly settings?: Storage | undefined;
-  /** Storage key of this account's signatures. */
-  readonly signatureKey?: string;
+  /** From addresses and signatures (Graph can't list aliases or signatures). */
+  readonly senders?: SenderStore;
   /** For requests to senders (one-click unsubscribe). */
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
@@ -187,6 +189,8 @@ function escapeHtml(text: string): string {
 /** The fields of a draft that a create or update sets. */
 function draftFields(draft: DraftInput) {
   return {
+    ...(draft.from ? { from: toRecipient(draft.from) } : {}),
+    replyTo: (draft.replyTo ?? []).map(toRecipient),
     subject: draft.subject,
     body: { contentType: "html", content: draft.html },
     toRecipients: draft.to.map(toRecipient),
@@ -207,6 +211,7 @@ export class GraphProvider implements MailProvider {
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
   #wellKnown: Promise<WellKnownFolders> | undefined;
+  #me: Promise<OwnAddress> | undefined;
   /** Files of drafts already uploaded: draft id → (local id → attachment id). */
   readonly #uploaded = new Map<string, Map<string, string>>();
   /** Sorted results kept for paging (messages, or conversation ids), by key. */
@@ -244,6 +249,7 @@ export class GraphProvider implements MailProvider {
       },
       threads: true,
       senders: true,
+      editSenders: true,
       rawSource: true,
       signatureStore: "browser",
     };
@@ -780,6 +786,8 @@ export class GraphProvider implements MailProvider {
     return {
       id,
       messageId: message.id,
+      ...(message.from ? { from: message.from } : {}),
+      ...(message.replyTo.length ? { replyTo: message.replyTo } : {}),
       to: message.to,
       cc: message.cc,
       bcc: toAddresses(raw.bccRecipients),
@@ -810,10 +818,24 @@ export class GraphProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<{ readonly messageId: MessageId }> {
     await this.saveDraft(draft, signal);
-    await this.#http.post(`me/messages/${enc(draft.id)}/send`, undefined, {
-      retry: false,
-      ...(signal ? { signal } : {}),
-    });
+    try {
+      await this.#http.post(`me/messages/${enc(draft.id)}/send`, undefined, {
+        retry: false,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      if (graphErrorCode(error) === "ErrorSendAsDenied" && draft.from)
+        throw new MailError(
+          "provider",
+          `Outlook didn’t allow sending as ${draft.from.address}.`,
+          {
+            cause: error,
+            reason: "sendAsDenied",
+            params: { address: draft.from.address },
+          },
+        );
+      throw error;
+    }
     this.#uploaded.delete(draft.id);
     return { messageId: asMessageId(draft.id) };
   }
@@ -1135,46 +1157,53 @@ export class GraphProvider implements MailProvider {
     return sendOneClickUnsubscribe(url, this.#fetch, signal);
   }
 
-  /** The account's own address; Graph can't list send-as aliases. */
+  /** The account's own address and the ones added in action0. */
   async listSenders(signal?: AbortSignal): Promise<readonly Sender[]> {
-    const me = await this.#http.get<GraphUser>(
-      "me",
-      { $select: "displayName,mail,userPrincipalName" },
-      signal,
-    );
-    const address = me.mail ?? me.userPrincipalName ?? "";
-    const name = me.displayName?.trim();
-    return [
-      {
-        address,
-        ...(name ? { name } : {}),
-        isDefault: true,
-        signature: this.#signatures()[address.toLowerCase()] ?? "",
-      },
-    ];
+    return this.#senders().list(await this.#own(signal));
+  }
+
+  async saveSenders(
+    senders: readonly SenderSettings[],
+    catchAll: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.#senders().save(await this.#own(signal), senders, catchAll);
+  }
+
+  catchAllDomains(): Promise<readonly string[]> {
+    return Promise.resolve(this.#senders().catchAll());
   }
 
   /** Kept in this browser: Graph can't read or write Outlook's signatures. */
   updateSignature(address: string, html: string): Promise<void> {
-    const key = this.#options.signatureKey;
-    if (key !== undefined)
-      writeJson(this.#options.settings, key, {
-        ...this.#signatures(),
-        [address.toLowerCase()]: html,
-      });
+    this.#senders().updateSignature(address, html);
     return Promise.resolve();
   }
 
-  #signatures(): Readonly<Record<string, string>> {
-    const key = this.#options.signatureKey;
-    const stored =
-      key === undefined ? undefined : readJson(this.#options.settings, key);
-    if (typeof stored !== "object" || stored === null) return {};
-    return Object.fromEntries(
-      Object.entries(stored).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-      ),
-    );
+  /** The signed-in mailbox's address and name, asked once. */
+  #own(signal?: AbortSignal): Promise<OwnAddress> {
+    if (this.#me) return this.#me;
+    const own = this.#http
+      .get<GraphUser>(
+        "me",
+        { $select: "displayName,mail,userPrincipalName" },
+        signal,
+      )
+      .then((me): OwnAddress => {
+        const address = me.mail ?? me.userPrincipalName ?? "";
+        const name = me.displayName?.trim();
+        return name ? { address, name } : { address };
+      });
+    this.#me = own;
+    // Asked again next time if it failed.
+    own.catch(() => {
+      if (this.#me === own) this.#me = undefined;
+    });
+    return own;
+  }
+
+  #senders(): SenderStore {
+    return this.#options.senders ?? NO_SENDERS;
   }
 
   /** Folder ids by well-known name, resolved once. */

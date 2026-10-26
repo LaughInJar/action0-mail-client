@@ -234,6 +234,16 @@ export interface Sender {
   readonly isDefault: boolean;
   /** HTML signature as stored with the provider (unsanitized); "" for none. */
   readonly signature: string;
+  /** Replies to mail from this address go here (the `Reply-To` header). */
+  readonly replyTo?: EmailAddress;
+  /** Mail from this address also goes to it as Bcc (a copy for yourself). */
+  readonly bccSelf?: boolean;
+  /**
+   * `false`: an address that isn't one of the account's set-up addresses,
+   * offered for a reply because the mail went to it (a `+tag` of one of
+   * yours, or an address at a catch-all domain).
+   */
+  readonly setUp?: false;
 }
 
 /** One page of a paginated result. */

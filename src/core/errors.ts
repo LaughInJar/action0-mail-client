@@ -63,6 +63,7 @@ export type MailErrorReason =
   | "folderInsideItself"
   | "mailTooBig"
   | "mailRejected"
+  | "sendAsDenied"
   | "attachmentUploadBlocked"
   | "attachmentUploadInterrupted"
   | "wrongAccount"

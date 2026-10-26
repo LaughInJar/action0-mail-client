@@ -333,11 +333,15 @@ export function fakeImapBridge(options: FakeImapOptions = {}) {
       appended.push({ mailboxId, flags, raw });
       const id = `appended-${String(next++)}`;
       const to = header(raw, "To");
+      const replyTo = header(raw, "Reply-To");
       store.set(id, {
         raw: message,
         message: imapMessage(id, mailboxId, {
           subject: header(raw, "Subject") ?? "",
           to: to ? [{ address: to.replace(/.*<|>.*/g, "") }] : [],
+          replyTo: replyTo
+            ? [{ address: replyTo.replace(/.*<|>.*/g, "") }]
+            : [],
           flags: { seen: flags.includes("\\Seen"), flagged: false },
           draft: flags.includes("\\Draft"),
           internetMessageId: header(raw, "Message-ID") ?? "",

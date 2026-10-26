@@ -74,6 +74,17 @@ describe("buildMessage", () => {
     expect(raw.endsWith("--b1--")).toBe(true);
   });
 
+  it("writes Reply-To", () => {
+    const raw = buildMessage(
+      { ...base, replyTo: [{ name: "Shop desk", address: "desk@x.com" }] },
+      { boundary },
+    );
+    expect(headerBlock(raw)).toContain("Reply-To: Shop desk <desk@x.com>");
+    expect(headerBlock(buildMessage(base, { boundary }))).not.toContain(
+      "Reply-To:",
+    );
+  });
+
   it("writes its own Message-ID, and can leave Bcc out for SMTP", () => {
     const id = newMessageId("me@example.com");
     expect(id).toMatch(/^<[0-9a-f]{32}@example\.com>$/);

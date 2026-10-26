@@ -70,7 +70,7 @@ The app checks every account every 60 s in front and every 5 minutes in the back
 ## Limits
 
 - Desktop and Android apps only; no POP3.
-- One From address per account (no aliases yet).
+- Further From addresses are kept in the app (`SenderStore`); whether the SMTP server accepts them is up to it.
 - Moved messages on servers without `EMAILID` get new ids after a restart.
 - On servers without UIDPLUS, moved or deleted messages stay marked `\Deleted` (and hidden in action0) when another program has marked other messages in that folder, until it's expunged.
 - One trusted certificate per account.

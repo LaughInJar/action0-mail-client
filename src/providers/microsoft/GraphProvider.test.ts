@@ -26,6 +26,7 @@ import {
   MAX_PAGE_SIZE,
   UPLOAD_CHUNK_BYTES,
 } from "./GraphProvider";
+import { SenderStore } from "../senderStore";
 import { GRAPH_BASE, GraphHttp } from "./http";
 
 const server = setupServer();
@@ -53,8 +54,7 @@ function setup(options: { personal?: boolean } = {}) {
         sleep: () => Promise.resolve(),
       }),
       {
-        settings,
-        signatureKey: "a0.signatures.test",
+        senders: new SenderStore(settings, "test"),
         now: () => NOW,
         ...options,
       },
@@ -566,6 +566,37 @@ describe("GraphProvider drafts", () => {
     expect(graph.requests("POST", /\/send$/)[0]?.body).toBeUndefined();
   });
 
+  it("sends from another address with its Reply-To, and says when Outlook refuses it", async () => {
+    const { graph, provider } = setup();
+    const alias = {
+      ...base,
+      from: { name: "Shop", address: "shop@contoso.com" },
+      replyTo: [{ address: "desk@contoso.com" }],
+    };
+    const saved = await provider.saveDraft(alias);
+    expect(graph.messages.find((m) => m.id === saved.id)).toMatchObject({
+      from: { emailAddress: { name: "Shop", address: "shop@contoso.com" } },
+      replyTo: [{ emailAddress: { address: "desk@contoso.com" } }],
+    });
+    // Back to the own address: Reply-To goes.
+    await provider.saveDraft({
+      ...base,
+      id: saved.id,
+      from: { address: "max@contoso.com" },
+    });
+    expect(graph.messages.find((m) => m.id === saved.id)?.replyTo).toEqual([]);
+
+    graph.failures.set(`POST me/messages/${saved.id}/send`, {
+      status: 403,
+      code: "ErrorSendAsDenied",
+    });
+    const error = await failure(provider.sendDraft({ ...alias, id: saved.id }));
+    expect(isMailError(error) && error.reason).toBe("sendAsDenied");
+    expect(isMailError(error) && error.params).toEqual({
+      address: "shop@contoso.com",
+    });
+  });
+
   it("starts a reply from Outlook's createReply, so it stays in the conversation", async () => {
     const { graph, provider } = setup();
     graph.add({ id: "orig", subject: "Question" });
@@ -1013,7 +1044,41 @@ describe("GraphProvider people, senders and signatures", () => {
     ]);
     await provider.updateSignature("Max@Contoso.com", "<p>Max</p>");
     expect((await provider.listSenders())[0]?.signature).toBe("<p>Max</p>");
-    expect(settings.getItem("a0.signatures.test")).toContain("<p>Max</p>");
+    expect(settings.getItem("a0.settings.signatures.test")).toContain(
+      "<p>Max</p>",
+    );
+  });
+
+  it("keeps added addresses and catch-all domains in the browser", async () => {
+    const { provider, another } = setup();
+    expect(provider.capabilities.editSenders).toBe(true);
+    await provider.saveSenders(
+      [
+        {
+          address: "shop@contoso.com",
+          bccSelf: true,
+          isDefault: true,
+        },
+      ],
+      ["contoso.com"],
+    );
+    // A provider after a reload sees them.
+    const again = another();
+    expect(await again.listSenders()).toEqual([
+      {
+        address: "max@contoso.com",
+        name: "Max Muster",
+        isDefault: false,
+        signature: "",
+      },
+      {
+        address: "shop@contoso.com",
+        isDefault: true,
+        signature: "",
+        bccSelf: true,
+      },
+    ]);
+    expect(await again.catchAllDomains()).toEqual(["contoso.com"]);
   });
 
   it("allows 20 MB of files for personal accounts, 25 MB otherwise", () => {

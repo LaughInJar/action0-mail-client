@@ -42,14 +42,15 @@ import type {
   MutationResult,
   NewMailbox,
   ProviderCapabilities,
+  SenderSettings,
 } from "../../core/provider";
-import { readJson, writeJson } from "../../lib/storage";
 import {
   buildMessage,
   newMessageId,
   type MimeAttachment,
 } from "../mime/buildMessage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
+import { SenderStore, type OwnAddress } from "../senderStore";
 import type {
   ImapBridge,
   ImapCallName,
@@ -100,9 +101,8 @@ export interface ImapProviderOptions {
    * add another.
    */
   readonly savesSent?: boolean;
-  /** Where signatures are kept (localStorage), and under which key. */
-  readonly settings?: Storage | undefined;
-  readonly signatureKey?: string;
+  /** From addresses and signatures (IMAP servers keep neither). */
+  readonly senders?: SenderStore;
   /** For one-click unsubscribe (the native fetch in the apps). */
   readonly fetch?: typeof fetch;
   /** Told when the server refuses the login, so Reconnect shows. */
@@ -138,6 +138,7 @@ export class ImapProvider implements MailProvider {
       },
       threads: true,
       senders: true,
+      editSenders: true,
       rawSource: true,
       signatureStore: "browser",
       // Like mail programs (Thunderbird): Sent, Trash, Junk, in the UI's language.
@@ -354,6 +355,7 @@ export class ImapProvider implements MailProvider {
         references: message.references,
       },
       ...(message.from ? { from: message.from } : {}),
+      ...(message.replyTo.length ? { replyTo: message.replyTo } : {}),
     };
   }
 
@@ -484,40 +486,36 @@ export class ImapProvider implements MailProvider {
     return sendOneClickUnsubscribe(url, this.#fetch, signal);
   }
 
-  /** The account's own address (aliases aren't supported yet). */
+  /** The account's own address and the ones added in action0. */
   listSenders(): Promise<readonly Sender[]> {
-    const { address, name } = this.#options;
-    return Promise.resolve([
-      {
-        address,
-        ...(name ? { name } : {}),
-        isDefault: true,
-        signature: this.#signatures()[address.toLowerCase()] ?? "",
-      },
-    ]);
+    return Promise.resolve(this.#senders().list(this.#own()));
+  }
+
+  saveSenders(
+    senders: readonly SenderSettings[],
+    catchAll: readonly string[],
+  ): Promise<void> {
+    this.#senders().save(this.#own(), senders, catchAll);
+    return Promise.resolve();
+  }
+
+  catchAllDomains(): Promise<readonly string[]> {
+    return Promise.resolve(this.#senders().catchAll());
   }
 
   /** Kept in the app: IMAP servers don't store signatures. */
   updateSignature(address: string, html: string): Promise<void> {
-    const key = this.#options.signatureKey;
-    if (key !== undefined)
-      writeJson(this.#options.settings, key, {
-        ...this.#signatures(),
-        [address.toLowerCase()]: html,
-      });
+    this.#senders().updateSignature(address, html);
     return Promise.resolve();
   }
 
-  #signatures(): Readonly<Record<string, string>> {
-    const key = this.#options.signatureKey;
-    const stored =
-      key === undefined ? undefined : readJson(this.#options.settings, key);
-    if (typeof stored !== "object" || stored === null) return {};
-    return Object.fromEntries(
-      Object.entries(stored).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-      ),
-    );
+  #own(): OwnAddress {
+    const { address, name } = this.#options;
+    return name ? { address, name } : { address };
+  }
+
+  #senders(): SenderStore {
+    return this.#options.senders ?? NO_SENDERS;
   }
 
   /** Calls the native side; failures become `MailError`s. */
@@ -659,6 +657,7 @@ export class ImapProvider implements MailProvider {
   ) {
     return {
       from: this.#from(draft),
+      ...(draft.replyTo ? { replyTo: draft.replyTo } : {}),
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,
@@ -695,6 +694,9 @@ export class ImapProvider implements MailProvider {
 }
 
 const encoder = new TextEncoder();
+
+/** Without a store (tests): nothing is kept. */
+const NO_SENDERS = new SenderStore(undefined, "");
 
 function listQuery(query: ListMessagesQuery): ImapCalls["list"]["request"] {
   return {

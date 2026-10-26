@@ -9,8 +9,8 @@ import { fromAddress } from "../../core/compose";
 import type { Sender } from "../../core/model";
 import type { OutgoingAttachment } from "../../core/compose";
 import { errorMessage } from "../common/errorMessage";
-import { useSendersOf } from "../../data/senders";
-import { useUi, useUiStore } from "../../state/context";
+import { useChangeSenders, useSendersOf } from "../../data/senders";
+import { useRouter, useUi, useUiStore } from "../../state/context";
 import type { ComposerSession, UiActions } from "../../state/uiStore";
 import { formatBytes } from "../common/format";
 import { Icon } from "../common/Icon";
@@ -18,7 +18,8 @@ import { IconButton } from "../common/IconButton";
 import { useFocusTrap } from "../common/useFocusTrap";
 import { SafeHtmlFrame } from "../reader/SafeHtmlFrame";
 import { AddressField } from "./AddressField";
-import { sentBytes } from "../../compose/session";
+import { sendingAs, sentBytes, type SendingAs } from "../../compose/session";
+import { openAddressSettings } from "../settings/addressSettingsLink";
 import { megabytes } from "../common/files";
 import { COMPOSER_IDS } from "./ids";
 import { useComposerFiles } from "./useComposerFiles";
@@ -28,6 +29,9 @@ import { ComposerAi } from "./ComposerAi";
 import { useAiSetUp } from "../ai/useAi";
 import type { ComposeActions } from "./useComposeActions";
 import { useT } from "../../i18n/context";
+
+/** The From list's "Add an address…" entry. */
+const ADD_ADDRESS = "add-address";
 
 /** Props of {@link Composer}. */
 export interface ComposerProps {
@@ -124,6 +128,27 @@ function ComposerWindow({
   );
   const fromValue = (accountId: AccountId, address: string) =>
     `${accountId} ${address.toLowerCase()}`;
+  // An address of yours that isn't set up (a reply to a +tag or catch-all
+  // address): offered as it is, with "Add this address".
+  const unlisted = session.from &&
+    sendersByAccount.has(session.accountId) &&
+    !fromChoices.some(
+      (choice) =>
+        fromValue(choice.accountId, choice.sender.address) ===
+        fromValue(session.accountId, session.from?.address ?? ""),
+    ) && {
+      accountId: session.accountId,
+      sender: {
+        ...session.from,
+        isDefault: false,
+        signature: session.signature?.html ?? "",
+        setUp: false as const,
+      },
+    };
+  if (unlisted) fromChoices.push(unlisted);
+  const editable = composeAccounts.filter(
+    (handle) => handle.provider.capabilities.editSenders,
+  );
   const currentFrom = fromValue(
     session.accountId,
     session.from?.address ??
@@ -139,15 +164,50 @@ function ComposerWindow({
   )?.sender;
   /** Sends from another address, or another account (the draft moves). */
   const chooseFrom = (accountId: AccountId, sender: Sender) => {
-    const signature =
-      session.signature === null
-        ? null
-        : { address: sender.address, html: sender.signature };
+    const sending = sendingAs(sender, session, currentSender);
     if (accountId !== session.accountId) {
-      switchAccount(accountId, { from: fromAddress(sender), signature });
+      switchAccount(accountId, sending);
       return;
     }
-    update({ from: fromAddress(sender), signature });
+    update(sending);
+  };
+  const router = useRouter();
+  /** Settings at the addresses: this account's, or the first that has them. */
+  const addAnAddress = () => {
+    const target =
+      editable.find((handle) => handle.account.id === session.accountId) ??
+      editable[0];
+    if (target) openAddressSettings(router, target.account.id);
+  };
+  const changeSenders = useChangeSenders();
+  /** Keeps the not-set-up address as one of the account's. */
+  const addThisAddress = (sender: Sender) => {
+    changeSenders
+      .mutateAsync({
+        accountId: session.accountId,
+        change: ({ senders, catchAll }) => ({
+          senders: [
+            ...senders,
+            {
+              address: sender.address,
+              ...(sender.name ? { name: sender.name } : {}),
+              isDefault: false,
+            },
+          ],
+          catchAll,
+        }),
+      })
+      .then(
+        () => {
+          store.getState().showToast({
+            message: c.addressAdded(sender.address),
+            tone: "info",
+          });
+        },
+        (error: unknown) => {
+          setProblem(c.couldntAddAddress(errorMessage(error, t)));
+        },
+      );
   };
 
   const trySend = (skipSubjectCheck = false) => {
@@ -225,10 +285,7 @@ function ComposerWindow({
     };
   }, []);
 
-  const switchAccount = (
-    accountId: AccountId,
-    sending: Pick<ComposerSession, "from" | "signature">,
-  ) => {
+  const switchAccount = (accountId: AccountId, sending: SendingAs) => {
     const from = session.accountId;
     if (accountId === from) return;
     const target = accounts.find((handle) => handle.account.id === accountId);
@@ -403,6 +460,10 @@ function ComposerWindow({
                 id="composer-from"
                 value={currentFrom}
                 onChange={(event) => {
+                  if (event.target.value === ADD_ADDRESS) {
+                    addAnAddress();
+                    return;
+                  }
                   const choice = fromChoices.find(
                     ({ accountId, sender }) =>
                       fromValue(accountId, sender.address) ===
@@ -412,19 +473,66 @@ function ComposerWindow({
                 }}
                 className="min-w-0 flex-1 bg-transparent py-1 text-sm pointer-coarse:min-h-11"
               >
-                {fromChoices.map(({ accountId, sender }) => (
-                  <option
-                    key={fromValue(accountId, sender.address)}
-                    value={fromValue(accountId, sender.address)}
-                  >
-                    {sender.name
-                      ? `${sender.name} <${sender.address}>`
-                      : sender.address}
-                  </option>
-                ))}
+                {fromChoices.map(({ accountId, sender }) => {
+                  // Not set up: just the address, so the note fits.
+                  const label =
+                    sender.setUp === false
+                      ? c.notSetUp(sender.address)
+                      : sender.name
+                        ? `${sender.name} <${sender.address}>`
+                        : sender.address;
+                  return (
+                    <option
+                      key={fromValue(accountId, sender.address)}
+                      value={fromValue(accountId, sender.address)}
+                    >
+                      {label}
+                    </option>
+                  );
+                })}
+                {editable.length > 0 && (
+                  <option value={ADD_ADDRESS}>{c.addAnAddress}</option>
+                )}
               </select>
+              {currentSender?.setUp === false && (
+                <button
+                  type="button"
+                  title={c.addThisAddressHint(currentSender.address)}
+                  disabled={changeSenders.isPending}
+                  onClick={() => {
+                    addThisAddress(currentSender);
+                  }}
+                  className="shrink-0 rounded px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-500/15 pointer-coarse:min-h-11"
+                >
+                  {c.addThisAddress}
+                </button>
+              )}
             </div>
           )}
+          {session.replyTo?.map((address) => (
+            <div
+              key={address.address}
+              className="flex items-center gap-2 border-b border-zinc-200 px-3 py-1 text-sm dark:border-zinc-800"
+            >
+              <span className="shrink-0 text-zinc-500">{t.common.replyTo}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {address.name
+                  ? `${address.name} <${address.address}>`
+                  : address.address}
+              </span>
+              <IconButton
+                label={c.removeReplyTo}
+                icon="x"
+                onClick={() => {
+                  update({
+                    replyTo: (session.replyTo ?? []).filter(
+                      (other) => other !== address,
+                    ),
+                  });
+                }}
+              />
+            </div>
+          ))}
           <AddressField
             id={COMPOSER_IDS.to}
             label={t.common.to}
