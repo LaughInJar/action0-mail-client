@@ -1,6 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
 import { AccountRegistry } from "../accounts/AccountRegistry";
+import type { AiBackend } from "../ai/backend";
+import { createAiServices, type AiServices } from "../ai/services";
+import { createWebAiBackend } from "../ai/webBackend";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import type { IcsFactory } from "../data/calendar";
 import { queryKeys } from "../data/keys";
@@ -43,6 +46,8 @@ export interface AppServices {
   readonly icsFactory: IcsFactory;
   /** The web app or the desktop app. */
   readonly platform: Platform;
+  /** The AI assistant: keys and requests (the browser's, or the apps' vault). */
+  readonly ai: AiServices;
 }
 
 /** What the native apps add to the composition: native sign-in and networking. */
@@ -79,6 +84,8 @@ export interface AppServicesOptions {
   readonly icsFactory?: IcsFactory;
   /** The web app (default), or the desktop or Android app. */
   readonly platform?: Platform;
+  /** The apps' AI backend (default: the browser's). */
+  readonly ai?: AiBackend;
 }
 
 /** The composition root: wires the layers together. */
@@ -107,6 +114,17 @@ export function createAppServices(options: AppServicesOptions): AppServices {
       options.icsFactory ??
       ((subscription) => new IcsCalendarProvider(subscription)),
     platform: options.platform ?? webPlatform,
+    ai: createAiServices(
+      options.ai ??
+        createWebAiBackend({
+          session: options.sessionStorage,
+          local: options.localStorage,
+          redirectUrl: new URL(
+            `${import.meta.env.BASE_URL}redirect.html`,
+            (options.window ?? window).location.origin,
+          ).href,
+        }),
+    ),
   };
 }
 

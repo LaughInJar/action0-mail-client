@@ -5,6 +5,7 @@ import {
   AccountRegistryContext,
   ProviderSetupContext,
 } from "../accounts/context";
+import { AiServicesContext } from "../ai/context";
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
 import { IcsFactoryContext } from "../data/calendar";
 import { I18nProvider } from "../i18n/I18nProvider";
@@ -57,7 +58,9 @@ export function AppProviders({
             <ProviderSetupContext value={services.setups}>
               <IcsFactoryContext value={services.icsFactory}>
                 <PlatformContext value={services.platform}>
-                  <I18nProvider>{children}</I18nProvider>
+                  <AiServicesContext value={services.ai}>
+                    <I18nProvider>{children}</I18nProvider>
+                  </AiServicesContext>
                 </PlatformContext>
               </IcsFactoryContext>
             </ProviderSetupContext>

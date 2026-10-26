@@ -161,6 +161,10 @@ export interface RichTextEditorProps {
   readonly label?: string;
   /** "Write your message…" by default. */
   readonly placeholder?: string;
+  /** Gets the editor once it's there (the composer's AI writes into it). */
+  readonly onEditor?: (editor: Editor | null) => void;
+  /** Shows the ✨ button, which opens the AI field. */
+  readonly onAi?: () => void;
 }
 
 /**
@@ -177,6 +181,8 @@ export function RichTextEditor({
   id = COMPOSER_BODY_ID,
   label: labelProp,
   placeholder: placeholderProp,
+  onEditor,
+  onAi,
 }: RichTextEditorProps) {
   const texts = useT().composer.editor;
   const label = labelProp ?? texts.message;
@@ -267,6 +273,21 @@ export function RichTextEditor({
     };
   }, [editor, imageUrls]);
 
+  const handOut = useRef(onEditor);
+  useEffect(() => {
+    handOut.current = onEditor;
+  });
+  useEffect(() => {
+    const give = () => handOut.current?.(editor);
+    // The editor finishes setting up a moment after mounting.
+    if (editor.isInitialized) give();
+    else editor.on("create", give);
+    return () => {
+      editor.off("create", give);
+      handOut.current?.(null);
+    };
+  }, [editor]);
+
   // The spelling setting changed: an empty transaction applies it.
   useEffect(() => {
     if (spelling.current === spellcheck) return;
@@ -300,6 +321,7 @@ export function RichTextEditor({
         onLink={() => {
           setLinking(true);
         }}
+        {...(onAi ? { onAi } : {})}
       />
       {linking && (
         <LinkField
@@ -347,7 +369,15 @@ function Tool({ label, icon, active, onClick }: ToolProps) {
   );
 }
 
-function Toolbar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
+function Toolbar({
+  editor,
+  onLink,
+  onAi,
+}: {
+  editor: Editor;
+  onLink: () => void;
+  onAi?: () => void;
+}) {
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -361,7 +391,8 @@ function Toolbar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
     }),
   });
   const chain = () => editor.chain().focus();
-  const texts = useT().composer.editor;
+  const t = useT();
+  const texts = t.composer.editor;
   return (
     <div
       role="toolbar"
@@ -416,6 +447,12 @@ function Toolbar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
         icon="clear-format"
         onClick={() => chain().unsetAllMarks().clearNodes().run()}
       />
+      {onAi && (
+        <>
+          <span className="mx-1 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
+          <Tool label={t.ai.writeButton} icon="sparkles" onClick={onAi} />
+        </>
+      )}
     </div>
   );
 }

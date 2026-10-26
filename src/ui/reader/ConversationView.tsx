@@ -39,6 +39,9 @@ import { AccountLine } from "./AccountLine";
 import { useMessageMenu } from "./useMessageMenu";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
+import { AiPanel } from "../ai/AiPanel";
+import { aiItems, useAiCommands, useAiReaderActions } from "../ai/aiItems";
+import { aiTarget } from "../ai/useAi";
 
 /** Props of {@link ConversationView}. */
 export interface ConversationViewProps {
@@ -93,6 +96,9 @@ export function ConversationView({
     messageId: store.getState().readerCursor ?? messages?.at(-1)?.id ?? rowId,
   });
   const canWrite = compose.canWriteFrom(accountId);
+  const ai = useAiReaderActions();
+  const target = aiTarget.thread(accountId, threadId);
+  useAiCommands(ai, thread ? target : undefined);
   // The conversation as one item for the toolbar: read if all are, starred if any is.
   const newest = messages?.at(-1);
   const summary: MessageSummary | undefined = newest && {
@@ -115,6 +121,14 @@ export function ConversationView({
         mailboxes={mailboxes}
         actions={actions}
         compose={compose}
+        aiTarget={target}
+        {...(canWrite
+          ? {
+              onAiReply: () => {
+                ai.reply(answering());
+              },
+            }
+          : {})}
       />
     );
   } else if (error) {
@@ -186,6 +200,13 @@ export function ConversationView({
                   },
                   t.actions,
                 ),
+                ...aiItems(
+                  ai,
+                  target,
+                  canWrite ? answering : undefined,
+                  { phone: breakpoint === "narrow" },
+                  t,
+                ),
                 ...originalItems(original, answering, t),
               ]
             : []
@@ -209,6 +230,10 @@ interface ConversationBodyProps {
   readonly mailboxes: readonly Mailbox[] | undefined;
   readonly actions: MailActions;
   readonly compose: ComposeActions;
+  /** The AI panel's target (the whole conversation). */
+  readonly aiTarget: string;
+  /** Reply with AI (none when the account can't write). */
+  readonly onAiReply?: () => void;
 }
 
 function ConversationBody({
@@ -218,6 +243,8 @@ function ConversationBody({
   mailboxes,
   actions,
   compose,
+  aiTarget: target,
+  onAiReply,
 }: ConversationBodyProps) {
   const subjectId = useId();
   const menuOf = useMessageMenu(accountId);
@@ -408,6 +435,11 @@ function ConversationBody({
           </ul>
         )}
       </div>
+      <AiPanel
+        target={target}
+        messages={messages}
+        {...(onAiReply ? { onReply: onAiReply } : {})}
+      />
       <ol
         aria-label={t.reader.messagesOfConversation}
         className="divide-y divide-zinc-200 dark:divide-zinc-800"

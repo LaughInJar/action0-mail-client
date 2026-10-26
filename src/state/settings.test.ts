@@ -47,6 +47,37 @@ describe("parseSettings", () => {
     );
   });
 
+  it("keeps AI services of known kinds, never keys, and valid choices", () => {
+    expect(
+      parseSettings({
+        aiServices: [
+          { id: "a", kind: "anthropic", key: "sk-secret", remember: true },
+          { id: "b", kind: "copilot" },
+          {
+            id: "c",
+            kind: "compatible",
+            name: "Work",
+            baseUrl: "javascript:x",
+          },
+          { id: "d", kind: "chatgpt", account: "me@example.com" },
+        ],
+        aiChoices: {
+          reader: { service: "a", model: "claude-haiku-5-5" },
+          composer: { service: "a" },
+        },
+        aiNoticed: ["a", 3],
+      }),
+    ).toMatchObject({
+      aiServices: [
+        { id: "a", kind: "anthropic", remember: true },
+        { id: "c", kind: "compatible", name: "Work" },
+        { id: "d", kind: "chatgpt", account: "me@example.com" },
+      ],
+      aiChoices: { reader: { service: "a", model: "claude-haiku-5-5" } },
+      aiNoticed: ["a"],
+    });
+  });
+
   it("keeps the newest trusted senders when there are too many", () => {
     const many = Array.from(
       { length: MAX_TRUSTED_SENDERS + 2 },

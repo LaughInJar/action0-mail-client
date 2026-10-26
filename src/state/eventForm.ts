@@ -51,6 +51,8 @@ export interface QuestionOption {
 export interface QuestionState {
   readonly title: string;
   readonly message?: string;
+  /** A page to read more (opens outside the app). */
+  readonly link?: { readonly label: string; readonly href: string };
   /** The answers, the most likely one first (shown on top, or rightmost). */
   readonly options: readonly QuestionOption[];
   /** "Cancel" by default. */

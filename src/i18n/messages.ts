@@ -1,4 +1,5 @@
 import { accounts } from "./texts/accounts";
+import { ai } from "./texts/ai";
 import { android } from "./texts/android";
 import { calendar } from "./texts/calendar";
 import { actions } from "./texts/actions";
@@ -25,6 +26,7 @@ import { unsubscribe } from "./texts/unsubscribe";
 export const messages = {
   en: {
     accounts: accounts.en,
+    ai: ai.en,
     android: android.en,
     actions: actions.en,
     calendar: calendar.en,
@@ -47,6 +49,7 @@ export const messages = {
   },
   de: {
     accounts: accounts.de,
+    ai: ai.de,
     android: android.de,
     actions: actions.de,
     calendar: calendar.de,

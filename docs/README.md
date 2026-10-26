@@ -16,6 +16,7 @@ These documents explain how action0 works inside: its architecture, the reasonin
 | Ship a release                                              | [releasing.md](releasing.md)                           |
 | Work on the Tauri desktop app                               | [desktop-app.md](desktop-app.md)                       |
 | Work on the Android app                                     | [android.md](android.md)                               |
+| Work on the AI assistant                                    | [ai.md](ai.md)                                         |
 | Understand tokens, storage and HTML mail safety             | [security.md](security.md)                             |
 
 The approved decisions, including small UX choices, are listed in the decisions log in [`CLAUDE.md`](../CLAUDE.md#decisions-log), which also describes the mandatory way of working.

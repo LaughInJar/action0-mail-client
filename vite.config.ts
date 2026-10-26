@@ -19,7 +19,9 @@ const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as {
  *
  * `connect-src https:` lets one-click unsubscribe (RFC 8058) reach the
  * sender's server. Remote images may load from anywhere once allowed, so
- * this barely widens what the app can reach.
+ * this barely widens what the app can reach. `http://localhost` and
+ * `127.0.0.1` (any port) are the AI assistant's local servers (Ollama,
+ * LM Studio), which run on the user's own computer.
  *
  * `frame-src` allows Google's sign-in frame and MSAL's hidden renewal
  * iframe, which returns to this site's `redirect.html` ('self').
@@ -28,7 +30,7 @@ const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-  "connect-src 'self' https:",
+  "connect-src 'self' https: http://localhost:* http://127.0.0.1:*",
   "frame-src 'self' https://accounts.google.com/gsi/ https://login.microsoftonline.com",
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",

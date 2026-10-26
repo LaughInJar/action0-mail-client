@@ -59,6 +59,16 @@ function QuestionDialog({ question }: { question: QuestionState }) {
             {question.message}
           </p>
         )}
+        {question.link && (
+          <a
+            href={question.link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block text-sm text-blue-700 underline dark:text-blue-300"
+          >
+            {question.link.label}
+          </a>
+        )}
         <div
           className={`mt-5 flex flex-col-reverse gap-2 ${question.options.length > 2 ? "" : "sm:flex-row sm:justify-end"}`}
         >

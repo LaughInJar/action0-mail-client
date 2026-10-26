@@ -18,6 +18,8 @@ import { useBreakpoint, useCoarsePointer } from "../layout/useBreakpoint";
 import { answerItems } from "../reader/answerItems";
 import { routeOfRow, useCurrentList } from "./useCurrentList";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { aiItems, useAiReaderActions } from "../ai/aiItems";
+import { aiTarget } from "../ai/useAi";
 
 /** Props of {@link RowMenu}. */
 export interface RowMenuProps {
@@ -57,6 +59,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const router = useRouter();
   const selectedIds = useUi((state) => state.selectedIds);
   const original = useOriginalActions();
+  const ai = useAiReaderActions();
   const chosen = (rows ?? []).filter((row) => keys.includes(row.key));
   if (!route || chosen.length === 0) return null;
   const [single] = chosen.length === 1 ? chosen : [];
@@ -75,6 +78,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
 
   const opening: MenuEntry[] = [];
   const answering: MenuEntry[] = [];
+  const asking: MenuEntry[] = [];
   const sender: MenuEntry[] = [];
   if (single) {
     const ref = { accountId: single.accountId, messageId: single.summary.id };
@@ -89,6 +93,11 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
           store.getState().toggle(single.key);
         },
       });
+    const openRow = () => {
+      store.getState().focusOnly(single.key);
+      if (breakpoint === "narrow")
+        router.navigate(routeOfRow(list, single.key, sources));
+    };
     opening.push({
       id: "open",
       label: m.open,
@@ -101,11 +110,30 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
           });
           return;
         }
-        store.getState().focusOnly(single.key);
-        if (breakpoint === "narrow")
-          router.navigate(routeOfRow(list, single.key, sources));
+        openRow();
       },
     });
+    if (!isDraft)
+      asking.push(
+        ...entriesOf(
+          aiItems(
+            {
+              ...ai,
+              // The row opens first, so its panel shows.
+              open: (target, start) => {
+                openRow();
+                ai.open(target, start);
+              },
+            },
+            single.thread
+              ? aiTarget.thread(single.accountId, single.thread.id)
+              : aiTarget.message(single.accountId, single.summary.id),
+            compose.canWriteFrom(single.accountId) ? ref : undefined,
+            { phone: false },
+            t,
+          ),
+        ),
+      );
     if (platform.kind === "web")
       opening.push({
         id: "open-tab",
@@ -190,7 +218,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
       label={title}
       title={title}
       at={at}
-      entries={grouped(opening, answering, acting, sender, showing)}
+      entries={grouped(opening, answering, asking, acting, sender, showing)}
       onClose={onClose}
     />
   );

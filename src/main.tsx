@@ -54,6 +54,7 @@ const services = createAppServices({
   ...(native
     ? {
         platform: native.platform,
+        ai: native.ai,
         icsFactory: (subscription) =>
           new IcsCalendarProvider(subscription, { fetch: native.fetch }),
       }
@@ -72,6 +73,10 @@ if (url.searchParams.has("demo")) {
   void first.then(() => {
     services.registry.addKnown(DEMO_WORK_ACCOUNT);
   });
+  // The demo's AI, so the assistant can be tried without a key.
+  const { settings, updateSettings } = services.uiStore.getState();
+  if (settings.aiServices.length === 0)
+    updateSettings({ aiServices: [{ id: "demo-ai", kind: "demo" }] });
 }
 
 const root = document.getElementById("root");

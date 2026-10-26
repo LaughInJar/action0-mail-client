@@ -191,6 +191,8 @@ export interface ComposerSession extends ComposerContent {
   readonly savedRevision: number;
   readonly saving: boolean;
   readonly saveError?: string;
+  /** The AI field is open (Reply with AI opens the composer with it). */
+  readonly ai?: boolean;
 }
 
 /**
@@ -202,6 +204,32 @@ export type ComposerInit = Pick<ComposerSession, "accountId" | "kind"> &
   Partial<
     Omit<ComposerSession, "revision" | "savedRevision" | "saving" | "saveError">
   > & { readonly dirty?: boolean };
+
+/** One exchange in the AI panel: a summary (`question: null`) or a question, and its answer. */
+export interface AiEntry {
+  readonly question: string | null;
+  /** As far as it's written. */
+  readonly answer: string;
+  readonly status: "writing" | "done" | "stopped" | "error";
+  readonly error?: unknown;
+  /** How many of the conversation's messages were read (not all fit). */
+  readonly read?: { readonly included: number; readonly total: number };
+}
+
+/**
+ * The reader's AI panel: whose it is, what it was opened for, and the
+ * answers so far (kept while the app runs, so going back to the mail shows
+ * them again; never stored).
+ */
+export interface AiPanelState {
+  /** The message or conversation (see `aiTarget`). */
+  readonly target: string;
+  /** Summarize, or wait for a question (the field gets focus). */
+  readonly start: "summary" | "ask";
+  /** Bumped by every opening, so opening it again is noticed. */
+  readonly nonce: number;
+  readonly entries: readonly AiEntry[];
+}
 
 /** A sent mail waiting out its undo period. */
 export interface PendingSend {
@@ -267,6 +295,8 @@ export interface UiState extends selection.SelectionState {
   readonly accountColors: Readonly<Record<string, number>>;
   /** The event editor's values, while it's open. Memory only. */
   readonly eventForm: EventFormState | null;
+  /** The reader's AI panel, while it's open. Memory only. */
+  readonly aiPanel: AiPanelState | null;
 }
 
 /** State transitions. */
@@ -350,6 +380,17 @@ export interface UiActions {
   readonly setLabelDialog: (dialog: LabelDialogState | null) => void;
   readonly setManageLabels: (accountId: AccountId | null) => void;
   readonly setQuestion: (question: QuestionState | null) => void;
+  /**
+   * Opens the AI panel for a message or conversation; its answers stay if
+   * it was open for the same one.
+   */
+  readonly openAiPanel: (target: string, start: AiPanelState["start"]) => void;
+  /** Changes the answers of the panel, if it's still the one for `target`. */
+  readonly updateAiEntries: (
+    target: string,
+    update: (entries: readonly AiEntry[]) => readonly AiEntry[],
+  ) => void;
+  readonly closeAiPanel: () => void;
   /** Dismisses or snoozes a reminder (`null` forgets the mark again). */
   readonly markReminder: (key: string, mark: ReminderMark | null) => void;
   readonly setAccountColors: (colors: Readonly<Record<string, number>>) => void;
@@ -466,6 +507,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           manageLabels: null,
           question: null,
           eventForm: null,
+          aiPanel: null,
           reminderMarks: {},
           accountColors: {},
 
@@ -688,6 +730,31 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setQuestion: (question) => {
             set({ question });
+          },
+          openAiPanel: (target, start) => {
+            set((s) => ({
+              aiPanel: {
+                target,
+                start,
+                nonce: (s.aiPanel?.nonce ?? 0) + 1,
+                entries: s.aiPanel?.target === target ? s.aiPanel.entries : [],
+              },
+            }));
+          },
+          updateAiEntries: (target, update) => {
+            set((s) =>
+              s.aiPanel?.target === target
+                ? {
+                    aiPanel: {
+                      ...s.aiPanel,
+                      entries: update(s.aiPanel.entries),
+                    },
+                  }
+                : {},
+            );
+          },
+          closeAiPanel: () => {
+            set({ aiPanel: null });
           },
           markReminder: (key, mark) => {
             const { [key]: _old, ...rest } = get().reminderMarks;

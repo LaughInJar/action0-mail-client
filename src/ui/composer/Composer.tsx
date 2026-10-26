@@ -23,6 +23,9 @@ import { megabytes } from "../common/files";
 import { COMPOSER_IDS } from "./ids";
 import { useComposerFiles } from "./useComposerFiles";
 import { RichTextEditor } from "./RichTextEditor";
+import type { Editor } from "@tiptap/react";
+import { ComposerAi } from "./ComposerAi";
+import { useAiSetUp } from "../ai/useAi";
 import type { ComposeActions } from "./useComposeActions";
 import { useT } from "../../i18n/context";
 
@@ -58,6 +61,15 @@ function ComposerWindow({
   const files = useComposerFiles(session, rootRef, setProblem);
   const pickerRef = useRef<HTMLInputElement>(null);
   const t = useT();
+  // The AI field: Reply with AI opens the composer with it.
+  const aiReady = useAiSetUp().length > 0;
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [aiOpen, setAiOpen] = useState(session.ai === true);
+  const [aiFocus, setAiFocus] = useState(0);
+  const openAi = () => {
+    setAiOpen(true);
+    setAiFocus((count) => count + 1);
+  };
   const c = t.composer;
 
   useFocusTrap(rootRef, fullScreen);
@@ -121,6 +133,10 @@ function ComposerWindow({
       )?.sender.address ??
       "",
   );
+  const currentSender = fromChoices.find(
+    (choice) =>
+      fromValue(choice.accountId, choice.sender.address) === currentFrom,
+  )?.sender;
   /** Sends from another address, or another account (the draft moves). */
   const chooseFrom = (accountId: AccountId, sender: Sender) => {
     const signature =
@@ -169,6 +185,9 @@ function ComposerWindow({
     if (mod && event.key === "Enter") {
       event.preventDefault();
       trySend();
+    } else if (mod && event.key.toLowerCase() === "j" && aiReady) {
+      event.preventDefault();
+      openAi();
     } else if (event.key === "Escape") {
       event.preventDefault();
       if (confirmNoSubject) setConfirmNoSubject(false);
@@ -465,9 +484,24 @@ function ComposerWindow({
             }}
             className="shrink-0 border-b border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-800 pointer-coarse:min-h-11"
           />
+          {aiReady && aiOpen && (
+            <ComposerAi
+              editor={editor}
+              session={session}
+              from={currentSender && fromAddress(currentSender)}
+              focusSignal={aiFocus}
+              onClose={() => {
+                setAiOpen(false);
+                editor?.commands.focus();
+              }}
+            />
+          )}
           <RichTextEditor
+            onEditor={setEditor}
+            {...(aiReady ? { onAi: openAi } : {})}
             initialHtml={session.body}
-            focusOnOpen={initialFocus === "body"}
+            // Reply with AI starts in the AI field instead.
+            focusOnOpen={initialFocus === "body" && !session.ai}
             imageUrls={files.imageUrls}
             onFiles={(added) => files.addFiles(added, true)}
             onChange={(body) => {

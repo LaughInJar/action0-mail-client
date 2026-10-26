@@ -1,5 +1,6 @@
 /** What the desktop and Android platforms share. */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { AiBackend } from "../../ai/backend";
 import type { NativeAccount, NativeAuthBridge } from "../../auth/native/bridge";
 import type { Platform } from "../types";
 import type { Invoke } from "./nativeFetch";
@@ -12,6 +13,8 @@ export interface NativeStart {
   readonly auth: NativeAuthBridge;
   /** Accounts signed in at earlier starts, by account id. */
   readonly accounts: ReadonlyMap<string, NativeAccount>;
+  /** The AI assistant's keys and requests, kept and made natively. */
+  readonly ai: AiBackend;
 }
 
 /** Tauri's `invoke`, with request headers. */

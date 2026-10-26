@@ -29,9 +29,9 @@ use providers::{Client, Provider, TokenError, TokenResponse, claims, has_scopes}
 /// How long the browser has to come back (desktop; on Android the tab
 /// reports its closing).
 #[cfg(desktop)]
-const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+pub(crate) const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Access tokens are renewed when they have less than this left.
-const RENEW_BEFORE_MS: u64 = 2 * 60 * 1000;
+pub(crate) const RENEW_BEFORE_MS: u64 = 2 * 60 * 1000;
 /// How long a token from Play services is taken to last (it doesn't say;
 /// Google's last an hour).
 #[cfg(target_os = "android")]
@@ -127,7 +127,7 @@ pub struct Auth {
     signing_in: Mutex<Option<oneshot::Sender<()>>>,
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -477,23 +477,31 @@ impl Auth {
         provider: Provider,
         form: &[(&'static str, String)],
     ) -> Result<TokenResponse, AuthError> {
-        let response = self
-            .http
-            .post(provider.token_endpoint())
-            .form(form)
-            .send()
-            .await
-            .map_err(|e| AuthError::Network(e.to_string()))?;
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| AuthError::Network(e.to_string()))?;
-        if status.is_success() {
-            return serde_json::from_str(&text).map_err(|e| AuthError::Provider(e.to_string()));
-        }
-        Err(token_error(&text, status.as_u16()))
+        token_request(&self.http, provider.token_endpoint(), form).await
     }
+}
+
+/// Posts `form` to a token endpoint: its tokens, or what its refusal means.
+pub(crate) async fn token_request(
+    http: &reqwest::Client,
+    endpoint: &str,
+    form: &[(&'static str, String)],
+) -> Result<TokenResponse, AuthError> {
+    let response = http
+        .post(endpoint)
+        .form(form)
+        .send()
+        .await
+        .map_err(|e| AuthError::Network(e.to_string()))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| AuthError::Network(e.to_string()))?;
+    if status.is_success() {
+        return serde_json::from_str(&text).map_err(|e| AuthError::Provider(e.to_string()));
+    }
+    Err(token_error(&text, status.as_u16()))
 }
 
 /// What a token endpoint's refusal means for the UI.
@@ -540,7 +548,7 @@ fn authorize_url(request: &SignInRequest, redirect_uri: &str, pkce: &Pkce, state
 
 /// Calls the Kotlin side, with its refusals as the UI tells them apart.
 #[cfg(target_os = "android")]
-async fn kotlin<T: Send + 'static>(
+pub(crate) async fn kotlin<T: Send + 'static>(
     app: &AppHandle,
     call: impl FnOnce(&tauri_plugin_action0::Action0<tauri::Wry>) -> tauri_plugin_action0::Result<T>
     + Send
@@ -564,7 +572,7 @@ fn plugin_error(error: tauri_plugin_action0::Error) -> AuthError {
 }
 
 #[cfg(desktop)]
-fn open_browser(app: &AppHandle, url: &str) -> Result<(), AuthError> {
+pub(crate) fn open_browser(app: &AppHandle, url: &str) -> Result<(), AuthError> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()
         .open_url(url, None::<&str>)
