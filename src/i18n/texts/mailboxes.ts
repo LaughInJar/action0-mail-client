@@ -4,6 +4,8 @@ const en: {
   readonly roles: Readonly<Record<MailboxRole, string>>;
   /** The same in Outlook's words, for folder accounts. */
   readonly folderRoles: Readonly<Record<MailboxRole, string>>;
+  /** The same in a mail program's words, for mail server (IMAP) accounts. */
+  readonly clientRoles: Readonly<Record<MailboxRole, string>>;
   readonly standard: Readonly<Record<StandardMailbox, string>>;
 } = {
   roles: {
@@ -27,6 +29,17 @@ const en: {
     archive: "Archive",
     junk: "Junk Email",
     trash: "Deleted Items",
+  },
+  clientRoles: {
+    inbox: "Inbox",
+    flagged: "Flagged",
+    important: "Important",
+    sent: "Sent",
+    drafts: "Drafts",
+    all: "All mail",
+    archive: "Archive",
+    junk: "Junk",
+    trash: "Trash",
   },
   standard: {
     categories: "Categories",
@@ -60,6 +73,17 @@ const de: typeof en = {
     archive: "Archiv",
     junk: "Junk-E-Mail",
     trash: "Gelöschte Elemente",
+  },
+  clientRoles: {
+    inbox: "Posteingang",
+    flagged: "Markiert",
+    important: "Wichtig",
+    sent: "Gesendet",
+    drafts: "Entwürfe",
+    all: "Alle Nachrichten",
+    archive: "Archiv",
+    junk: "Spam",
+    trash: "Papierkorb",
   },
   standard: {
     categories: "Kategorien",

@@ -2,10 +2,11 @@
 
 A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly. The same app also comes as a desktop app for Linux, Windows and macOS (see [Desktop app](#desktop-app)).
 
-**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders, and categories as labels. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events. AI assistant: summaries, questions about mail and help writing, with your own Claude, OpenAI, Gemini, OpenRouter or local model, or your ChatGPT plan in the apps.
+**Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders, and categories as labels. Other mail servers (IMAP/SMTP: GMX, web.de, iCloud, Yahoo, Fastmail, your own server) in the desktop and Android apps. Calendar: Google and Microsoft calendars and iCal subscriptions in one view, with answers to invitations, and creating and editing events. AI assistant: summaries, questions about mail and help writing, with your own Claude, OpenAI, Gemini, OpenRouter or local model, or your ChatGPT plan in the apps.
 
 - Three columns: accounts and folders, message list, message. On tablets the folders move into a drawer; on phones you see one pane at a time and the back button works.
-- Several accounts side by side, Gmail and Microsoft mixed.
+- Several accounts side by side, Gmail, Microsoft and other mail servers mixed.
+- Other mail servers (IMAP/SMTP) in the desktop and Android apps: enter your address, and action0 finds the settings like Thunderbird does (you can change them), then connects with your password or app password. Folders, search, conversations, writing and sending, drafts, and new mail within seconds (IDLE) work as with Outlook accounts (see [Other mail servers](#other-mail-servers-imap)).
 - Microsoft accounts work with folders: drag or move mail into a folder (it leaves the one it was in), create folders right from **Move to…**, and archive, delete and spam move mail into Archive, Deleted Items and Junk Email. Undo puts it back into the folder it came from. The star is Outlook's flag, and **Flagged** lists flagged mail of every folder. Outlook's categories work like labels: they're listed under **Categories** in their colours (a category lists its mail from every folder), <kbd>l</kbd> adds or removes them, dropping mail on one adds it, and the reader shows them as coloured chips. Categories can be created, recoloured and deleted (Outlook can't rename them).
 - New mail and changes made elsewhere (on your phone, in Gmail web) show up by themselves: every minute while the app is in front, every five minutes in the background, and right away when you come back to the tab. The tab title shows the unread count of all inboxes, and desktop notifications (if you turn them on) tell you about new Inbox mail while you're in another tab or app. Phones only allow notifications for installed apps, so they aren't offered there yet.
 - Archive, mark as read/unread, star, move, label, trash and report spam, for one message or a whole selection. Changes show up instantly and can be undone (<kbd>z</kbd>).
@@ -131,6 +132,28 @@ iCal addresses are often secret (whoever has one can read the calendar), so trea
 | **AADSTS700016**, _unauthorized_client_, or "not supported for personal accounts" | The client ID is wrong, or **Supported account types** under **Authentication** doesn't include the kind of account you used.                  |
 | **Need admin approval** (AADSTS65001, 90094)                                      | Your organization only allows approved apps. An administrator has to grant consent for the app in Entra (**Enterprise applications**).         |
 | The popup doesn't open                                                            | The browser blocked it. Allow popups for the site and click again.                                                                             |
+
+## Other mail servers (IMAP)
+
+In the desktop and Android apps, **Add account → Other mail server** connects any provider with IMAP and SMTP. Browsers can't open those connections, so the web app shows the card greyed out.
+
+1. Enter your address and name. action0 looks up the server settings: at your provider, in Mozilla's provider database (which learns only the domain), or through your domain's mail servers. Gmail and Outlook/Microsoft 365 addresses are better added as their own account types, and the wizard says so.
+2. Check the settings (open **Server settings** to change them) and enter your password. Most big providers want an **app password** for other mail apps: the wizard links to the page where you make one.
+3. **Connect** tests IMAP and SMTP. A server whose certificate your system doesn't trust (typical for your own server) shows the certificate's fingerprint; trust it only if it's yours. It's trusted for this account only, and **Forget certificate** in the Accounts panel undoes it.
+
+| Provider                   | What to do first                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| GMX, web.de                | Switch on "POP3/IMAP access" in the web mail's settings                                   |
+| iCloud                     | Make an app-specific password at account.apple.com (two-factor authentication must be on) |
+| Yahoo, AOL                 | Make an app password in the account's security settings (or see the sign-in below)        |
+| Fastmail                   | Make an app password (Settings → Privacy & Security); IMAP needs a paid plan              |
+| Gmail                      | Better as a Gmail account; over IMAP it needs an app password (2-Step Verification on)    |
+| Outlook.com, Microsoft 365 | Add as a Microsoft account: Microsoft doesn't allow passwords over IMAP                   |
+| Your own server            | Usually nothing; its certificate may need trusting once                                   |
+
+The password stays in the app's encrypted vault (its key in the system's keychain). Mail isn't stored on your computer: lists and messages load from the server, as with the other accounts. Archive, Trash and Junk use the server's folders and create "Archive" (or Trash, Junk) if it has none; signatures are kept in the app.
+
+**Yahoo/AOL sign-in instead of an app password.** Yahoo approves apps for mail access by hand (AOL needs its own approval). If you have such a registration, put its client ID (and secret, if Yahoo gave one) into `.env.local` as `VITE_YAHOO_CLIENT_ID` / `VITE_YAHOO_CLIENT_SECRET` (AOL: `VITE_AOL_CLIENT_ID` / `VITE_AOL_CLIENT_SECRET`), or enter it in the wizard; the redirect address to register is `http://127.0.0.1`. Then **Sign in with Yahoo** appears.
 
 ## Desktop app
 
@@ -303,7 +326,7 @@ The full picture, with the module map, the import rules, and how a click travels
 | sessionStorage | OAuth access tokens (Google's, and MSAL's token cache); AI service keys (web app, unless remembered); mailbox lists, message list pages, calendar lists and events (cache; search results stay in memory)                                                                                                                                                                                                                                  | Tab session, ≤ 10 min for the cache |
 | localStorage   | Account list (provider + email address), column widths, tree expansion, sort order, theme, settings (including the language, the addresses of senders you trust with remote images, the signatures of Microsoft accounts, iCal addresses, which calendars are ticked), dismissed and snoozed event reminders (ids and times, until the event ends), each account's colour, the AI services set up (no keys), AI keys you chose to remember | Until sign-out                      |
 
-Tokens never go to localStorage (an AI service's key only if you tick **Remember in this browser**), and mail content is never stored long-term. In the desktop app, refresh tokens and AI keys are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start. The Android app keeps Microsoft refresh tokens the same way (the key wrapped by the Android Keystore) and no Google refresh tokens at all; its background check keeps only when it last checked and which message ids it notified.
+Tokens never go to localStorage (an AI service's key only if you tick **Remember in this browser**), and mail content is never stored long-term. In the desktop app, refresh tokens, IMAP passwords and AI keys are kept by its native side only (encrypted, with the key in the system's keychain), and PDFs opened with another app are written to a folder that's emptied at every start. The Android app keeps Microsoft refresh tokens the same way (the key wrapped by the Android Keystore) and no Google refresh tokens at all; its background check keeps only when it last checked and which message ids it notified.
 
 ### Security model for HTML mail
 
@@ -321,7 +344,7 @@ The developer documentation is in [`docs/`](docs/README.md):
 - [Design decisions](docs/decisions.md): why it's built this way
 - [Development](docs/development.md) and [testing](docs/testing.md)
 - [Building and deploying](docs/building-and-deploying.md) and [releasing](docs/releasing.md)
-- [The desktop app](docs/desktop-app.md), [the AI assistant](docs/ai.md) and [security](docs/security.md)
+- [The desktop app](docs/desktop-app.md), [IMAP and SMTP accounts](docs/imap.md), [the AI assistant](docs/ai.md) and [security](docs/security.md)
 
 ## Tests and CI
 

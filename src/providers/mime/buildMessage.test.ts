@@ -5,6 +5,7 @@ import {
   buildMessage,
   encodeQuotedPrintable,
   encodeWords,
+  newMessageId,
   type OutgoingMessage,
 } from "./buildMessage";
 
@@ -71,6 +72,19 @@ describe("buildMessage", () => {
       "--b1\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nHi\r\n--b1\r\nContent-Type: text/html",
     );
     expect(raw.endsWith("--b1--")).toBe(true);
+  });
+
+  it("writes its own Message-ID, and can leave Bcc out for SMTP", () => {
+    const id = newMessageId("me@example.com");
+    expect(id).toMatch(/^<[0-9a-f]{32}@example\.com>$/);
+    const raw = buildMessage(
+      { ...base, bcc: [{ address: "secret@x.com" }], messageId: id },
+      { boundary, withoutBcc: true },
+    );
+    const headers = headerBlock(raw);
+    expect(headers).toContain(`Message-ID: ${id}`);
+    expect(headers).not.toContain("Bcc:");
+    expect(raw).not.toContain("secret@x.com");
   });
 
   it("encodes non-ASCII names and subjects as encoded words that decode back", () => {

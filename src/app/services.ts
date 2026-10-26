@@ -4,6 +4,7 @@ import { AccountRegistry } from "../accounts/AccountRegistry";
 import type { AiBackend } from "../ai/backend";
 import { createAiServices, type AiServices } from "../ai/services";
 import { createWebAiBackend } from "../ai/webBackend";
+import type { MailServerAccounts } from "../accounts/mailServer";
 import type { ProviderModule, ProviderSetup } from "../accounts/types";
 import type { IcsFactory } from "../data/calendar";
 import { queryKeys } from "../data/keys";
@@ -30,6 +31,9 @@ import {
   storedMicrosoftClientId,
 } from "./microsoftSetup";
 import { createMicrosoftModule } from "../providers/microsoft/module";
+import type { ImapBridge } from "../providers/imap/bridge";
+import { createImapModule } from "../providers/imap/module";
+import type { MailServerAccountInfo } from "../accounts/mailServer";
 
 /** Everything the UI needs, created once at startup (or per test). */
 export interface AppServices {
@@ -48,6 +52,8 @@ export interface AppServices {
   readonly platform: Platform;
   /** The AI assistant: keys and requests (the browser's, or the apps' vault). */
   readonly ai: AiServices;
+  /** Mail server (IMAP/SMTP) accounts: the apps only. */
+  readonly mailServers?: MailServerAccounts;
 }
 
 /** What the native apps add to the composition: native sign-in and networking. */
@@ -58,6 +64,11 @@ export interface NativeServices {
   readonly fetch: typeof fetch;
   /** The Android app: Google accounts sign in through Play services. */
   readonly android?: boolean;
+  /** IMAP/SMTP accounts through the native side. */
+  readonly imap?: {
+    readonly bridge: ImapBridge;
+    readonly accounts: ReadonlyMap<string, MailServerAccountInfo>;
+  };
 }
 
 /**
@@ -86,6 +97,10 @@ export interface AppServicesOptions {
   readonly platform?: Platform;
   /** The apps' AI backend (default: the browser's). */
   readonly ai?: AiBackend;
+  /** Creates the mail server accounts' setup (the apps), which needs the registry. */
+  readonly createMailServers?: (
+    registry: AccountRegistry,
+  ) => MailServerAccounts;
 }
 
 /** The composition root: wires the layers together. */
@@ -114,6 +129,9 @@ export function createAppServices(options: AppServicesOptions): AppServices {
       options.icsFactory ??
       ((subscription) => new IcsCalendarProvider(subscription)),
     platform: options.platform ?? webPlatform,
+    ...(options.createMailServers
+      ? { mailServers: options.createMailServers(registry) }
+      : {}),
     ai: createAiServices(
       options.ai ??
         createWebAiBackend({
@@ -173,6 +191,16 @@ export function createDefaultModules(
             }),
           ]),
       ...microsoft,
+      ...(desktop.imap
+        ? [
+            createImapModule({
+              bridge: desktop.imap.bridge,
+              accounts: desktop.imap.accounts,
+              settings: localStorage,
+              fetch: desktop.fetch,
+            }),
+          ]
+        : []),
       createDemoModule(),
     ];
   }

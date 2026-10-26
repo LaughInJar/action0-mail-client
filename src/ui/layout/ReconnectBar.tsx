@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   useAccounts,
   useAuthExpiry,
@@ -57,7 +57,11 @@ function AccountReconnect({ handle, warnEarly, now }: AccountReconnectProps) {
   const status = useAuthStatus(handle.auth);
   const expiresAt = useAuthExpiry(handle.auth);
   const [error, setError] = useState<string>();
+  const [password, setPassword] = useState("");
+  const passwordId = useId();
   const t = useT();
+  // Mail server accounts sign in again with a password typed right here.
+  const askPassword = handle.auth.reauth === "password";
   const expiringSoon =
     warnEarly &&
     status === "signed-in" &&
@@ -76,18 +80,59 @@ function AccountReconnect({ handle, warnEarly, now }: AccountReconnectProps) {
           ? t.layout.reconnectExpired(handle.account.email)
           : t.layout.reconnectSoon(handle.account.email)}
       </span>
-      <button
-        type="button"
-        onClick={() => {
-          setError(undefined);
-          handle.auth.signIn().catch((cause: unknown) => {
-            setError(errorMessage(cause, t));
-          });
-        }}
-        className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-700 pointer-coarse:min-h-11"
-      >
-        {t.layout.reconnect}
-      </button>
+      {askPassword ? (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setError(undefined);
+            handle.auth.signIn({ password }).then(
+              () => {
+                setPassword("");
+              },
+              (cause: unknown) => {
+                setError(errorMessage(cause, t));
+              },
+            );
+          }}
+        >
+          <label htmlFor={passwordId} className="sr-only">
+            {t.imap.reconnectPassword(handle.account.email)}
+          </label>
+          <input
+            id={passwordId}
+            type="password"
+            autoComplete="current-password"
+            required
+            placeholder={t.imap.password}
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value);
+            }}
+            className="w-40 rounded-md border border-amber-300 bg-white px-2 py-1 text-zinc-900 dark:border-amber-800 dark:bg-zinc-900 dark:text-zinc-100 pointer-coarse:min-h-11"
+          />
+          <button
+            type="submit"
+            disabled={password === ""}
+            className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-700 disabled:opacity-60 pointer-coarse:min-h-11"
+          >
+            {t.layout.reconnect}
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setError(undefined);
+            handle.auth.signIn().catch((cause: unknown) => {
+              setError(errorMessage(cause, t));
+            });
+          }}
+          className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-700 pointer-coarse:min-h-11"
+        >
+          {t.layout.reconnect}
+        </button>
+      )}
       {error !== undefined && (
         <span className="w-full text-red-700 dark:text-red-300">{error}</span>
       )}

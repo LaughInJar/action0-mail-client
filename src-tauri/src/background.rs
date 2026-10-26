@@ -3,8 +3,9 @@
 //! while the app isn't open: it asks each account for unread Inbox mail
 //! that arrived since the last check and returns what to notify. Kept in
 //! `background.json` between runs: whether it's on, the notifications'
-//! texts (in the UI's language), and per account when it last checked and
-//! which messages it notified (ids only, no content).
+//! texts (in the UI's language), and per account when it last checked,
+//! which messages it notified (ids only, no content) and, for IMAP
+//! accounts, the Inbox's highest UID it saw.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
 use std::collections::{BTreeMap, HashMap};
@@ -12,8 +13,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::imap::{self, ImapAccount, ImapAuth, InboxMark, Login, Secret};
 use crate::oauth::providers::{Provider, TokenResponse};
-use crate::vault::{Accounts, StoredAccount};
+use crate::vault::{Accounts, StoredAccount, Vault};
 
 const FILE: &str = "background.json";
 /// Message ids remembered per account (so nothing is notified twice).
@@ -52,6 +54,9 @@ struct Seen {
     checked: u64,
     /// Message ids notified, oldest first.
     notified: Vec<String>,
+    /// IMAP: where the last check got to in the Inbox.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inbox: Option<InboxMark>,
 }
 
 fn load(dir: &Path) -> State {
@@ -113,12 +118,15 @@ impl Default for Apis {
 
 /// Checks every account. `google_tokens`: access tokens of the Google
 /// accounts by account id (from Play services; without one, the account
-/// is skipped). An account seen for the first time only starts counting.
-/// An account whose check fails is tried again next time from where it was.
+/// is skipped). `imap`: the IMAP accounts' vault (Yahoo/AOL refresh tokens
+/// rotate, so it's written too). An account seen for the first time only
+/// starts counting. An account whose check fails is tried again next time
+/// from where it was.
 pub async fn check(
     http: &reqwest::Client,
     dir: &Path,
     accounts: &Accounts,
+    imap: Option<&Vault<ImapAccount>>,
     google_tokens: &HashMap<String, String>,
     now: u64,
     apis: &Apis,
@@ -152,26 +160,109 @@ pub async fn check(
             .filter(|mail| mail.received >= since && !seen.notified.contains(&mail.id))
             .collect();
         seen.checked = now;
-        seen.notified
-            .extend(fresh.iter().map(|mail| mail.id.clone()));
-        let excess = seen.notified.len().saturating_sub(MAX_NOTIFIED);
-        seen.notified.drain(..excess);
-        notices.extend(notices_for(key, account, &fresh, &texts));
+        notices.extend(notify(key, &account.email, seen, fresh, &texts));
+    }
+    let imap_accounts = imap.map(Vault::all).unwrap_or_default();
+    for (key, account) in &imap_accounts {
+        let seen = state.accounts.entry(key.clone()).or_default();
+        let Ok((found, mark)) = imap_new(http, imap, key, account, seen.inbox).await else {
+            continue;
+        };
+        let first = seen
+            .inbox
+            .is_none_or(|before| before.validity != mark.validity);
+        seen.inbox = Some(mark);
+        seen.checked = now;
+        if first {
+            continue;
+        }
+        let fresh: Vec<NewMail> = found
+            .into_iter()
+            .filter(|mail| !seen.notified.contains(&mail.id))
+            .collect();
+        notices.extend(notify(key, &account.address, seen, fresh, &texts));
     }
     // Accounts that are gone are forgotten.
-    state.accounts.retain(|key, _| accounts.contains_key(key));
+    state
+        .accounts
+        .retain(|key, _| accounts.contains_key(key) || imap_accounts.contains_key(key));
     let _ = save(dir, &state);
     notices
 }
 
-fn notices_for(key: &str, account: &StoredAccount, mail: &[NewMail], texts: &Texts) -> Vec<Notice> {
+/// Notes `fresh` as notified and makes its notifications.
+fn notify(
+    key: &str,
+    email: &str,
+    seen: &mut Seen,
+    fresh: Vec<NewMail>,
+    texts: &Texts,
+) -> Vec<Notice> {
+    seen.notified
+        .extend(fresh.iter().map(|mail| mail.id.clone()));
+    let excess = seen.notified.len().saturating_sub(MAX_NOTIFIED);
+    seen.notified.drain(..excess);
+    notices_for(key, email, &fresh, texts)
+}
+
+/// An IMAP account: unread Inbox mail with UIDs after `mark` (the newest
+/// [`MAX_PER_CHECK`]), and where the check got to. Yahoo/AOL get an access
+/// token first; a refresh token that rotated is kept in the vault.
+async fn imap_new(
+    http: &reqwest::Client,
+    vault: Option<&Vault<ImapAccount>>,
+    key: &str,
+    account: &ImapAccount,
+    mark: Option<InboxMark>,
+) -> Result<(Vec<NewMail>, InboxMark), imap::MailServerError> {
+    let (secret, bearer) = match &account.auth {
+        ImapAuth::Password { password } => (password.clone(), false),
+        ImapAuth::OAuth { .. } => {
+            let tokens = imap::renew_access(http, account).await?;
+            if let (Some(rotated), Some(vault)) = (tokens.refresh_token, vault)
+                && let Some(mut kept) = vault.get(key)
+                && let ImapAuth::OAuth { refresh_token, .. } = &mut kept.auth
+            {
+                *refresh_token = rotated;
+                vault.put(key, kept);
+            }
+            (tokens.access_token, true)
+        }
+    };
+    let login = Login {
+        server: &account.settings.imap,
+        username: &account.settings.username,
+        secret: if bearer {
+            Secret::Bearer(&secret)
+        } else {
+            Secret::Password(&secret)
+        },
+    };
+    let tls = imap::tls::Connector::new(account.pinned.as_deref())?;
+    let mut session = imap::session::connect(&login, &tls).await?;
+    let result = imap::new_unread(&mut session, mark, MAX_PER_CHECK).await;
+    session.logout().await;
+    let (found, mark) = result?;
+    let mail = found
+        .into_iter()
+        .map(|unread| NewMail {
+            id: unread.id,
+            from: unread.from,
+            subject: unread.subject,
+            received: u64::try_from(unread.received).unwrap_or_default(),
+        })
+        .collect();
+    Ok((mail, mark))
+}
+
+fn notices_for(key: &str, email: &str, mail: &[NewMail], texts: &Texts) -> Vec<Notice> {
     let enc = |text: &str| {
         percent_encoding::utf8_percent_encode(text, percent_encoding::NON_ALPHANUMERIC).to_string()
     };
     if mail.len() > GROUP_ABOVE {
         return vec![Notice {
             tag: format!("{key}/new"),
-            title: account.email.clone(),
+            title: email.to_string(),
             body: texts
                 .new_messages
                 .replace("{count}", &mail.len().to_string()),
@@ -453,6 +544,13 @@ mod jni_entry {
         vault.persistent().then_some(vault)
     }
 
+    /// The IMAP accounts' vault, with the same key.
+    fn imap_vault(dir: &str, key: &str) -> Option<Vault<crate::imap::ImapAccount>> {
+        let key = STANDARD.decode(key).ok()?;
+        let vault = Vault::open(PathBuf::from(dir).join("imap.vault"), &FixedKey(key));
+        vault.persistent().then_some(vault)
+    }
+
     #[derive(Serialize)]
     struct Account {
         key: String,
@@ -505,6 +603,7 @@ mod jni_entry {
             let Some(vault) = vault(&dir, &key) else {
                 return "[]".to_string();
             };
+            let imap = imap_vault(&dir, &key);
             let tokens: HashMap<String, String> = serde_json::from_str(&tokens).unwrap_or_default();
             let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -521,6 +620,7 @@ mod jni_entry {
                 &http,
                 &PathBuf::from(&dir),
                 &vault.all(),
+                imap.as_ref(),
                 &tokens,
                 now,
                 &super::Apis::default(),
@@ -640,12 +740,12 @@ mod tests {
 
         // The first time only notes when.
         assert!(
-            check(&http, &dir, &accounts, &tokens, NOW, &apis(&server))
+            check(&http, &dir, &accounts, None, &tokens, NOW, &apis(&server))
                 .await
                 .is_empty()
         );
         let later = NOW + 15 * 60 * 1000;
-        let notices = check(&http, &dir, &accounts, &tokens, later, &apis(&server)).await;
+        let notices = check(&http, &dir, &accounts, None, &tokens, later, &apis(&server)).await;
         assert_eq!(
             notices,
             vec![Notice {
@@ -660,6 +760,7 @@ mod tests {
             &http,
             &dir,
             &accounts,
+            None,
             &tokens,
             later + 1000,
             &apis(&server),
@@ -706,8 +807,17 @@ mod tests {
         )]
         .into();
         let none = HashMap::new();
-        check(&http, &dir, &accounts, &none, NOW, &apis(&server)).await;
-        let notices = check(&http, &dir, &accounts, &none, NOW + 900_000, &apis(&server)).await;
+        check(&http, &dir, &accounts, None, &none, NOW, &apis(&server)).await;
+        let notices = check(
+            &http,
+            &dir,
+            &accounts,
+            None,
+            &none,
+            NOW + 900_000,
+            &apis(&server),
+        )
+        .await;
         assert_eq!(
             notices,
             vec![Notice {
@@ -730,18 +840,36 @@ mod tests {
         )]
         .into();
         assert!(
-            check(&http, &dir, &accounts, &HashMap::new(), NOW, &apis(&server))
-                .await
-                .is_empty()
+            check(
+                &http,
+                &dir,
+                &accounts,
+                None,
+                &HashMap::new(),
+                NOW,
+                &apis(&server)
+            )
+            .await
+            .is_empty()
         );
         configure(&dir, true, texts()).unwrap();
-        check(&http, &dir, &accounts, &HashMap::new(), NOW, &apis(&server)).await;
+        check(
+            &http,
+            &dir,
+            &accounts,
+            None,
+            &HashMap::new(),
+            NOW,
+            &apis(&server),
+        )
+        .await;
         // No token for the account: skipped, and no request was made.
         assert!(
             check(
                 &http,
                 &dir,
                 &accounts,
+                None,
                 &HashMap::new(),
                 NOW + 900_000,
                 &apis(&server)
@@ -750,6 +878,136 @@ mod tests {
             .is_empty()
         );
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn notifies_new_unread_imap_mail_once() {
+        use crate::imap::testing::{acceptor, play, self_signed};
+        use crate::imap::{MailServer, MailServerSettings, Security};
+        use crate::vault::FixedKey;
+
+        let dir = temp_dir("imap");
+        configure(&dir, true, texts()).unwrap();
+        let certificate = self_signed(&["localhost"]);
+        let pin = crate::imap::tls::fingerprint(&certificate.0);
+        let tls = acceptor(certificate);
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let login = "
+            S: * OK [CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR] hi
+            C: A0001 AUTHENTICATE PLAIN AHVzZXIAcGFzcw==
+            S: A0001 OK in
+            C: A0002 CAPABILITY
+            S: * CAPABILITY IMAP4rev1
+            S: A0002 OK done
+        ";
+        let first = format!(
+            "{login}
+            C: A0003 EXAMINE \"INBOX\"
+            S: * 5 EXISTS
+            S: * OK [UIDVALIDITY 3] ok
+            S: * OK [UIDNEXT 11] next
+            S: A0003 OK done
+            C: A0004 LOGOUT
+            S: * BYE bye
+            S: A0004 OK done
+            "
+        );
+        let second = format!(
+            "{login}
+            C: A0003 EXAMINE \"INBOX\"
+            S: * 7 EXISTS
+            S: * OK [UIDVALIDITY 3] ok
+            S: * OK [UIDNEXT 13] next
+            S: A0003 OK done
+            C: A0004 UID SEARCH UNSEEN UID 11:*
+            S: * SEARCH 12
+            S: A0004 OK done
+            C: A0005 UID FETCH 12 (UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])
+            S: * 7 FETCH (UID 12 INTERNALDATE \"14-Oct-2026 17:50:00 +0000\" BODY[HEADER.FIELDS (FROM SUBJECT)] {{50}}
+            S: From: Anna <anna@example.org>
+            S: Subject: Lunch?
+            S:
+            S: )
+            S: A0005 OK done
+            C: A0006 LOGOUT
+            S: * BYE bye
+            S: A0006 OK done
+            "
+        );
+        let server = tokio::spawn(async move {
+            for script in [first, second] {
+                let (tcp, _) = listener.accept().await.map_err(|e| e.to_string())?;
+                let mut stream = tls.accept(tcp).await.map_err(|e| e.to_string())?;
+                play(&mut stream, &script).await?;
+            }
+            Ok::<(), String>(())
+        });
+
+        let vault = Vault::open(dir.join("imap.vault"), &FixedKey(vec![7; 32]));
+        let server_settings = MailServer {
+            host: "127.0.0.1".into(),
+            port,
+            security: Security::Tls,
+        };
+        vault.put(
+            "imap:max@example.org",
+            ImapAccount {
+                address: "max@example.org".into(),
+                name: "Max".into(),
+                settings: MailServerSettings {
+                    imap: server_settings.clone(),
+                    smtp: server_settings,
+                    username: "user".into(),
+                },
+                auth: ImapAuth::Password {
+                    password: "pass".into(),
+                },
+                pinned: Some(pin),
+                max_bytes: None,
+            },
+        );
+        let http = http();
+        let none = HashMap::new();
+        let apis = Apis::default();
+        let accounts = Accounts::new();
+        // The first time only notes where the Inbox is.
+        assert!(
+            check(&http, &dir, &accounts, Some(&vault), &none, NOW, &apis)
+                .await
+                .is_empty()
+        );
+        let notices = check(
+            &http,
+            &dir,
+            &accounts,
+            Some(&vault),
+            &none,
+            NOW + 900_000,
+            &apis,
+        )
+        .await;
+        server.await.unwrap().unwrap();
+        assert_eq!(
+            notices,
+            vec![Notice {
+                tag: "imap:max@example.org/l:f:INBOX:3:12".into(),
+                title: "Anna".into(),
+                body: "Lunch?".into(),
+                url: "action0://open?account=imap%3Amax%40example%2Eorg&message=l%3Af%3AINBOX%3A3%3A12"
+                    .into(),
+            }]
+        );
+        let state = load(&dir);
+        assert_eq!(
+            state.accounts["imap:max@example.org"].inbox,
+            Some(InboxMark {
+                validity: 3,
+                last: 12
+            })
+        );
     }
 
     #[test]

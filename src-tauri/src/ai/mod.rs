@@ -16,10 +16,12 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
-use crate::oauth::loopback::{Answer, Loopback, PageTexts};
+use crate::oauth::loopback::{Loopback, PageTexts};
 use crate::oauth::pkce::{Pkce, random_token};
 use crate::oauth::providers::TokenResponse;
-use crate::oauth::{AuthError, RENEW_BEFORE_MS, now_ms, token_request};
+use crate::oauth::{
+    AuthError, Callback, RENEW_BEFORE_MS, browser_round_trip, callback_code, now_ms, token_request,
+};
 use crate::vault::{LazyVault, Vault};
 
 /// Where a key goes in a request.
@@ -70,6 +72,9 @@ pub enum AiSecret {
 
 /// The vault entry with this install's ChatGPT id (service ids are random).
 const HOST_ENTRY: &str = "@chatgpt-host";
+
+/// The app's link an Android sign-in tab comes back to (`msauth://<package>/…`).
+const AUTH_TAB_LINK: &str = "action0-ai";
 
 struct Access {
     token: String,
@@ -313,90 +318,6 @@ fn sign_in_again(message: &str, send: impl Fn(InvokeResponseBody) -> bool) {
         && send(json(&Event::End));
 }
 
-/// The code a sign-in came back with, or why there's none.
-fn callback_code(
-    params: &HashMap<String, String>,
-    state: Option<&str>,
-) -> Result<String, AuthError> {
-    if let Some(state) = state
-        && params.get("state").map(String::as_str) != Some(state)
-    {
-        return Err(AuthError::Provider("The sign-in didn't match.".into()));
-    }
-    if let Some(error) = params.get("error") {
-        let description = params
-            .get("error_description")
-            .cloned()
-            .unwrap_or_else(|| error.clone());
-        return Err(match error.as_str() {
-            "access_denied" => AuthError::Denied(description),
-            _ => AuthError::Provider(description),
-        });
-    }
-    params
-        .get("code")
-        .cloned()
-        .ok_or_else(|| AuthError::Provider("No code came back.".into()))
-}
-
-/// Opens `url` in the browser and waits for it to come back to the
-/// loopback address at `path` with `required`: the query.
-#[cfg(desktop)]
-async fn round_trip(
-    app: &AppHandle,
-    loopback: &Loopback,
-    url: &str,
-    path: &str,
-    required: &str,
-    page: &PageTexts,
-    cancelled: oneshot::Receiver<()>,
-) -> Result<HashMap<String, String>, AuthError> {
-    crate::oauth::open_browser(app, url)?;
-    tokio::select! {
-        result = tokio::time::timeout(
-            crate::oauth::SIGN_IN_TIMEOUT,
-            loopback.wait_for(path, required, Answer::Page(page)),
-        ) => match result {
-            Ok(Ok(params)) => Ok(params),
-            Ok(Err(error)) => Err(AuthError::Network(error.to_string())),
-            Err(_) => Err(AuthError::Cancelled("The sign-in timed out.".into())),
-        },
-        _ = cancelled => Err(AuthError::Cancelled("Another sign-in started.".into())),
-    }
-}
-
-/// Opens `url` in a browser tab and waits for it to come back to the
-/// loopback address at `path` with `required`: the query. The loopback
-/// address sends the browser on to the app's own link, which closes the
-/// tab and brings the app back.
-#[cfg(target_os = "android")]
-async fn round_trip(
-    app: &AppHandle,
-    loopback: &Loopback,
-    url: &str,
-    path: &str,
-    required: &str,
-    _page: &PageTexts,
-    cancelled: oneshot::Receiver<()>,
-) -> Result<HashMap<String, String>, AuthError> {
-    let back = format!("msauth://{}/action0-ai", app.config().identifier);
-    let done = format!("{back}?done");
-    let (tab_url, tab_back) = (url.to_string(), back);
-    let tab = crate::oauth::kotlin(app, move |side| side.auth_tab(&tab_url, &tab_back));
-    tokio::pin!(tab);
-    tokio::select! {
-        biased;
-        result = loopback.wait_for(path, required, Answer::Redirect(&done)) => {
-            result.map_err(|error| AuthError::Network(error.to_string()))
-        }
-        result = &mut tab => match result {
-            Err(error) => Err(error),
-            Ok(_) => Err(AuthError::Cancelled("The sign-in didn't come back.".into())),
-        },
-        _ = cancelled => Err(AuthError::Cancelled("Another sign-in started.".into())),
-    }
-}
-
 /// The services with a key or sign-in kept.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -558,16 +479,13 @@ pub async fn ai_openrouter_sign_in(
         .map_err(|e| AuthError::Network(e.to_string()))?;
     let pkce = Pkce::new();
     let url = openrouter::auth_url(&openrouter::callback_url(loopback.port), &pkce.challenge);
-    let params = round_trip(
-        &app,
-        &loopback,
-        &url,
-        openrouter::CALLBACK_PATH,
-        "code",
-        &page,
-        cancelled,
-    )
-    .await?;
+    let callback = Callback {
+        path: openrouter::CALLBACK_PATH,
+        required: "code",
+        page: &page,
+        link: AUTH_TAB_LINK,
+    };
+    let params = browser_round_trip(&app, &loopback, &url, &callback, cancelled).await?;
     let code = callback_code(&params, None)?;
     let response = ai
         .http
@@ -633,16 +551,13 @@ pub async fn ai_chatgpt_sign_in(
         nonce: &nonce,
         host_id: &host_id,
     });
-    let params = round_trip(
-        &app,
-        &loopback,
-        &url,
-        chatgpt::CALLBACK_PATH,
-        "state",
-        &page,
-        cancelled,
-    )
-    .await?;
+    let callback = Callback {
+        path: chatgpt::CALLBACK_PATH,
+        required: "state",
+        page: &page,
+        link: AUTH_TAB_LINK,
+    };
+    let params = browser_round_trip(&app, &loopback, &url, &callback, cancelled).await?;
     let code = callback_code(&params, Some(&state))?;
     // A new install is told its client id on the way back.
     let client_id = params
@@ -795,29 +710,6 @@ mod tests {
             &FixedKey(vec![7; 32]),
         );
         assert_eq!(reopened.get(HOST_ENTRY), Some(AiSecret::Host { id: host }));
-    }
-
-    #[test]
-    fn reads_what_the_sign_in_brought_back() {
-        let params = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
-            pairs
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect()
-        };
-        assert_eq!(
-            callback_code(&params(&[("code", "c"), ("state", "s")]), Some("s")),
-            Ok("c".into())
-        );
-        assert!(callback_code(&params(&[("code", "c"), ("state", "x")]), Some("s")).is_err());
-        assert_eq!(
-            callback_code(&params(&[("error", "access_denied")]), None),
-            Err(AuthError::Denied("access_denied".into()))
-        );
-        assert_eq!(
-            callback_code(&params(&[("code", "c")]), None),
-            Ok("c".into())
-        );
     }
 
     #[tokio::test]

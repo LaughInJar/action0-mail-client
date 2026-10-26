@@ -78,6 +78,13 @@ export interface ProviderCapabilities {
    * provider (Gmail), or only in this browser (Graph can't read Outlook's).
    */
   readonly signatureStore: "provider" | "browser";
+  /**
+   * Whose words the interface uses for mailboxes with a role: Gmail's
+   * ("Spam", "Starred"), Outlook's ("Junk Email", "Deleted Items") or a
+   * mail program's ("Junk", "Trash", "Flagged"). Unset: Outlook's for
+   * folder accounts, else Gmail's.
+   */
+  readonly roleNames?: "gmail" | "outlook" | "client";
 }
 
 /** Date order of a message list. */

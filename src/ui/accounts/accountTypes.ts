@@ -2,8 +2,7 @@ import type { ProviderType } from "../../core/model";
 
 /** A card in the "Add account" type selection (its texts: `t.accounts.types`). */
 export interface AccountTypeCard {
-  /** A provider type, or a placeholder for one that isn't built yet. */
-  readonly type: ProviderType | "imap";
+  readonly type: ProviderType;
   /** Short mark shown on the card (no brand logos). */
   readonly mark: string;
   /** Not built yet: shown greyed out. */
@@ -14,7 +13,7 @@ export interface AccountTypeCard {
 export const ACCOUNT_TYPE_CARDS: readonly AccountTypeCard[] = [
   { type: "gmail", mark: "G" },
   { type: "microsoft", mark: "M" },
-  { type: "imap", mark: "@", comingLater: true },
+  { type: "imap", mark: "@" },
   { type: "demo", mark: "D" },
 ];
 

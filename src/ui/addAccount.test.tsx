@@ -100,7 +100,7 @@ describe("Add account dialog", () => {
     ).toBeEnabled();
     expect(
       within(dialog).getByRole("button", {
-        name: /^Other mail server.*Coming later/,
+        name: /^Other mail server.*In the desktop and Android apps/,
       }),
     ).toBeDisabled();
     // Neither modules nor setups for Google and Microsoft in this test.

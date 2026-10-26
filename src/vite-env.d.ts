@@ -12,6 +12,12 @@ interface ImportMetaEnv {
   readonly VITE_GOOGLE_DESKTOP_CLIENT_ID?: string;
   /** Desktop app: that client's secret (not confidential for desktop apps). */
   readonly VITE_GOOGLE_DESKTOP_CLIENT_SECRET?: string;
+  /** Apps: Yahoo's app registration for mail (Yahoo approves it by hand). */
+  readonly VITE_YAHOO_CLIENT_ID?: string;
+  readonly VITE_YAHOO_CLIENT_SECRET?: string;
+  /** Apps: AOL's app registration for mail (a separate one). */
+  readonly VITE_AOL_CLIENT_ID?: string;
+  readonly VITE_AOL_CLIENT_SECRET?: string;
 }
 
 interface ImportMeta {

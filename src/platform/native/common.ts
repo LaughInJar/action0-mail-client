@@ -1,7 +1,9 @@
 /** What the desktop and Android platforms share. */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { AiBackend } from "../../ai/backend";
+import type { MailServerAccountInfo } from "../../accounts/mailServer";
 import type { NativeAccount, NativeAuthBridge } from "../../auth/native/bridge";
+import type { ImapBridge } from "../../providers/imap/bridge";
 import type { Platform } from "../types";
 import type { Invoke } from "./nativeFetch";
 
@@ -15,6 +17,11 @@ export interface NativeStart {
   readonly accounts: ReadonlyMap<string, NativeAccount>;
   /** The AI assistant's keys and requests, kept and made natively. */
   readonly ai: AiBackend;
+  /** IMAP/SMTP accounts: the bridge, and the accounts kept from earlier starts. */
+  readonly imap: {
+    readonly bridge: ImapBridge;
+    readonly accounts: ReadonlyMap<string, MailServerAccountInfo>;
+  };
 }
 
 /** Tauri's `invoke`, with request headers. */

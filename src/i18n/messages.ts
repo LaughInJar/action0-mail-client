@@ -7,6 +7,7 @@ import { common } from "./texts/common";
 import { composer } from "./texts/composer";
 import { desktop } from "./texts/desktop";
 import { errors } from "./texts/errors";
+import { imap } from "./texts/imap";
 import { categories, folders, labels } from "./texts/labels";
 import { layout } from "./texts/layout";
 import { list } from "./texts/list";
@@ -34,6 +35,7 @@ export const messages = {
     composer: composer.en,
     desktop: desktop.en,
     errors: errors.en,
+    imap: imap.en,
     categories: categories.en,
     folders: folders.en,
     labels: labels.en,
@@ -57,6 +59,7 @@ export const messages = {
     composer: composer.de,
     desktop: desktop.de,
     errors: errors.de,
+    imap: imap.de,
     categories: categories.de,
     folders: folders.de,
     labels: labels.de,

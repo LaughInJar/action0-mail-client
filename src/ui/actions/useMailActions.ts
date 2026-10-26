@@ -40,7 +40,7 @@ import { errorMessage } from "../common/errorMessage";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { routeOfRow, useCurrentList } from "../messages/useCurrentList";
 import { useT } from "../../i18n/context";
-import { mailboxName, usesFolders } from "../common/mailboxNames";
+import { mailboxName, roleNamesOf } from "../common/mailboxNames";
 
 /** `exact`: the keys are messages, not rows (never whole conversations). */
 export interface ExactOption {
@@ -247,7 +247,12 @@ export function useMailActions(): MailActions {
       const all =
         sources.get(accountId)?.mailboxes ??
         cachedMailboxes(queryClient, accountId);
-      return found ? mailboxName(found, t, usesFolders(all)) : a.theMailbox;
+      const capabilities = handles.find(
+        (handle) => handle.account.id === accountId,
+      )?.provider.capabilities;
+      return found
+        ? mailboxName(found, t, roleNamesOf(all, capabilities))
+        : a.theMailbox;
     };
 
     const targets = (): MessageKey[] => {

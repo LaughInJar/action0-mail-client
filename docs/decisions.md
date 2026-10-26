@@ -138,6 +138,18 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 
 **Trade-offs.** OpenAI's API from a browser and the Android sign-ins depend on the services' behaviour; mail is only as private as the service the user picks (Settings shows each one's terms, and warns about Gemini's free tier); and a mail can try to instruct the AI, which can't act but could write something misleading the user then reads.
 
+## IMAP in the apps' native side, without a proxy or a local copy
+
+**Context.** Many providers offer only IMAP and SMTP. Browsers can't open those connections, and the web app has no server.
+
+**Decision.** IMAP/SMTP accounts exist in the desktop and Android apps, where Rust talks to the servers: connections, TLS, the vault-kept password, parsing, sync and IDLE; TypeScript maps that onto the existing provider contract like it maps Graph, so the UI didn't change. Settings are looked up like Thunderbird does; passwords (app passwords) are the normal sign-in, Yahoo/AOL OAuth is built in for registrations Yahoo approved. Untrusted certificates can be trusted once, while adding the account.
+
+**Why no proxy.** A proxy would need a server that sees every password and every mail; running one locally just to serve the web app would be a desktop app with extra steps.
+
+**Why no local copy.** Clients like Thunderbird keep an offline copy of the mailbox. That conflicts with "never persist mail content long-term", needs a sync engine and makes the first start slow; loading what's on screen from the server (with in-memory caches) is how the Gmail and Outlook accounts already work.
+
+**Trade-offs.** Lists load from the server after a start; servers without `EMAILID` give moved messages new ids after a restart; conversations are found by headers, which costs a search when one opens; an own small SMTP client instead of `lettre`, because that one can't use action0's TLS checks and trusted certificates.
+
 ## All inboxes: per-account lists, merged; a context account
 
 **Context.** All inboxes shows every account's Inbox as one list, while everything else (reader, replies, shortcuts like `g i`) was built around one account per route.

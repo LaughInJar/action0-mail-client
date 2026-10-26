@@ -3,6 +3,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { useEffect, type ReactNode } from "react";
 import {
   AccountRegistryContext,
+  MailServerAccountsContext,
   ProviderSetupContext,
 } from "../accounts/context";
 import { AiServicesContext } from "../ai/context";
@@ -59,7 +60,9 @@ export function AppProviders({
               <IcsFactoryContext value={services.icsFactory}>
                 <PlatformContext value={services.platform}>
                   <AiServicesContext value={services.ai}>
-                    <I18nProvider>{children}</I18nProvider>
+                    <MailServerAccountsContext value={services.mailServers}>
+                      <I18nProvider>{children}</I18nProvider>
+                    </MailServerAccountsContext>
                   </AiServicesContext>
                 </PlatformContext>
               </IcsFactoryContext>
