@@ -5,6 +5,7 @@ import type {
 import type { ProviderModule } from "../../accounts/types";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
+import { SenderStore } from "../senderStore";
 import type { ImapBridge } from "./bridge";
 import { ImapProvider } from "./ImapProvider";
 import { ImapSession } from "./ImapSession";
@@ -14,15 +15,10 @@ export interface ImapModuleOptions {
   readonly bridge: ImapBridge;
   /** Accounts kept at earlier starts: their settings and names. */
   readonly accounts: ReadonlyMap<string, MailServerAccountInfo>;
-  /** Where signatures are kept (localStorage). */
+  /** Where From addresses and signatures are kept (localStorage). */
   readonly settings: Storage | undefined;
   /** For one-click unsubscribe (the native fetch). */
   readonly fetch?: typeof fetch;
-}
-
-/** localStorage key of an account's signatures (IMAP servers keep none). */
-export function signaturesKey(accountId: string): string {
-  return `a0.settings.signatures.${accountId}`;
 }
 
 /** SMTP servers that put a copy of sent mail into Sent themselves. */
@@ -78,8 +74,7 @@ export function createImapModule(options: ImapModuleOptions): ProviderModule {
         service: service(account),
         ...(info?.maxBytes === undefined ? {} : { maxBytes: info.maxBytes }),
         savesSent: SAVES_SENT.test(info?.settings.smtp.host ?? ""),
-        settings: options.settings,
-        signatureKey: signaturesKey(account.id),
+        senders: new SenderStore(options.settings, account.id),
         ...(options.fetch ? { fetch: options.fetch } : {}),
         onAuthFailed: () => {
           auth.markExpired();

@@ -57,6 +57,8 @@ const enReasons: Reasons = {
   mailTooBig: () =>
     "The mail server refused the mail: it’s too big. Remove some attachments.",
   mailRejected: (p) => `The mail server refused the mail: ${p.detail ?? ""}`,
+  sendAsDenied: (p) =>
+    `Outlook didn’t allow sending as ${p.address ?? ""}. The account may only send from addresses Microsoft lets it use (for work accounts: “Send as” permission from the administrator).`,
   attachmentUploadBlocked: (p) =>
     `“${p.name ?? ""}” couldn’t be uploaded: Outlook’s upload server didn’t answer. Files of up to 3 MB always work.`,
   attachmentUploadInterrupted: (p) =>
@@ -134,6 +136,8 @@ const deReasons: Reasons = {
     "Der Mailserver hat die Mail abgelehnt: Sie ist zu groß. Entferne ein paar Anhänge.",
   mailRejected: (p) =>
     `Der Mailserver hat die Mail abgelehnt: ${p.detail ?? ""}`,
+  sendAsDenied: (p) =>
+    `Outlook hat das Senden als ${p.address ?? ""} nicht erlaubt. Das Konto darf nur von Adressen senden, die Microsoft ihm erlaubt (bei Arbeitskonten: Berechtigung „Senden als“ vom Administrator).`,
   attachmentUploadBlocked: (p) =>
     `„${p.name ?? ""}“ konnte nicht hochgeladen werden: Der Upload-Server von Outlook hat nicht geantwortet. Dateien bis 3 MB klappen immer.`,
   attachmentUploadInterrupted: (p) =>

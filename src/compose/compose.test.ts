@@ -4,7 +4,13 @@ import type { Message } from "../core/model";
 import { editorHtmlToMail, htmlToText, textToHtml } from "./html";
 import { messages } from "../i18n/messages";
 import { forwardQuote, replyQuote, splitQuote, type QuoteTexts } from "./quote";
-import { draftInputOf, mailBody, mailHtmlToEditor, sentBytes } from "./session";
+import {
+  draftInputOf,
+  mailBody,
+  mailHtmlToEditor,
+  sendingAs,
+  sentBytes,
+} from "./session";
 import { splitSignature } from "./signature";
 
 const english: QuoteTexts = {
@@ -143,6 +149,64 @@ describe("draftInputOf", () => {
     // The text doesn't show the picture, so it's left out.
     expect(input.attachments.map((a) => a.id)).toEqual(["file"]);
     expect(input).toMatchObject({ html: "<div>Hello</div>", text: "Hello" });
+  });
+});
+
+describe("sendingAs", () => {
+  const plain = {
+    address: "me@example.com",
+    name: "Me",
+    isDefault: true,
+    signature: "<b>Me</b>",
+  };
+  const shop = {
+    address: "shop@example.org",
+    isDefault: false,
+    signature: "",
+    replyTo: { address: "desk@example.org" },
+    bccSelf: true,
+  };
+  const anna = { address: "anna@example.org" };
+
+  it("brings the address's Reply-To and Bcc copy, and takes the previous copy away", () => {
+    const asShop = sendingAs(shop, { bcc: [anna] }, plain);
+    expect(asShop).toEqual({
+      from: { address: "shop@example.org" },
+      signature: { address: "shop@example.org", html: "" },
+      replyTo: [{ address: "desk@example.org" }],
+      bcc: [anna, { address: "shop@example.org" }],
+      showCcBcc: true,
+    });
+    expect(sendingAs(plain, asShop, shop)).toEqual({
+      from: { address: "me@example.com", name: "Me" },
+      signature: { address: "me@example.com", html: "<b>Me</b>" },
+      replyTo: [],
+      bcc: [anna],
+    });
+    // A removed signature stays removed; the copy isn't added twice.
+    expect(
+      sendingAs(shop, {
+        bcc: [{ address: "SHOP@example.org" }],
+        signature: null,
+      }),
+    ).toMatchObject({
+      signature: null,
+      bcc: [{ address: "SHOP@example.org" }],
+    });
+  });
+
+  it("puts Reply-To into the draft", () => {
+    expect(
+      draftInputOf({
+        to: [anna],
+        cc: [],
+        bcc: [],
+        subject: "Hi",
+        body: "<p>Hi</p>",
+        attachments: [],
+        replyTo: [{ address: "desk@example.org" }],
+      }).replyTo,
+    ).toEqual([{ address: "desk@example.org" }]);
   });
 });
 

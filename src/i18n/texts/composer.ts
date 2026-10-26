@@ -20,6 +20,14 @@ const en = {
     `With ${plural(count, "this file", "these files")} the mail would carry ${size} of attachments; the limit is ${limit}.`,
   tooBigForAccount: (email: string, limit: string) =>
     `The attachments are too big for ${email}: its limit is ${limit}.`,
+  notSetUp: (address: string) => `${address} (not set up)`,
+  addThisAddress: "Add this address",
+  addThisAddressHint: (address: string) =>
+    `Keep ${address} as one of your addresses, with its own signature and settings.`,
+  addressAdded: (address: string) => `${address} is now one of your addresses.`,
+  couldntAddAddress: (why: string) => `Couldn’t add the address: ${why}`,
+  addAnAddress: "Add an address…",
+  removeReplyTo: "Remove Reply to from this mail",
   tooBigToAttach: (size: string, limit: string) =>
     `Too big to attach: the mail would carry ${size}; the limit is ${limit}.`,
   retry: "Retry",
@@ -112,6 +120,15 @@ const de: typeof en = {
     `Mit ${plural(count, "dieser Datei", "diesen Dateien")} hätte die Mail ${size} an Anhängen, erlaubt sind ${limit}.`,
   tooBigForAccount: (email, limit) =>
     `Die Anhänge sind zu groß für ${email}: erlaubt sind ${limit}.`,
+  notSetUp: (address) => `${address} (nicht eingerichtet)`,
+  addThisAddress: "Diese Adresse hinzufügen",
+  addThisAddressHint: (address) =>
+    `${address} als eine deiner Adressen behalten, mit eigener Signatur und eigenen Einstellungen.`,
+  addressAdded: (address) => `${address} ist jetzt eine deiner Adressen.`,
+  couldntAddAddress: (why) =>
+    `Die Adresse konnte nicht hinzugefügt werden: ${why}`,
+  addAnAddress: "Adresse hinzufügen …",
+  removeReplyTo: "„Antwort an“ aus dieser Mail entfernen",
   tooBigToAttach: (size, limit) =>
     `Zu groß zum Anhängen: Die Mail hätte ${size}, erlaubt sind ${limit}.`,
   retry: "Wiederholen",

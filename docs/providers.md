@@ -31,7 +31,7 @@ How requests flow from a click to a provider is described in [architecture.md](a
 | Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                   |
 | Live updates       | `changesSince`                                                                                                                                       |
 | Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                                    |
-| Other              | `oneClickUnsubscribe`, `listSenders`, `updateSignature`                                                                                              |
+| Other              | `oneClickUnsubscribe`, `listSenders`, `saveSenders`, `catchAllDomains`, `updateSignature`                                                            |
 
 Lists take a `ListMessagesQuery` and return one `Page`:
 
@@ -265,6 +265,7 @@ Outgoing mail is a raw MIME message built by `buildMessage` (`src/providers/mime
 - `searchContacts` searches the People API's `people:searchContacts` and `otherContacts:search` together. Google asks for one empty search before real ones, so the first call warms up once. A 403 becomes `unavailable` with `peopleApiDisabled` (the API isn't enabled in the Google Cloud project) or `contactsDeclined`.
 - `listSenders` lists the send-as addresses (`settings/sendAs`) that are primary or verified, the default first, with their signatures as Gmail stores them.
 - `updateSignature` patches `settings/sendAs/{address}`; a 403 (the optional settings scope was declined) becomes `unavailable` with `settingsNotAllowed`.
+- `editSenders` is off: Gmail manages its own addresses, so `saveSenders` rejects and `catchAllDomains` is empty. Drafts carry `Reply-To` when the composer has one.
 - `oneClickUnsubscribe` is shared with Graph (`src/providers/oneClickUnsubscribe.ts`): an RFC 8058 POST with no cookies and no referrer, sent `no-cors`, so only "reached" or "unreachable" can be told apart.
 
 ## Microsoft Graph
@@ -281,7 +282,7 @@ Outgoing mail is a raw MIME message built by `buildMessage` (`src/providers/mime
 
 ### Module
 
-`createMicrosoftModule` signs in with an MSAL popup (`acquireTokenPopup`) for `GRAPH_SCOPES` (`Mail.ReadWrite`, `Mail.Send`, `People.Read`, `User.Read`, `MailboxSettings.ReadWrite`, `offline_access`; `src/auth/microsoft/msal.ts`) and asks for consent to `Calendars.ReadWrite` in the same popup. The account id is `microsoft:<lowercased sign-in name>`. Personal accounts (the personal tenant id, or an outlook/hotmail/live/msn address) get the lower attachment limit. Signatures are stored in localStorage under `a0.settings.signatures.<accountId>`, because Graph can't read or write Outlook's.
+`createMicrosoftModule` signs in with an MSAL popup (`acquireTokenPopup`) for `GRAPH_SCOPES` (`Mail.ReadWrite`, `Mail.Send`, `People.Read`, `User.Read`, `MailboxSettings.ReadWrite`, `offline_access`; `src/auth/microsoft/msal.ts`) and asks for consent to `Calendars.ReadWrite` in the same popup. The account id is `microsoft:<lowercased sign-in name>`. Personal accounts (the personal tenant id, or an outlook/hotmail/live/msn address) get the lower attachment limit. Signatures, further From addresses and catch-all domains are stored in localStorage (`SenderStore`, see [IMAP's senders](#senders-and-signatures)), because Graph can't read or write Outlook's signatures or list "send as" addresses.
 
 ### HTTP client
 
@@ -363,7 +364,8 @@ One poll sends all delta links in one `$batch`. New or deleted folders in the tr
 ### Contacts, senders and invitations
 
 - `searchContacts` searches `me/people` (people you correspond with); a 403 or 400 becomes `unavailable` (`peopleUnavailable`).
-- `listSenders` returns only the account's own address, with the signature stored in this browser; `updateSignature` writes it there (`capabilities.signatureStore` is `browser`).
+- `listSenders` returns the account's own address (`me`, asked once) and the ones the user added, with the signatures stored in this browser (`SenderStore`); `saveSenders`, `catchAllDomains` and `updateSignature` keep theirs there too (`signatureStore` is `browser`, `editSenders` is on).
+- Drafts carry `from` (the chosen address) and `replyTo`. Outlook decides whether the account may send as that address when sending: `ErrorSendAsDenied` becomes a `sendAsDenied` error that names the address.
 - Outlook's invitations, cancellations and answers are event messages: `getMessage` reads the event's `iCalUId` and maps `meetingMessageType` to the invitation's `method` (`toInvitation`). A failed lookup just leaves the invitation out.
 
 ## IMAP and SMTP
@@ -390,7 +392,7 @@ Like Graph: archive, trash and spam move into the folder with that role, which `
 
 ### Senders and signatures
 
-The account sends from its own address with the name given when adding it (aliases aren't supported yet). Signatures are kept in this app under `a0.settings.signatures.<accountId>`, like Microsoft's. There are no contacts (`contacts: false`): address suggestions come from recent mail.
+`SenderStore` (`src/providers/senderStore.ts`) keeps what IMAP servers and Graph can't: an account's further From addresses with their settings and its catch-all domains under `a0.settings.senders.<accountId>`, and the signatures under `a0.settings.signatures.<accountId>`. The account's own address (with the name given when adding it) is always first and can't be removed; removing an address drops its signature. Mail goes out from whatever address the draft names: it's the `From` header and the SMTP sender, and the server decides whether it accepts it. There are no contacts (`contacts: false`): address suggestions come from recent mail.
 
 ## Calendars
 
@@ -453,7 +455,7 @@ Each account module creates a calendar provider next to the mail provider (`crea
 
 Like Gmail, messages in Spam or Trash show up only there. Search matches plain words (case- and accent-insensitive) in subject, sender, recipients and snippet; there are no operators. Cursors are offsets, and `changesSince` reads a change log with a version number as its token.
 
-Options and switches for tests: `latencyMs` (simulated network delay), `failWrites` (every write fails, to exercise rollback), `contactsUnavailable`, `signaturesReadOnly`, `oneClickRequests` (the unsubscribe URLs it "sent"), and `arrivals`, which lets a new message "arrive" every so often; the arrival is checked inside `changesSince`, so no timers run in the provider.
+Its data can turn on `editSenders` (addresses managed in action0, as for IMAP and Outlook; `src/ui/fromAddresses.test.tsx`). Options and switches for tests: `latencyMs` (simulated network delay), `failWrites` (every write fails, to exercise rollback), `contactsUnavailable`, `signaturesReadOnly`, `oneClickRequests` (the unsubscribe URLs it "sent"), and `arrivals`, which lets a new message "arrive" every so often; the arrival is checked inside `changesSince`, so no timers run in the provider.
 
 ### `FakeCalendarProvider`
 

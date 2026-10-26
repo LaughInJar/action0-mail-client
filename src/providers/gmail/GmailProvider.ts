@@ -251,6 +251,8 @@ export class GmailProvider implements MailProvider {
     },
     threads: true,
     senders: true,
+    // Gmail lists its own send-as addresses.
+    editSenders: false,
     rawSource: true,
     signatureStore: "provider",
   };
@@ -444,6 +446,7 @@ export class GmailProvider implements MailProvider {
       id: asDraftId(draft.id),
       messageId: message.id,
       ...(from ? { from } : {}),
+      ...(message.replyTo.length ? { replyTo: message.replyTo } : {}),
       to: message.to,
       cc: message.cc,
       bcc: message.bcc,
@@ -725,6 +728,17 @@ export class GmailProvider implements MailProvider {
       .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
   }
 
+  /** Send-as addresses are managed in Gmail's settings. */
+  saveSenders(): Promise<void> {
+    return Promise.reject(
+      new MailError("unavailable", "Gmail manages its own addresses."),
+    );
+  }
+
+  catchAllDomains(): Promise<readonly string[]> {
+    return Promise.resolve([]);
+  }
+
   /** Needs the `gmail.settings.basic` permission; without it: `unavailable`. */
   async updateSignature(
     address: string,
@@ -827,6 +841,7 @@ export class GmailProvider implements MailProvider {
     // Without a From header Gmail uses the account's default address.
     return buildMessage({
       ...(draft.from ? { from: draft.from } : {}),
+      ...(draft.replyTo ? { replyTo: draft.replyTo } : {}),
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,

@@ -52,6 +52,8 @@ export const queryKeys = {
   thread: (accountId: AccountId, threadId: ThreadId) =>
     ["acct", accountId, "thread", threadId] as const,
   senders: (accountId: AccountId) => ["acct", accountId, "senders"] as const,
+  /** Domains whose every address is the user's (accounts with `editSenders`). */
+  catchAll: (accountId: AccountId) => ["acct", accountId, "catchAll"] as const,
   message: (accountId: AccountId, messageId: MessageId) =>
     ["acct", accountId, "message", messageId] as const,
   /** A message's raw source ("Show original"): memory only. */

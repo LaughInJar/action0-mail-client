@@ -33,6 +33,8 @@ export interface OutgoingMessage {
   readonly date?: Date;
   /** The message's own `Message-ID`, with angle brackets (see {@link newMessageId}). */
   readonly messageId?: string;
+  /** Where replies should go. */
+  readonly replyTo?: readonly EmailAddress[];
 }
 
 /** Options of {@link buildMessage}. */
@@ -72,6 +74,7 @@ export function buildMessage(
   const headers: string[] = [];
   if (message.from) headers.push(addressHeader("From", [message.from]));
   for (const [name, list] of [
+    ["Reply-To", message.replyTo ?? []],
     ["To", message.to],
     ["Cc", message.cc],
     ["Bcc", withoutBcc ? [] : message.bcc],

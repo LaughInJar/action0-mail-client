@@ -127,4 +127,51 @@ describe("replyFrom", () => {
     );
     expect(defaultSender([])).toBeUndefined();
   });
+
+  const named: Sender[] = [
+    { address: "me@example.com", name: "Me", isDefault: true, signature: "M" },
+    { address: "shop@example.org", isDefault: false, signature: "S" },
+  ];
+
+  it("offers a +tag of one of your addresses, not set up, with that address's signature", () => {
+    const tagged = original({
+      to: [bob, { address: "Shop+Orders@example.org" }],
+      cc: [],
+    });
+    expect(replyFrom(tagged, named, { catchAll: [] })).toEqual({
+      address: "Shop+Orders@example.org",
+      name: "Me",
+      isDefault: false,
+      signature: "S",
+      setUp: false,
+    });
+    // Only for accounts whose addresses are managed in action0.
+    expect(replyFrom(tagged, named)?.address).toBe("me@example.com");
+  });
+
+  it("offers any address at a catch-all domain, but only an opted-in one", () => {
+    const toInfo = original({
+      to: [{ address: "info@Family.example" }],
+      cc: [],
+    });
+    expect(
+      replyFrom(toInfo, named, { catchAll: ["family.example"] }),
+    ).toMatchObject({
+      address: "info@Family.example",
+      name: "Me",
+      signature: "M",
+      setUp: false,
+    });
+    expect(replyFrom(toInfo, named, { catchAll: [] })?.address).toBe(
+      "me@example.com",
+    );
+    // A set-up address the mail also went to comes first.
+    expect(
+      replyFrom(
+        original({ to: [{ address: "info@family.example" }, me], cc: [] }),
+        named,
+        { catchAll: ["family.example"] },
+      )?.address,
+    ).toBe("me@example.com");
+  });
 });

@@ -88,6 +88,8 @@ export interface DraftInput {
   readonly threading?: Threading;
   /** One of the account's {@link Sender} addresses; the provider's default if absent. */
   readonly from?: EmailAddress;
+  /** Where replies should go (the `Reply-To` header), if not to From. */
+  readonly replyTo?: readonly EmailAddress[];
 }
 
 /** A saved draft. */
@@ -156,18 +158,52 @@ export function replyRecipients(
 /**
  * The address to answer `original` from: the one of yours it was sent to
  * (To, then Cc), or else your default. Undefined without senders.
+ *
+ * With `unlisted` (accounts whose addresses the user manages in action0),
+ * an address that isn't set up counts too: a `+tag` of one of yours, or
+ * any address at a `catchAll` domain. It comes back with `setUp: false`,
+ * your default's name, and the signature of the address it tags (else
+ * your default's).
  */
 export function replyFrom(
   original: Message,
   senders: readonly Sender[],
+  unlisted?: { readonly catchAll: readonly string[] },
 ): Sender | undefined {
-  for (const recipient of [...original.to, ...original.cc]) {
+  const recipients = [...original.to, ...original.cc];
+  for (const recipient of recipients) {
     const mine = senders.find((sender) =>
       sameAddress(sender.address, recipient.address),
     );
     if (mine) return mine;
   }
-  return defaultSender(senders);
+  const fallback = defaultSender(senders);
+  if (!unlisted) return fallback;
+  // Not set up, but yours: a +tag of one of your addresses, or any address
+  // at a domain marked as catch-all.
+  const domains = new Set(
+    unlisted.catchAll.map((domain) => domain.toLowerCase()),
+  );
+  for (const { address } of recipients) {
+    const tagged = senders.find((sender) =>
+      sameAddress(withoutTag(address), sender.address),
+    );
+    const domain = address.split("@").at(-1)?.toLowerCase() ?? "";
+    if (tagged !== undefined || domains.has(domain))
+      return {
+        address,
+        ...(fallback?.name ? { name: fallback.name } : {}),
+        isDefault: false,
+        signature: (tagged ?? fallback)?.signature ?? "",
+        setUp: false,
+      };
+  }
+  return fallback;
+}
+
+/** An address without its `+tag` (`me+shop@x` → `me@x`). */
+function withoutTag(address: string): string {
+  return address.replace(/\+[^@]*@/, "@");
 }
 
 /** The sender for new mail. */
