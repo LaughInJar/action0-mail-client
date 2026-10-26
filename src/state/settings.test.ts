@@ -31,6 +31,22 @@ describe("parseSettings", () => {
     });
   });
 
+  it("keeps spelling languages that are language tags", () => {
+    expect(
+      parseSettings({
+        spellcheck: false,
+        spellLanguages: ["de-AT", "en", "de_AT", "<b>", 7],
+      }),
+    ).toEqual({
+      ...DEFAULT_SETTINGS,
+      spellcheck: false,
+      spellLanguages: ["de-AT", "en"],
+    });
+    expect(parseSettings({ spellLanguages: "de-AT" }).spellLanguages).toEqual(
+      [],
+    );
+  });
+
   it("keeps the newest trusted senders when there are too many", () => {
     const many = Array.from(
       { length: MAX_TRUSTED_SENDERS + 2 },

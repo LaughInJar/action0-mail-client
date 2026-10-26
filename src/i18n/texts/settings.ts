@@ -45,6 +45,25 @@ const en = {
   trustedSenders: "Trusted senders",
   removeSender: (address: string) => `Remove ${address}`,
 
+  spelling: "Check spelling",
+  spellingHint: "Underlines misspelled words in mail, signatures and events.",
+  spellingLanguages: "Languages",
+  lookingForDictionaries: "Looking for dictionaries…",
+  spellingLinux:
+    "Right-click an underlined word for suggestions. For more languages, install their hunspell dictionary (e.g. hunspell-fr) and open Settings again.",
+  noDictionaries:
+    "No dictionaries found. Install your distribution’s hunspell dictionaries (e.g. hunspell-de, hunspell-en-us), then open Settings again.",
+  dictionariesNotLoaded:
+    "The dictionaries couldn’t be loaded, so nothing is checked.",
+  spellingWeb:
+    "Your browser checks spelling in the languages set in it: in Chrome and Edge under Settings → Languages, in Firefox by right-clicking in the text → Languages.",
+  spellingWindows:
+    "Windows checks spelling in its display language (Settings → Time & language → Language & region). Right-click an underlined word for suggestions.",
+  spellingMac:
+    "macOS recognises the language by itself; the languages are under System Settings → Keyboard → Text Input → Edit. Right-click an underlined word for suggestions.",
+  spellingAndroid:
+    "Android checks spelling with its own spell checker (Settings → System → Keyboard → Spell checker). Tap an underlined word for suggestions.",
+
   undoSend: "Undo send",
   sendRightAway: "Off: send right away",
   seconds: (seconds: number) => `${seconds} seconds`,
@@ -123,6 +142,26 @@ const de: typeof en = {
   noTrustedSenders: "Noch keine vertrauenswürdigen Absender.",
   trustedSenders: "Vertrauenswürdige Absender",
   removeSender: (address) => `${address} entfernen`,
+
+  spelling: "Rechtschreibung prüfen",
+  spellingHint:
+    "Unterstreicht falsch geschriebene Wörter in Mails, Signaturen und Terminen.",
+  spellingLanguages: "Sprachen",
+  lookingForDictionaries: "Wörterbücher werden gesucht …",
+  spellingLinux:
+    "Rechtsklick auf ein unterstrichenes Wort zeigt Vorschläge. Für weitere Sprachen installiere ihr Hunspell-Wörterbuch (z. B. hunspell-fr) und öffne die Einstellungen erneut.",
+  noDictionaries:
+    "Keine Wörterbücher gefunden. Installiere die Hunspell-Wörterbücher deiner Distribution (z. B. hunspell-de, hunspell-en-us) und öffne die Einstellungen erneut.",
+  dictionariesNotLoaded:
+    "Die Wörterbücher konnten nicht geladen werden, daher wird nichts geprüft.",
+  spellingWeb:
+    "Dein Browser prüft in den Sprachen, die in ihm eingestellt sind: in Chrome und Edge unter Einstellungen → Sprachen, in Firefox per Rechtsklick in den Text → Sprachen.",
+  spellingWindows:
+    "Windows prüft in seiner Anzeigesprache (Einstellungen → Zeit und Sprache → Sprache und Region). Rechtsklick auf ein unterstrichenes Wort zeigt Vorschläge.",
+  spellingMac:
+    "macOS erkennt die Sprache selbst; die Sprachen findest du unter Systemeinstellungen → Tastatur → Texteingabe → Bearbeiten. Rechtsklick auf ein unterstrichenes Wort zeigt Vorschläge.",
+  spellingAndroid:
+    "Android prüft mit seiner eigenen Rechtschreibprüfung (Einstellungen → System → Tastatur → Rechtschreibprüfung). Tippe auf ein unterstrichenes Wort für Vorschläge.",
 
   undoSend: "Senden rückgängig machen",
   sendRightAway: "Aus: sofort senden",

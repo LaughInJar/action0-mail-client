@@ -9,6 +9,7 @@ import { AndroidSettings } from "./AndroidSettings";
 import { DesktopSettings } from "./DesktopSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
+import { SpellingSettings } from "./SpellingSettings";
 import { useT } from "../../i18n/context";
 import {
   browserLanguages,
@@ -197,6 +198,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </SettingsSection>
 
           <SettingsSection id="settings-writing" title={s.writing}>
+            <SpellingSettings />
             <UndoSend
               value={settings.undoSendSeconds}
               onChange={set("undoSendSeconds")}

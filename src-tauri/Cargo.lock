@@ -10,6 +10,7 @@ dependencies = [
  "chacha20poly1305",
  "jni 0.21.1",
  "keyring",
+ "objc2-foundation",
  "percent-encoding",
  "rand",
  "reqwest",
@@ -33,6 +34,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "webkit2gtk",
  "webpki-roots",
  "wiremock",
 ]

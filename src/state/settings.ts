@@ -44,6 +44,13 @@ export interface AppSettings {
   readonly closeToTray: boolean;
   /** Event reminders show (notifications and the reminders panel). */
   readonly eventReminders: boolean;
+  /** Misspelled words are underlined (mail, signatures, events). */
+  readonly spellcheck: boolean;
+  /**
+   * The Linux app's spelling languages, as tags ("de-AT"); none: the
+   * system's languages. Elsewhere the browser or the system decides.
+   */
+  readonly spellLanguages: readonly string[];
 }
 
 /** The settings of a browser that never changed any. */
@@ -64,6 +71,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastSendAccount: "",
   closeToTray: true,
   eventReminders: true,
+  spellcheck: true,
+  spellLanguages: [],
 };
 
 /** Most trusted senders kept (the oldest are dropped first). */
@@ -158,6 +167,14 @@ export function parseSettings(value: unknown): AppSettings {
       typeof raw.eventReminders === "boolean"
         ? raw.eventReminders
         : d.eventReminders,
+    spellcheck:
+      typeof raw.spellcheck === "boolean" ? raw.spellcheck : d.spellcheck,
+    spellLanguages: Array.isArray(raw.spellLanguages)
+      ? raw.spellLanguages.filter(
+          (tag): tag is string =>
+            typeof tag === "string" && /^[a-z]{2,3}(-[A-Z]{2})?$/.test(tag),
+        )
+      : d.spellLanguages,
   };
 }
 

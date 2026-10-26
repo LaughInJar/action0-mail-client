@@ -40,15 +40,15 @@ jsdom is the default; a file opts into Node with a comment (see [Unit tests](#un
 
 The helpers in `src/test/`:
 
-| File                 | What it gives you                                                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                |
-| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer |
-| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                             |
-| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                          |
-| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                         |
-| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand                           |
-| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                      |
+| File                 | What it gives you                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                  |
+| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer   |
+| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                               |
+| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                            |
+| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                           |
+| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries) |
+| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                        |
 
 Run all tests with `npm test`, keep them running with `npm run test:watch`, or run a single file or test with `npx vitest run src/ui/actions.test.tsx -t "rolls back"`.
 

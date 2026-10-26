@@ -49,6 +49,7 @@ function ComposerWindow({
   session,
 }: ComposerProps & { readonly session: ComposerSession }) {
   const store = useUiStore();
+  const spellcheck = useUi((state) => state.settings.spellcheck);
   const sync = useDraftSync();
   const accounts = useAccounts();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -457,6 +458,7 @@ function ComposerWindow({
             id={COMPOSER_IDS.subject}
             aria-label={c.subject}
             placeholder={c.subject}
+            spellCheck={spellcheck}
             value={session.subject}
             onChange={(event) => {
               update({ subject: event.target.value });
