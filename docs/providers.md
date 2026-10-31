@@ -23,15 +23,15 @@ How requests flow from a click to a provider is described in [architecture.md](a
 - Results are plain, JSON-serializable data (the cache persists some of them to sessionStorage).
 - Transient failures are retried inside the provider's HTTP client. The query client deliberately doesn't retry (`retry: false` in `src/data/queryClient.ts`), so retries don't multiply against the provider's quota.
 
-| Group              | Methods                                                                                                                                              |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                                    |
-| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`, `getRawMessage`                                          |
-| Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox`, `markAllRead` |
-| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                   |
-| Live updates       | `changesSince`                                                                                                                                       |
-| Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                                    |
-| Other              | `oneClickUnsubscribe`, `listSenders`, `saveSenders`, `catchAllDomains`, `updateSignature`                                                            |
+| Group              | Methods                                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                                        |
+| Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`, `getRawMessage`                                              |
+| Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox`, `markAllRead`     |
+| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                       |
+| Live updates       | `changesSince`                                                                                                                                           |
+| Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                                        |
+| Other              | `oneClickUnsubscribe`, `listSenders`, `saveSenders`, `catchAllDomains`, `updateSignature`, `sendCalendarMail` (iMIP, for CalDAV servers that don't send) |
 
 Lists take a `ListMessagesQuery` and return one `Page`:
 
@@ -396,16 +396,18 @@ Like Graph: archive, trash and spam move into the folder with that role, which `
 
 ## Calendars
 
-Each account module creates a calendar provider next to the mail provider (`createCalendar`); iCal subscriptions get one each through the `IcsFactory` (`src/data/calendar.ts`, wired in `src/app/services.ts` and, with the native `fetch`, in `src/main.tsx`). The data layer treats both as calendar _sources_, keyed by the account id or `ics:<subscription id>`.
+Each account module creates a calendar provider next to the mail provider (`createCalendar`); iCal subscriptions get one each through the `IcsFactory` (`src/data/calendar.ts`, wired in `src/app/services.ts` and, with the native `fetch`, in `src/main.tsx`), and calendar-only CalDAV servers through `CalendarServersContext` (`src/data/calendarServers.ts`, the apps only). The data layer treats them all as calendar _sources_, keyed by the account id, `ics:<subscription id>` or `caldav:<id>`.
 
-|                | Google (`GoogleCalendarProvider`) | Microsoft (`GraphCalendarProvider`)       | iCal (`IcsCalendarProvider`) |
-| -------------- | --------------------------------- | ----------------------------------------- | ---------------------------- |
-| `canRespond`   | yes                               | yes                                       | no                           |
-| `canEdit`      | yes                               | yes                                       | no (read-only)               |
-| `guestNotices` | `ask`                             | `always`                                  | `always`                     |
-| `maxReminders` | 5                                 | 1                                         | 0                            |
-| `reminderSync` | none (marks kept in this browser) | Outlook's reminder list                   | none                         |
-| Access         | Optional scopes, asked on demand  | Optional consent to `Calendars.ReadWrite` | Always granted               |
+|                | Google (`GoogleCalendarProvider`) | Microsoft (`GraphCalendarProvider`)       | iCal (`IcsCalendarProvider`) | CalDAV (`CaldavCalendarProvider`)                        |
+| -------------- | --------------------------------- | ----------------------------------------- | ---------------------------- | -------------------------------------------------------- |
+| `canRespond`   | yes                               | yes                                       | no                           | yes                                                      |
+| `canEdit`      | yes                               | yes                                       | no (read-only)               | yes                                                      |
+| `guestNotices` | `ask`                             | `always`                                  | `always`                     | `always` (server schedules), `ask` (mails sent), `never` |
+| `maxReminders` | 5                                 | 1                                         | 0                            | 5                                                        |
+| `reminderSync` | none (marks kept in this browser) | Outlook's reminder list                   | none                         | none                                                     |
+| Access         | Optional scopes, asked on demand  | Optional consent to `Calendars.ReadWrite` | Always granted               | `setup: "server"`: missing until the server is set up    |
+
+The CalDAV provider has its own document: [caldav.md](caldav.md).
 
 ### Google Calendar
 

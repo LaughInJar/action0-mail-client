@@ -34,6 +34,8 @@ import { createMicrosoftModule } from "../providers/microsoft/module";
 import type { ImapBridge } from "../providers/imap/bridge";
 import { createImapModule } from "../providers/imap/module";
 import type { MailServerAccountInfo } from "../accounts/mailServer";
+import type { CalendarServerSources } from "../data/calendarServers";
+import type { CaldavServices } from "./caldav";
 
 /** Everything the UI needs, created once at startup (or per test). */
 export interface AppServices {
@@ -54,6 +56,8 @@ export interface AppServices {
   readonly ai: AiServices;
   /** Mail server (IMAP/SMTP) accounts: the apps only. */
   readonly mailServers?: MailServerAccounts;
+  /** Calendar servers (CalDAV): the apps only. */
+  readonly calendarServers?: CalendarServerSources;
 }
 
 /** What the native apps add to the composition: native sign-in and networking. */
@@ -69,6 +73,8 @@ export interface NativeServices {
     readonly bridge: ImapBridge;
     readonly accounts: ReadonlyMap<string, MailServerAccountInfo>;
   };
+  /** Calendar servers (CalDAV) through the native side. */
+  readonly caldav?: CaldavServices;
 }
 
 /**
@@ -101,6 +107,8 @@ export interface AppServicesOptions {
   readonly createMailServers?: (
     registry: AccountRegistry,
   ) => MailServerAccounts;
+  /** Calendar servers (the apps), connected to the app here. */
+  readonly caldav?: CaldavServices;
 }
 
 /** The composition root: wires the layers together. */
@@ -114,6 +122,8 @@ export function createAppServices(options: AppServicesOptions): AppServices {
     },
   });
   registry.restore();
+  const uiStore = createUiStore(options.localStorage);
+  options.caldav?.bind({ registry, queryClient, uiStore });
   return {
     registry,
     queryClient,
@@ -121,7 +131,7 @@ export function createAppServices(options: AppServicesOptions): AppServices {
       options.sessionStorage,
       options.version,
     ),
-    uiStore: createUiStore(options.localStorage),
+    uiStore,
     router: createHashRouter(options.window ?? window),
     commands: new CommandRegistry(),
     setups: options.createSetups?.(registry) ?? [],
@@ -132,6 +142,7 @@ export function createAppServices(options: AppServicesOptions): AppServices {
     ...(options.createMailServers
       ? { mailServers: options.createMailServers(registry) }
       : {}),
+    ...(options.caldav ? { calendarServers: options.caldav.sources } : {}),
     ai: createAiServices(
       options.ai ??
         createWebAiBackend({
@@ -198,6 +209,9 @@ export function createDefaultModules(
               accounts: desktop.imap.accounts,
               settings: localStorage,
               fetch: desktop.fetch,
+              ...(desktop.caldav
+                ? { createCalendar: desktop.caldav.accountCalendar }
+                : {}),
             }),
           ]
         : []),

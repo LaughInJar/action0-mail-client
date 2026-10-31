@@ -105,6 +105,12 @@ export interface ConfirmState {
         readonly kind: "remove-calendar";
         readonly id: string;
         readonly name: string;
+      }
+    | {
+        /** Forgets a calendar server's login (its calendars go from action0). */
+        readonly kind: "remove-calendar-server";
+        readonly key: string;
+        readonly name: string;
       };
 }
 

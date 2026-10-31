@@ -21,7 +21,7 @@ const META_HEADER = "x-a0-imap";
  * certificate?}`), as a {@link MailServerError}; Tauri's own failures (a
  * missing command) become `server` errors.
  */
-function toMailServerError(error: unknown): MailServerError {
+export function toMailServerError(error: unknown): MailServerError {
   if (typeof error === "object" && error !== null) {
     const { kind, message, server, certificate } = error as Record<
       string,
@@ -32,7 +32,9 @@ function toMailServerError(error: unknown): MailServerError {
         kind as MailServerErrorKind,
         typeof message === "string" ? message : "",
         {
-          ...(server === "imap" || server === "smtp" ? { server } : {}),
+          ...(server === "imap" || server === "smtp" || server === "caldav"
+            ? { server }
+            : {}),
           ...(typeof certificate === "object" && certificate !== null
             ? { certificate: certificate as MailServerCertificate }
             : {}),

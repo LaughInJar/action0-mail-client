@@ -41,6 +41,7 @@ import type {
   MutationResult,
   NewMailbox,
   ProviderCapabilities,
+  CalendarMail,
 } from "../../core/provider";
 import { decodeBase64Url } from "../../lib/base64url";
 import { parseAddressList } from "./addresses";
@@ -254,6 +255,7 @@ export class GmailProvider implements MailProvider {
     // Gmail lists its own send-as addresses.
     editSenders: false,
     rawSource: true,
+    calendarMail: true,
     signatureStore: "provider",
   };
   readonly #http: GmailHttp;
@@ -484,6 +486,23 @@ export class GmailProvider implements MailProvider {
       { retry: false, signal },
     );
     return { messageId: asMessageId(sent.id) };
+  }
+
+  /** Sent as it is; Gmail keeps the copy in Sent. */
+  async sendCalendarMail(
+    mail: CalendarMail,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const raw = buildMessage({
+      ...mail,
+      cc: [],
+      bcc: [],
+      date: new Date(),
+    });
+    await this.#http.upload<GmailMessage>("POST", "messages/send", {}, raw, {
+      retry: false,
+      signal,
+    });
   }
 
   async searchContacts(

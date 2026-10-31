@@ -95,6 +95,11 @@ export interface CalendarEvent {
   readonly uid?: string;
   /** The event in the provider's own calendar app. */
   readonly webLink?: string;
+  /**
+   * `false`: an invitation that isn't in a calendar yet (read from its
+   * mail); answering it puts it into the default calendar.
+   */
+  readonly inCalendar?: false;
 }
 
 /** An iCal subscription, as kept in the settings of this browser. */
@@ -215,13 +220,21 @@ export interface CalendarProvider {
   readonly canEdit: boolean;
   /**
    * Whether guests hear about changes only when asked to (`ask`, Google),
-   * or always (`always`: Microsoft sends updates whatever you do).
+   * always (`always`: Microsoft sends updates whatever you do), or never
+   * (`never`: nothing can tell them, e.g. a calendar server that doesn't
+   * schedule and no mail account to send from).
    */
-  readonly guestNotices: "ask" | "always";
+  readonly guestNotices: "ask" | "always" | "never";
   /** How many reminders an event can have (0: they can't be set). */
   readonly maxReminders: number;
   /** The provider keeps reminders (and their snoozes) itself. */
   readonly reminderSync?: ReminderSync;
+  /**
+   * How access is gained: `consent` (the default) through
+   * {@link requestAccess}; `server`: the calendar server has to be set up
+   * first (the UI opens its setup instead).
+   */
+  readonly setup?: "consent" | "server";
   /** Current access; changes are announced through {@link subscribe}. */
   readonly access: () => CalendarAccess;
   /** Asks the user for calendar access (a popup): call it from a click. */
@@ -248,9 +261,25 @@ export interface CalendarProvider {
     signal?: AbortSignal,
   ): Promise<CalendarEvent>;
 
-  /** The event an invitation mail is about (by its UID), if it's in your calendar. */
+  /**
+   * The event an invitation mail is about (by its UID), if it's in your
+   * calendar. Providers that can answer from the mail itself (`ics`, its
+   * iCalendar part) return it otherwise as an event with
+   * `inCalendar: false`.
+   */
   findInvitation(
     uid: string,
+    signal?: AbortSignal,
+    ics?: string,
+  ): Promise<CalendarEvent | undefined>;
+
+  /**
+   * Takes a guest's answer mail (`METHOD:REPLY`) into your event, for
+   * providers where nothing else does; resolves to the updated event, if
+   * it's yours.
+   */
+  applyReply?(
+    ics: string,
     signal?: AbortSignal,
   ): Promise<CalendarEvent | undefined>;
 

@@ -185,6 +185,12 @@ export interface Unsubscribe {
 export interface Invitation {
   readonly uid: string;
   readonly method: "request" | "cancel" | "reply";
+  /**
+   * The iCalendar part itself, for providers that answer from it (CalDAV
+   * accounts: an invitation that isn't in a calendar yet). Kept in memory
+   * only, like the rest of the message.
+   */
+  readonly ics?: string;
 }
 
 /** Body of a message. Both parts are raw and **unsanitized**. */

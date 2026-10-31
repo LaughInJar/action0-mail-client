@@ -59,7 +59,7 @@ export function wallTime(instant: number, zone: string): WallTime {
 }
 
 /** Milliseconds `zone` is ahead of UTC at `instant`. */
-function offsetAt(instant: number, zone: string): number {
+export function offsetAt(instant: number, zone: string): number {
   const { date, time } = wallTime(instant, zone);
   return asUtc(date, time) - Math.floor(instant / 1000) * 1000;
 }

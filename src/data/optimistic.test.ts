@@ -64,6 +64,7 @@ const labels: ProviderCapabilities = {
   senders: true,
   rawSource: true,
   editSenders: false,
+  calendarMail: false,
   signatureStore: "provider",
 };
 const folders: ProviderCapabilities = { ...labels, mailboxKinds: ["folder"] };

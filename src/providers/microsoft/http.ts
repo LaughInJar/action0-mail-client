@@ -152,6 +152,29 @@ export class GraphHttp {
     );
   }
 
+  /**
+   * POSTs a body that isn't JSON (base64 MIME for `sendMail`), once:
+   * after a failure the first attempt may have gone through.
+   */
+  async postText(
+    path: string,
+    body: string,
+    contentType: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#limit(() =>
+      this.#exchange(
+        this.url(path),
+        "POST",
+        body,
+        signal,
+        false,
+        undefined,
+        contentType,
+      ),
+    );
+  }
+
   /** PATCHes a resource with the changed fields and returns it. */
   patch<T>(
     path: string,
@@ -330,6 +353,7 @@ export class GraphHttp {
     signal: AbortSignal | undefined,
     retry: boolean,
     prefer?: string,
+    contentType = "application/json",
   ): Promise<Response> {
     const maxAttempts = retry ? this.#maxAttempts : 1;
     for (let attempt = 1; ; attempt++) {
@@ -341,9 +365,7 @@ export class GraphHttp {
           headers: {
             Authorization: `Bearer ${token}`,
             Prefer: prefer ? `${IMMUTABLE_IDS}, ${prefer}` : IMMUTABLE_IDS,
-            ...(payload === undefined
-              ? {}
-              : { "Content-Type": "application/json" }),
+            ...(payload === undefined ? {} : { "Content-Type": contentType }),
           },
           ...(payload === undefined ? {} : { body: payload }),
           ...(signal ? { signal } : {}),

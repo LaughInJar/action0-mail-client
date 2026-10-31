@@ -73,10 +73,15 @@ export function toMessage(message: ImapMessage): Message {
     message.listUnsubscribe,
     message.listUnsubscribePost,
   );
-  const invitation =
+  const parsed =
     message.calendar === undefined
       ? undefined
       : parseInvitation(message.calendar);
+  // The part itself too: the account's calendar server answers from it.
+  const invitation =
+    parsed && message.calendar !== undefined
+      ? { ...parsed, ics: message.calendar }
+      : undefined;
   return {
     ...toSummary(message),
     cc: message.cc.map(address),

@@ -4,6 +4,7 @@ import type {
 } from "../../accounts/mailServer";
 import type { ProviderModule } from "../../accounts/types";
 import { asAccountId } from "../../core/ids";
+import type { CalendarProvider } from "../../core/calendar";
 import type { Account } from "../../core/model";
 import { SenderStore } from "../senderStore";
 import type { ImapBridge } from "./bridge";
@@ -19,6 +20,8 @@ export interface ImapModuleOptions {
   readonly settings: Storage | undefined;
   /** For one-click unsubscribe (the native fetch). */
   readonly fetch?: typeof fetch;
+  /** The account's calendars (CalDAV), if the app has calendar servers. */
+  readonly createCalendar?: (account: Account) => CalendarProvider;
 }
 
 /** SMTP servers that put a copy of sent mail into Sent themselves. */
@@ -64,6 +67,9 @@ export function createImapModule(options: ImapModuleOptions): ProviderModule {
       return { account, auth: session(account) };
     },
     restore: session,
+    ...(options.createCalendar
+      ? { createCalendar: options.createCalendar }
+      : {}),
     createProvider: (account, auth) => {
       const info = infos.get(account.id);
       return new ImapProvider({

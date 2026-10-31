@@ -1,7 +1,6 @@
 import {
   asCalendarId,
   asEventId,
-  type Attendee,
   type Calendar,
   type CalendarEvent,
   type CalendarId,
@@ -9,23 +8,17 @@ import {
   type DateRange,
   type EditableEvent,
   type EventChange,
-  type EventTime,
   type IcsSubscription,
-  type ResponseStatus,
   readOnlyError,
 } from "../../core/calendar";
-import type IcalModule from "ical.js";
 import { MailError } from "../../core/errors";
-import type { EmailAddress } from "../../core/model";
-
-/** Occurrences of one series shown at most in one range. */
-const MAX_OCCURRENCES = 5000;
-
-/** Steps through one series at most (a daily series over 100 years). */
-const MAX_STEPS = 40_000;
-
-/** Occurrences that start this much before a range are skipped unread (events are shorter). */
-const MAX_EVENT_MS = 31 * 24 * 60 * 60 * 1000;
+import {
+  expandEvents,
+  loadIcal,
+  readEvent,
+  registerZones,
+  type IcalComponent,
+} from "./icalendar";
 
 /** Downloads are shared for this long, so several ranges loading at once fetch once. */
 const SHARE_MS = 60_000;
@@ -40,71 +33,6 @@ export function icsUrl(raw: string): URL | undefined {
       : undefined;
   } catch {
     return undefined;
-  }
-}
-
-type Ical = typeof IcalModule;
-type IcalComponent = InstanceType<Ical["Component"]>;
-type IcalTime = InstanceType<Ical["Time"]>;
-type IcalEvent = InstanceType<Ical["Event"]>;
-
-let library: Promise<Ical> | undefined;
-/** ical.js, loaded on first use. */
-function loadIcal(): Promise<Ical> {
-  library ??= import("ical.js").then((module) => module.default);
-  return library;
-}
-
-/**
- * ical.js's types promise values that can be missing at run time (absent
- * properties are null, floating times have no zone, an expansion ends with
- * nothing): this widens the type back.
- */
-function absent<T>(value: T): T | null | undefined {
-  return value;
-}
-
-function pad(n: number) {
-  return String(n).padStart(2, "0");
-}
-
-function eventTime(time: IcalTime): EventTime {
-  if (time.isDate)
-    return {
-      date: `${String(time.year)}-${pad(time.month)}-${pad(time.day)}`,
-    };
-  const tzid = absent(time.zone)?.tzid;
-  return {
-    dateTime: time.toJSDate().toISOString(),
-    ...(tzid && tzid !== "floating" && tzid !== "UTC"
-      ? { timeZone: tzid }
-      : {}),
-  };
-}
-
-/** A `mailto:` calendar address with its CN, as an email address. */
-function calendarAddress(
-  value: unknown,
-  name: unknown,
-): EmailAddress | undefined {
-  if (typeof value !== "string") return undefined;
-  const address = value.replace(/^mailto:/i, "").trim();
-  if (!address.includes("@")) return undefined;
-  return typeof name === "string" && name.trim()
-    ? { name: name.trim(), address }
-    : { address };
-}
-
-function partstat(value: unknown): ResponseStatus {
-  switch (typeof value === "string" ? value.toUpperCase() : "") {
-    case "ACCEPTED":
-      return "accepted";
-    case "TENTATIVE":
-      return "tentative";
-    case "DECLINED":
-      return "declined";
-    default:
-      return "needsAction";
   }
 }
 
@@ -167,51 +95,20 @@ export class IcsCalendarProvider implements CalendarProvider {
         reason: "icsUnreadable",
       });
     }
-    for (const zone of root.getAllSubcomponents("vtimezone"))
-      ICAL.TimezoneService.register(zone);
-
-    const from = Date.parse(range.from);
-    const to = Date.parse(range.to);
-    const events: CalendarEvent[] = [];
-    for (const component of root.getAllSubcomponents("vevent")) {
-      const event = new ICAL.Event(component);
-      // Changed occurrences come with their series.
-      if (event.isRecurrenceException()) continue;
-      if (!event.isRecurring()) {
-        const occurrence = this.#toEvent(
-          calendarId,
-          event,
-          event.startDate,
-          event.endDate,
-        );
-        if (overlaps(occurrence, from, to)) events.push(occurrence);
-        continue;
-      }
-      const expansion = event.iterator();
-      for (
-        let count = 0, shown = 0;
-        count < MAX_STEPS && shown < MAX_OCCURRENCES;
-        count++
-      ) {
-        const next = absent(expansion.next());
-        if (!next) break;
-        const at = next.toJSDate().getTime();
-        if (at >= to) break;
-        // Long-running series: walk past old occurrences without building them.
-        if (at < from - MAX_EVENT_MS) continue;
-        shown++;
-        const details = event.getOccurrenceDetails(next);
-        const occurrence = this.#toEvent(
-          calendarId,
-          details.item,
-          details.startDate,
-          details.endDate,
-          true,
-        );
-        if (overlaps(occurrence, from, to)) events.push(occurrence);
-      }
-    }
-    return events;
+    registerZones(ICAL, root);
+    return expandEvents(
+      ICAL,
+      root,
+      Date.parse(range.from),
+      Date.parse(range.to),
+    ).map((occurrence) =>
+      readEvent(occurrence, {
+        id: asEventId(
+          `${occurrence.item.uid}/${occurrence.start.toICALString()}`,
+        ),
+        calendarId,
+      }),
+    );
   }
 
   respond(): Promise<CalendarEvent> {
@@ -290,107 +187,4 @@ export class IcsCalendarProvider implements CalendarProvider {
       });
     return text;
   }
-
-  #toEvent(
-    calendarId: CalendarId,
-    event: IcalEvent,
-    start: IcalTime,
-    end: IcalTime,
-    recurring = false,
-  ): CalendarEvent {
-    const component = event.component;
-    const organizerProp = component.getFirstProperty("organizer");
-    const organizer = calendarAddress(
-      organizerProp?.getFirstValue(),
-      organizerProp?.getParameter("cn"),
-    );
-    const attendees: Attendee[] = component
-      .getAllProperties("attendee")
-      .flatMap((property) => {
-        const address = calendarAddress(
-          property.getFirstValue(),
-          property.getParameter("cn"),
-        );
-        return address
-          ? [{ address, response: partstat(property.getParameter("partstat")) }]
-          : [];
-      });
-    const status = String(
-      component.getFirstPropertyValue("status") ?? "",
-    ).toUpperCase();
-    const url = component.getFirstPropertyValue("url");
-    const description = absent(event.description)?.trim();
-    const reminders = alarms(component, start, end);
-    return {
-      id: asEventId(`${event.uid}/${start.toICALString()}`),
-      calendarId,
-      title: absent(event.summary) ?? "",
-      start: eventTime(start),
-      end: eventTime(end),
-      ...(event.location ? { location: event.location } : {}),
-      ...(description ? { description: { text: description } } : {}),
-      ...(organizer ? { organizer } : {}),
-      attendees,
-      ...(reminders.length > 0 ? { reminders } : {}),
-      status:
-        status === "CANCELLED"
-          ? "cancelled"
-          : status === "TENTATIVE"
-            ? "tentative"
-            : "confirmed",
-      recurring,
-      organizedByMe: false,
-      ...(event.uid ? { uid: event.uid } : {}),
-      ...(typeof url === "string" && /^https?:/i.test(url)
-        ? { webLink: url }
-        : {}),
-    };
-  }
-}
-
-/**
- * An event's on-screen alarms (`VALARM` with `ACTION:DISPLAY` or `AUDIO`)
- * as minutes before its start: triggers relative to the start or the end,
- * or at a fixed time. Alarms after the start count as "at the start".
- */
-function alarms(
-  component: IcalComponent,
-  start: IcalTime,
-  end: IcalTime,
-): number[] {
-  const startMs = start.toJSDate().getTime();
-  const minutes = component.getAllSubcomponents("valarm").flatMap((alarm) => {
-    const action = String(
-      alarm.getFirstPropertyValue("action") ?? "",
-    ).toUpperCase();
-    if (action !== "DISPLAY" && action !== "AUDIO") return [];
-    const trigger = alarm.getFirstProperty("trigger");
-    const value = absent(trigger?.getFirstValue()) as
-      { toSeconds?: () => number; toJSDate?: () => Date } | null | undefined;
-    if (!value || !trigger) return [];
-    let at: number;
-    if (typeof value.toSeconds === "function") {
-      const fromEnd =
-        String(absent(trigger.getParameter("related")) ?? "").toUpperCase() ===
-        "END";
-      const base = fromEnd ? end.toJSDate().getTime() : startMs;
-      at = base + value.toSeconds() * 1000;
-    } else if (typeof value.toJSDate === "function") {
-      at = value.toJSDate().getTime();
-    } else return [];
-    return [Math.max(0, Math.round((startMs - at) / 60_000))];
-  });
-  return [...new Set(minutes)];
-}
-
-function overlaps(event: CalendarEvent, from: number, to: number): boolean {
-  const time = (value: EventTime) => {
-    if ("date" in value) {
-      const [y = 0, m = 1, d = 1] = value.date.split("-").map(Number);
-      return new Date(y, m - 1, d).getTime();
-    }
-    return Date.parse(value.dateTime);
-  };
-  if (event.status === "cancelled") return false;
-  return time(event.start) < to && time(event.end) > from;
 }

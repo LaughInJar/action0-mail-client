@@ -24,6 +24,8 @@ import type {
   Rsvp,
 } from "../core/calendar";
 import type { AccountId } from "../core/ids";
+import type { CalendarServerInfo } from "../accounts/calendarServer";
+import { useCalendarServerList, useCalendarServers } from "./calendarServers";
 import { useUi } from "../state/context";
 import { queryKeys } from "./keys";
 
@@ -33,18 +35,23 @@ export type IcsFactory = (subscription: IcsSubscription) => CalendarProvider;
 /** The {@link IcsFactory}; without one, iCal subscriptions don't load. */
 export const IcsFactoryContext = createContext<IcsFactory | null>(null);
 
-/** Where calendars come from: an account, or an iCal subscription. */
+/**
+ * Where calendars come from: an account, an iCal subscription, or a
+ * calendar-only server (CalDAV).
+ */
 export interface CalendarSource {
-  /** The account id, or `ics:<subscription id>`. */
+  /** The account id, `ics:<subscription id>`, or `caldav:<id>`. */
   readonly key: string;
-  readonly kind: "account" | "ics";
-  /** The account's address, or the subscription's name. */
+  readonly kind: "account" | "ics" | "caldav";
+  /** The account's address, the subscription's name, or the server's. */
   readonly label: string;
   readonly provider: CalendarProvider;
   readonly accountId?: AccountId;
   /** The account's session (account sources). */
   readonly auth?: AuthSession;
   readonly subscription?: IcsSubscription;
+  /** The calendar server (calendar-only servers, and accounts that have one set up). */
+  readonly server?: CalendarServerInfo;
 }
 
 /** An event with where it comes from. */
@@ -57,12 +64,29 @@ export interface PlacedEvent {
 /** One provider per subscription (address, name, colour), per factory. */
 const icsProviders = new WeakMap<IcsFactory, Map<string, CalendarProvider>>();
 
-/** Calendar sources: every account with calendars, then iCal subscriptions. */
+/**
+ * Calendar sources: every account with calendars, then calendar-only
+ * servers, then iCal subscriptions.
+ */
 export function useCalendarSources(): readonly CalendarSource[] {
   const accounts = useAccounts();
   const subscriptions = useUi((state) => state.settings.icsCalendars);
   const factory = useContext(IcsFactoryContext);
+  const serverSources = useCalendarServers();
+  const servers = useCalendarServerList();
   return useMemo(() => {
+    const byKey = new Map(servers.map((info) => [info.key, info]));
+    const caldavSources = serverSources
+      ? servers
+          .filter((info) => info.key.startsWith("caldav:"))
+          .map((info): CalendarSource => ({
+            key: info.key,
+            kind: "caldav",
+            label: info.label,
+            provider: serverSources.providerFor(info),
+            server: info,
+          }))
+      : [];
     const icsSources = factory
       ? subscriptions.map((subscription): CalendarSource => {
           const cacheKey = `${subscription.id}\n${subscription.url}\n${subscription.name}\n${subscription.color}`;
@@ -84,8 +108,9 @@ export function useCalendarSources(): readonly CalendarSource[] {
         })
       : [];
     return [
-      ...accounts.flatMap((handle): CalendarSource[] =>
-        handle.calendar
+      ...accounts.flatMap((handle): CalendarSource[] => {
+        const server = byKey.get(handle.account.id);
+        return handle.calendar
           ? [
               {
                 key: handle.account.id,
@@ -94,13 +119,15 @@ export function useCalendarSources(): readonly CalendarSource[] {
                 provider: handle.calendar,
                 accountId: handle.account.id,
                 auth: handle.auth,
+                ...(server ? { server } : {}),
               },
             ]
-          : [],
-      ),
+          : [];
+      }),
+      ...caldavSources,
       ...icsSources,
     ];
-  }, [accounts, subscriptions, factory]);
+  }, [accounts, subscriptions, factory, servers, serverSources]);
 }
 
 const noSubscription = () => () => undefined;
@@ -122,14 +149,15 @@ export function useSourceState(source: CalendarSource | undefined): {
   };
 }
 
-/** The calendars of a source. */
-export function useCalendarList(source: CalendarSource) {
+/** The calendars of a source (none without one). */
+export function useCalendarList(source: CalendarSource | undefined) {
   const { ready } = useSourceState(source);
   return useQuery({
-    queryKey: queryKeys.calendars(source.key),
-    queryFn: ready
-      ? ({ signal }) => source.provider.listCalendars(signal)
-      : skipToken,
+    queryKey: queryKeys.calendars(source?.key ?? ""),
+    queryFn:
+      ready && source
+        ? ({ signal }) => source.provider.listCalendars(signal)
+        : skipToken,
     staleTime: 5 * 60_000,
     meta: { persist: true },
   });
@@ -191,10 +219,14 @@ export function useSourceEvents(
   });
 }
 
-/** The event an invitation mail is about, from the account's calendar. */
+/**
+ * The event an invitation mail is about, from the account's calendar (or,
+ * for providers that answer from the mail itself, from its `ics`).
+ */
 export function useInvitation(
   source: CalendarSource | undefined,
   uid: string | undefined,
+  ics?: string,
 ) {
   const { ready } = useSourceState(source);
   return useQuery({
@@ -206,7 +238,7 @@ export function useInvitation(
       source && uid && ready
         ? ({ signal }) =>
             source.provider
-              .findInvitation(uid, signal)
+              .findInvitation(uid, signal, ics)
               .then((event) => event ?? null)
         : skipToken,
     staleTime: 60_000,
@@ -267,13 +299,57 @@ export function useRespond() {
         before === undefined ? cached : withAnswer(cached, before),
       );
     },
-    onSuccess: (updated, { source, event }) => {
+    onSuccess: async (updated, { source, event }) => {
       patchEvent(queryClient, source, event, (cached) => ({
         ...cached,
         ...(updated.myResponse ? { myResponse: updated.myResponse } : {}),
         attendees: updated.attendees,
       }));
+      // An invitation from a mail is in the calendar now.
+      if (event.inCalendar === false) {
+        if (source.accountId && event.uid)
+          queryClient.setQueryData(
+            queryKeys.invitation(source.accountId, event.uid),
+            updated,
+          );
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.calendarEvents(source.key),
+        });
+      }
     },
+  });
+}
+
+/**
+ * Takes a guest's answer mail into your event, where the provider does
+ * that itself (calendar servers that don't schedule). Resolves to the
+ * updated event, `null` if there was nothing to take in.
+ */
+export function useAppliedReply(
+  source: CalendarSource | undefined,
+  uid: string,
+  ics: string | undefined,
+) {
+  const { ready } = useSourceState(source);
+  const queryClient = useQueryClient();
+  const apply = source?.provider.applyReply?.bind(source.provider);
+  return useQuery({
+    queryKey: queryKeys.invitation(
+      (source?.accountId ?? "") as AccountId,
+      `reply:${uid}`,
+    ),
+    queryFn:
+      source && apply && ics && ready
+        ? async ({ signal }) => {
+            const updated = await apply(ics, signal);
+            if (updated)
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.calendarEvents(source.key),
+              });
+            return updated ?? null;
+          }
+        : skipToken,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 

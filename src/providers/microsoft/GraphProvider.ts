@@ -44,8 +44,10 @@ import type {
   NewMailbox,
   ProviderCapabilities,
   SenderSettings,
+  CalendarMail,
 } from "../../core/provider";
 import { encodeBase64 } from "../../lib/base64url";
+import { buildMessage } from "../mime/buildMessage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
 import { SenderStore, type OwnAddress } from "../senderStore";
 import {
@@ -251,6 +253,7 @@ export class GraphProvider implements MailProvider {
       senders: true,
       editSenders: true,
       rawSource: true,
+      calendarMail: true,
       signatureStore: "browser",
     };
   }
@@ -838,6 +841,20 @@ export class GraphProvider implements MailProvider {
     }
     this.#uploaded.delete(draft.id);
     return { messageId: asMessageId(draft.id) };
+  }
+
+  /** Sent as MIME through `sendMail`, which keeps a copy in Sent Items. */
+  async sendCalendarMail(
+    mail: CalendarMail,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const mime = buildMessage({ ...mail, cc: [], bcc: [], date: new Date() });
+    await this.#http.postText(
+      "me/sendMail",
+      encodeBase64(new TextEncoder().encode(mime)),
+      "text/plain",
+      signal,
+    );
   }
 
   /** People you correspond with (Microsoft's People list), best first. */

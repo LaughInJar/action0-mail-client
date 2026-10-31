@@ -100,8 +100,8 @@ export interface MailServerCertificate {
   readonly notAfter: string;
   /** The host names it's for. */
   readonly names: readonly string[];
-  /** Which server showed it. */
-  readonly server: "imap" | "smtp";
+  /** Which server showed it (`caldav`: the calendar server). */
+  readonly server: "imap" | "smtp" | "caldav";
 }
 
 /**
@@ -135,14 +135,14 @@ export class MailServerError extends Error {
   override readonly name = "MailServerError";
   readonly kind: MailServerErrorKind;
   /** Which server it concerns, when it matters (adding an account). */
-  readonly server: "imap" | "smtp" | undefined;
+  readonly server: "imap" | "smtp" | "caldav" | undefined;
   readonly certificate: MailServerCertificate | undefined;
 
   constructor(
     kind: MailServerErrorKind,
     message: string,
     options: {
-      readonly server?: "imap" | "smtp";
+      readonly server?: "imap" | "smtp" | "caldav";
       readonly certificate?: MailServerCertificate;
     } = {},
   ) {
