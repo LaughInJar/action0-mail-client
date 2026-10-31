@@ -13,6 +13,7 @@ import { layout } from "./texts/layout";
 import { list } from "./texts/list";
 import { mailboxes } from "./texts/mailboxes";
 import { menus } from "./texts/menus";
+import { filters } from "./texts/filters";
 import { original } from "./texts/original";
 import { pwa } from "./texts/pwa";
 import { reader } from "./texts/reader";
@@ -44,6 +45,7 @@ export const messages = {
     list: list.en,
     mailboxes: mailboxes.en,
     menus: menus.en,
+    filters: filters.en,
     original: original.en,
     pwa: pwa.en,
     reader: reader.en,
@@ -69,6 +71,7 @@ export const messages = {
     list: list.de,
     mailboxes: mailboxes.de,
     menus: menus.de,
+    filters: filters.de,
     original: original.de,
     pwa: pwa.de,
     reader: reader.de,

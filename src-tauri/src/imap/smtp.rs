@@ -421,7 +421,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> SmtpClient<S> {
 }
 
 /// Escapes a SASL GS2 name (`=` and `,`).
-fn gs2_name(name: &str) -> String {
+pub(crate) fn gs2_name(name: &str) -> String {
     name.replace('=', "=3D").replace(',', "=2C")
 }
 

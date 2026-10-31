@@ -94,6 +94,24 @@ pub struct ImapAccount {
     /// The SMTP server's `SIZE`, if it says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_bytes: Option<u64>,
+    /// The filter server (ManageSieve), once found or chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sieve: Option<SieveServer>,
+}
+
+/// An account's filter server (ManageSieve), as the UI gets it too
+/// (`SieveServerInfo` in `src/providers/sieve/bridge.ts`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SieveServer {
+    pub host: String,
+    pub port: u16,
+    /// Its Sieve extensions as of the last login, lower case.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// The user entered it, rather than it being found.
+    #[serde(default)]
+    pub chosen: bool,
 }
 
 /// The account id of an address: `imap:<lower-case address>`.
@@ -261,6 +279,7 @@ mod tests {
             },
             pinned: Some("AB".into()),
             max_bytes: None,
+            sieve: None,
         };
         let json = serde_json::to_value(account.info()).unwrap();
         assert_eq!(

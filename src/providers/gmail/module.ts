@@ -17,6 +17,7 @@ import {
   CALENDAR_SCOPES,
   GoogleCalendarProvider,
 } from "./calendar";
+import { GmailFilterProvider, SETTINGS_SCOPE } from "./filters";
 import { GmailHttp, PEOPLE_API_BASE } from "./http";
 import { GmailProvider } from "./GmailProvider";
 import type { GmailProfile } from "./types";
@@ -36,11 +37,10 @@ export const CONTACTS_SCOPES =
   "https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
 
 /**
- * Changing Gmail settings, for editing signatures. Optional: declined, the
- * signatures are read-only.
+ * Changing Gmail settings (signatures, filters, the vacation responder).
+ * Optional: declined, they are read-only.
  */
-export const SETTINGS_SCOPE =
-  "https://www.googleapis.com/auth/gmail.settings.basic";
+export { SETTINGS_SCOPE };
 
 /** Permissions that are asked for but may be declined. */
 const OPTIONAL_SCOPES = `${CONTACTS_SCOPES} ${SETTINGS_SCOPE}`;
@@ -188,6 +188,12 @@ function gmailModule(
           service: "Google Calendar",
           ...net,
         }),
+        auth as AuthSession & ScopedSession,
+      ),
+
+    createFilters: (_account, auth) =>
+      new GmailFilterProvider(
+        new GmailHttp({ auth, ...net }),
         auth as AuthSession & ScopedSession,
       ),
 

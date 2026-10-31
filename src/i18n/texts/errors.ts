@@ -83,6 +83,15 @@ const enReasons: Reasons = {
     "This account's calendar server isn't set up yet.",
   calendarLoginRefused: (p) =>
     `${p.service ?? "The calendar server"} refused the login. Set up the calendar server again with the right password.`,
+  noFilterServer: (p) =>
+    `${p.service ?? "This mail server"} offers no filters to mail programs (ManageSieve).`,
+  filterExists: () => "There’s already a filter that does exactly this.",
+  filtersChanged: () =>
+    "The filters were changed somewhere else meanwhile. They show as they are now; try again.",
+  forwardNotAllowed: (p) =>
+    `${p.address ?? "This address"} isn’t a verified forwarding address in Gmail yet. Add and verify it in Gmail’s settings first.`,
+  filterNeedsCondition: () => "A filter needs at least one condition.",
+  filterNeedsAction: () => "A filter needs something to do.",
 };
 
 const deReasons: Reasons = {
@@ -169,6 +178,15 @@ const deReasons: Reasons = {
     "Der Kalenderserver dieses Kontos ist noch nicht eingerichtet.",
   calendarLoginRefused: (p) =>
     `${p.service ?? "Der Kalenderserver"} hat die Anmeldung abgelehnt. Richte den Kalenderserver mit dem richtigen Passwort neu ein.`,
+  noFilterServer: (p) =>
+    `${p.service ?? "Dieser Mailserver"} bietet Mailprogrammen keine Filter an (ManageSieve).`,
+  filterExists: () => "Es gibt schon einen Filter, der genau das macht.",
+  filtersChanged: () =>
+    "Die Filter wurden inzwischen woanders geändert. Sie werden jetzt so angezeigt, wie sie sind; versuch es noch einmal.",
+  forwardNotAllowed: (p) =>
+    `${p.address ?? "Diese Adresse"} ist in Gmail noch keine bestätigte Weiterleitungsadresse. Füg sie zuerst in den Gmail-Einstellungen hinzu und bestätige sie.`,
+  filterNeedsCondition: () => "Ein Filter braucht mindestens eine Bedingung.",
+  filterNeedsAction: () => "Ein Filter muss etwas tun.",
 };
 
 const en = {

@@ -215,6 +215,12 @@ The UI then sends the intent with only the ids that change (`src/ui/actions/useM
 
 `isFolder` tells which memberships are folders; the UI passes it for accounts whose `mailboxKinds` include `folder` (`useMailActions`). Moving back keeps a message's other memberships, such as Outlook categories. Undo steps also carry the changed summaries (`known`), so a message that has left every cached list can come back on undo.
 
+## Filters
+
+Filters (`src/core/filters.ts`) are kept on the server, so the model is small and provider-neutral. A `FilterSpec` has a name (Outlook and Sieve), on/off, `FilterConditions` and `FilterActions`. Every condition that is set must match, and a list (several senders, say) matches when any of its values does, because that's what all three servers can express. Actions name what the user wants rather than how a provider does it: `skipInbox` and `labels` for Gmail, `moveTo` for Outlook and Sieve, `labels` again for Outlook's categories; `FilterCapabilities` say which ones an account offers, so the editor uses the provider's words.
+
+What a provider can't show stays on the server untouched: `more` marks a filter with such parts (editing keeps them; deleting it asks, since undo couldn't bring them back), and `custom` holds Sieve code action0 can't read. The automatic reply (`AutoReply`) has local first and last days ("YYYY-MM-DD"), a subject, a message (HTML, or plain text for Sieve), "only my contacts", and for Microsoft 365 a message and audience for people outside the organisation.
+
 ## Capabilities
 
 The UI asks what a provider can do instead of which provider it is. `ProviderCapabilities` (`src/core/provider.ts`) is a field of every `MailProvider`:

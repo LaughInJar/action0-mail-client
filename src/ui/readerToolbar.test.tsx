@@ -48,7 +48,7 @@ const buttons = () =>
     .map((button) => button.getAttribute("aria-label"));
 
 describe("the reader toolbar", () => {
-  it("shows every button when there's room; ⋯ keeps Show original", async () => {
+  it("shows every button when there's room; ⋯ keeps the menu-only entries", async () => {
     layOut(800);
     const { user } = renderApp();
     await subject("Welcome to the demo");
@@ -61,7 +61,7 @@ describe("the reader toolbar", () => {
       within(screen.getByRole("menu", { name: "More actions" }))
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Show original (Ctrl+U)"]);
+    ).toEqual(["Show original (Ctrl+U)", "Filter mail like this"]);
   });
 
   it("puts what doesn't fit into ⋯, by priority, and runs it from there", async () => {
@@ -91,6 +91,7 @@ describe("the reader toolbar", () => {
       "Report spam (Shift+S)",
       "Labels… (l)",
       "Show original (Ctrl+U)",
+      "Filter mail like this",
     ]);
     // The first item has focus; the arrow keys move it, Esc closes.
     await waitFor(() => {

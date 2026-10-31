@@ -84,6 +84,21 @@ Without a token it returns just a starting token. Each `MailChange` is `added` o
 
 The calendar model itself is described in [Calendar model](domain-model.md#calendar-model).
 
+### `FilterProvider`
+
+`FilterProvider` (`src/core/filters.ts`) is an account's filters and automatic reply, kept on the server: Gmail filters, Outlook inbox rules or the Sieve script of a mail server. Same rules again: no caching, `MailError` on failure.
+
+| Member                                                | Meaning                                                                                                                                            |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load`                                                | A `FilterSetup`: the filters in server order, the automatic reply, the `FilterCapabilities`, Gmail's verified forwarding addresses, and `readOnly` |
+| `autoReply`                                           | Only the automatic reply, for the notice above the list (`undefined` when finding it would mean looking for a Sieve server)                        |
+| `create`, `update`, `setEnabled`, `reorder`, `remove` | Changing filters; `update` keeps what action0 doesn't show and may return a new id (Gmail)                                                         |
+| `setAutoReply`                                        | Saving the automatic reply                                                                                                                         |
+| `searchOf`                                            | The account's search for mail matching the conditions, for "Also apply to matching messages"                                                       |
+| `filterServer?`                                       | Choosing the filter server (Sieve only): the one in use, or "Use another server"                                                                   |
+
+A filter is a `FilterSpec` (name, on/off, `FilterConditions`, `FilterActions`) plus its id, `more` (it has parts action0 doesn't show; editing keeps them) and `custom` (Sieve code action0 can't read: on/off and delete only). `FilterCapabilities` say which conditions and actions the editor offers, in the provider's words: Gmail skips the Inbox and applies labels, Outlook and Sieve move to a folder.
+
 ### `AuthSession`
 
 `AuthSession` (`src/auth/types.ts`) is the credentials of one account. Providers only call `getAccessToken()` and, on HTTP 401, `markExpired()`.
@@ -142,6 +157,10 @@ export interface ProviderModule {
     account: Account,
     auth: AuthSession,
   ) => CalendarProvider;
+  readonly createFilters?: (
+    account: Account,
+    auth: AuthSession,
+  ) => FilterProvider;
 }
 
 export interface AccountHandle {
@@ -149,6 +168,7 @@ export interface AccountHandle {
   readonly auth: AuthSession;
   readonly provider: MailProvider;
   readonly calendar?: CalendarProvider;
+  readonly filters?: FilterProvider;
 }
 ```
 
@@ -380,7 +400,7 @@ One poll sends all delta links in one `$batch`. New or deleted folders in the tr
 
 ### Folders, lists and changes
 
-The native side lists folders with their roles (special-use flags, else names), unread counts, and two views: `v:flagged` (Flagged) and the hidden `v:all` that "Everywhere" searches. Message ids stay the same when mail moves (the server's `EMAILID`/`X-GM-MSGID`, or a location id the native side tracks), cursors and sync tokens are its own opaque strings, and search text (`from:`, `to:`, `subject:`, `is:unread`, `is:starred`, words) is translated to IMAP SEARCH there. `ImapProvider` passes these through and maps the JSON to domain values (`mappers.ts`), List-Unsubscribe and invitation parts included.
+The native side lists folders with their roles (special-use flags, else names), unread counts, and two views: `v:flagged` (Flagged) and the hidden `v:all` that "Everywhere" searches. Message ids stay the same when mail moves (the server's `EMAILID`/`X-GM-MSGID`, or a location id the native side tracks), cursors and sync tokens are its own opaque strings, and search text (`from:`, `to:`, `subject:`, `is:unread`, `is:starred`, words, `-word`, `larger:N`, `smaller:N`) is translated to IMAP SEARCH there. `ImapProvider` passes these through and maps the JSON to domain values (`mappers.ts`), List-Unsubscribe and invitation parts included.
 
 ### Changing mail
 
@@ -393,6 +413,39 @@ Like Graph: archive, trash and spam move into the folder with that role, which `
 ### Senders and signatures
 
 `SenderStore` (`src/providers/senderStore.ts`) keeps what IMAP servers and Graph can't: an account's further From addresses with their settings and its catch-all domains under `a0.settings.senders.<accountId>`, and the signatures under `a0.settings.signatures.<accountId>`. The account's own address (with the name given when adding it) is always first and can't be removed; removing an address drops its signature. Mail goes out from whatever address the draft names: it's the `From` header and the SMTP sender, and the server decides whether it accepts it. Address suggestions come from the CardDAV address books of the account's calendar server, else of calendar-only servers (`searchContacts` from `contactsFor` in `src/app/caldav.ts`), and then from recent mail (`recentToo`); without any, from recent mail only ([caldav.md](caldav.md#contacts)).
+
+## Filters and automatic replies
+
+Each module creates a filter provider next to the mail provider (`createFilters`). The data layer (`src/data/filters.ts`) loads the setup into memory only and makes every change optimistic; `src/data/filterMatches.ts` runs "Also apply": it lists up to the newest 1,000 messages that `searchOf` finds where the server runs filters (`scope`: Gmail's All Mail, else the Inbox), checks `hasAttachment` itself, and applies the actions as the usual intents (labels and flags first, then out of the Inbox, Trash last), one after the other, so the undo toast can take all of it back. Forwarding never applies to existing mail.
+
+### Gmail filters
+
+`GmailFilterProvider` (`src/providers/gmail/filters.ts`) uses `settings/filters`, `settings/vacation` and `settings/forwardingAddresses`. Reading works with the mail scope; changes need `gmail.settings.basic`, so without it the setup is `readOnly` (from `ScopedSession.hasScopes`) and Settings offers **Allow editing**; a 403 on a write is `settingsNotAllowed`.
+
+- Gmail filters have no names, order or on/off. Gmail can't change a filter, so `update` reads it, creates the new version (without retrying the POST) and only then deletes the old one: a refused edit leaves the old filter in place.
+- Criteria and label actions action0 doesn't show (`excludeChats`, Important, Categorize as) are kept. Lists are written as `a OR b`, and read from `a OR b`, `(…)` and `{…}`. Only `Label_…` ids count as user labels.
+- Forwarding goes only to addresses verified in Gmail (checked before posting: `forwardNotAllowed`); the editor links to Gmail's forwarding settings when there are none. A duplicate filter is `filterExists`.
+- The vacation responder is replaced as a whole on each save, keeping the fields action0 doesn't show (`restrictToDomain`); the first and last day are local days, the end the last millisecond of the last day.
+- `searchOf` writes Gmail's operators: `from:(a OR b) -(x) has:attachment larger:N`.
+
+### Outlook inbox rules
+
+`GraphFilterProvider` (`src/providers/microsoft/filters.ts`) uses `me/mailFolders/inbox/messageRules` and `me/mailboxSettings` (`automaticRepliesSetting`), both under `MailboxSettings.ReadWrite`.
+
+- Graph replaces `conditions`, `exceptions` and `actions` whole on PATCH, so `update` reads the rule and sends them complete, with the keys action0 doesn't show merged in. Full addresses become `fromAddresses`/`sentToAddresses`, other text `senderContains`/`recipientContains`; "Doesn't have" is an exception. "Larger/smaller than" is a `withinSizeRange` with one open end (1 GB); a real range shows as "and more". Rules without a name get one from their first condition. `hasError` and `isReadOnly` show on the row.
+- `create(position)` posts after the last rule and renumbers `sequence`; `reorder` patches only the rules whose `sequence` changes.
+- Automatic replies are `scheduled` whenever there is a first or last day (a missing first day is today; a missing last day is written ten years out and reads back as open). Personal accounts get one message (contacts only through `externalAudience`); work accounts an inside and an outside message with its audience.
+- `searchOf` writes KQL: `from:`, `recipients:`, `subject:`, `(subject:w OR body:w)`, `hasAttachments:true`, `size>N`, `NOT …`. Outlook rules can't flag mail, so they have no star action.
+
+### Sieve (mail servers)
+
+`SieveFilterProvider` (`src/providers/sieve/`) keeps the filters of mail server accounts in the Sieve script the server runs, in the apps only. The native side (`src-tauri/src/imap/sieve.rs`, see [desktop-app.md](desktop-app.md#imap-and-smtp)) finds the filter server, logs in with the account's login and moves the active script back and forth over ManageSieve (RFC 5804); reading and writing Sieve happens in TypeScript (`script.ts`).
+
+- The script is split into chunks with their exact text, and only changed rules are rewritten, in Roundcube's style (`# rule:[name]`, and `if false # …` when switched off), so Roundcube and action0 edit each other's rules. Other `if` blocks show as **Custom rule** (on/off and delete only), and actions action0 doesn't show (`fileinto :copy`, plain `redirect`, `setflag`, `discard`) are kept when a rule is rewritten ("and more").
+- What the editor offers follows the server's extensions: `body` for the word conditions, `mime` for attachments, `fileinto` for moving, `imap4flags` for read and star, `copy` for forwarding (`redirect :copy`, at most 4 addresses), a Trash folder for Delete, `vacation` for the automatic reply (without it, `capabilities.autoReply` is unset) and `date` with `relational` for its days. The automatic reply is the first rule whose only action is `vacation`, written at the top with the account's From addresses as `:addresses`.
+- Every change reads the script, changes it and writes it only if the server still has the same text; otherwise `filtersChanged`, and the list reloads. Filter ids carry the rule's position and a hash of its text, so a stale id never edits another rule. With no active script, the first change creates and activates one called "action0".
+- The filter server comes from the account (once found or chosen), a small table of known providers (mailbox.org, Posteo; providers known to have none answer at once), else the IMAP host on port 4190. When none answers, `load` fails with `noFilterServer` and Settings offers **Use another server** (`filterServer.choose`).
+- `searchOf` uses the IMAP search syntax (`from:`, `to:`, `subject:`, words, `-word`, `larger:`, `smaller:`); IMAP can only AND terms, so a field with several values searches its first one: "Also apply" may find too few, never too many.
 
 ## Calendars
 
@@ -458,6 +511,8 @@ The CalDAV provider has its own document: [caldav.md](caldav.md).
 Like Gmail, messages in Spam or Trash show up only there. Search matches plain words (case- and accent-insensitive) in subject, sender, recipients and snippet; there are no operators. Cursors are offsets, and `changesSince` reads a change log with a version number as its token.
 
 Its data can turn on `editSenders` (addresses managed in action0, as for IMAP and Outlook; `src/ui/fromAddresses.test.tsx`). Options and switches for tests: `latencyMs` (simulated network delay), `failWrites` (every write fails, to exercise rollback), `contactsUnavailable`, `signaturesReadOnly`, `oneClickRequests` (the unsubscribe URLs it "sent"), and `arrivals`, which lets a new message "arrive" every so often; the arrival is checked inside `changesSince`, so no timers run in the provider.
+
+`FakeFilterProvider` (`src/providers/fake/FakeFilterProvider.ts`) keeps the demo accounts' filters and automatic reply in memory (`demoFilters.ts`): Gmail-style for the first account (no names, order or switch; a verified forwarding address; one filter with parts action0 doesn't show), Outlook-style rules for the work account. Like the real ones they don't act on the demo's mail. Tests set `failWrites` and `readOnly` (as without Gmail's settings permission). Its `searchOf` searches the first value of each condition as words.
 
 ### `FakeCalendarProvider`
 

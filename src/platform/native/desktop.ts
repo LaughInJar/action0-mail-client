@@ -25,6 +25,7 @@ import {
 } from "./common";
 import { createNativeAiBackend } from "./ai";
 import { createNativeCaldavBridge } from "./caldav";
+import { createNativeSieveBridge } from "./sieve";
 import { createNativeImapBridge } from "./imap";
 import { createNativeFetch } from "./nativeFetch";
 
@@ -227,5 +228,6 @@ export async function startDesktop(
       ),
     },
     caldav: createNativeCaldavBridge(invoke),
+    sieve: createNativeSieveBridge(invoke),
   };
 }

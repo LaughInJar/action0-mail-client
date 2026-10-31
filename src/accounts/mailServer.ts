@@ -100,9 +100,12 @@ export interface MailServerCertificate {
   readonly notAfter: string;
   /** The host names it's for. */
   readonly names: readonly string[];
-  /** Which server showed it (`caldav`: the calendar server). */
-  readonly server: "imap" | "smtp" | "caldav";
+  /** Which server showed it (`caldav`: the calendar server; `sieve`: the filter server). */
+  readonly server: MailServerRole;
 }
+
+/** Which of an account's servers something concerns. */
+export type MailServerRole = "imap" | "smtp" | "caldav" | "sieve";
 
 /**
  * Why a call to a mail server failed:
@@ -115,7 +118,9 @@ export interface MailServerCertificate {
  * - `notFound`: the message, folder or account is gone.
  * - `exists`: a folder with that name exists.
  * - `tooBig`: the SMTP server refused the mail's size.
- * - `rejected`: the SMTP server refused a recipient or the mail (`message`).
+ * - `rejected`: the SMTP server refused a recipient or the mail, or the
+ *   filter server a script (`message`).
+ * - `changed`: the filters were changed elsewhere since they were read.
  * - `server`: the server answered NO/BAD (`message` is its text).
  */
 export type MailServerErrorKind =
@@ -128,6 +133,7 @@ export type MailServerErrorKind =
   | "exists"
   | "tooBig"
   | "rejected"
+  | "changed"
   | "server";
 
 /** See {@link MailServerErrorKind}. The native side answers with its JSON. */
@@ -135,14 +141,14 @@ export class MailServerError extends Error {
   override readonly name = "MailServerError";
   readonly kind: MailServerErrorKind;
   /** Which server it concerns, when it matters (adding an account). */
-  readonly server: "imap" | "smtp" | "caldav" | undefined;
+  readonly server: MailServerRole | undefined;
   readonly certificate: MailServerCertificate | undefined;
 
   constructor(
     kind: MailServerErrorKind,
     message: string,
     options: {
-      readonly server?: "imap" | "smtp" | "caldav";
+      readonly server?: MailServerRole;
       readonly certificate?: MailServerCertificate;
     } = {},
   ) {

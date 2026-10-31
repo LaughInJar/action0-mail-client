@@ -5,6 +5,7 @@ import type { MailServerAccountInfo } from "../../accounts/mailServer";
 import type { NativeAccount, NativeAuthBridge } from "../../auth/native/bridge";
 import type { CaldavBridge } from "../../providers/caldav/bridge";
 import type { ImapBridge } from "../../providers/imap/bridge";
+import type { SieveBridge } from "../../providers/sieve/bridge";
 import type { Platform } from "../types";
 import type { Invoke } from "./nativeFetch";
 
@@ -25,6 +26,8 @@ export interface NativeStart {
   };
   /** Calendar servers (CalDAV): logins kept and requests made natively. */
   readonly caldav: CaldavBridge;
+  /** Mail server accounts' filters (ManageSieve), reached natively. */
+  readonly sieve: SieveBridge;
 }
 
 /** Tauri's `invoke`, with request headers. */

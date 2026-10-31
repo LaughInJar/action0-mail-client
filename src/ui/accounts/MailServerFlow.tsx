@@ -749,6 +749,7 @@ function errorText(
       case "exists":
       case "tooBig":
       case "rejected":
+      case "changed":
       case "server":
         return e.server(failure.message);
     }

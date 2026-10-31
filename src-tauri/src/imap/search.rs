@@ -1,7 +1,8 @@
 //! Searching on the server: the search field's text (`from:anna`, `to:x`,
-//! `subject:x`, `is:unread`, `is:starred`, quoted phrases and words) as IMAP
-//! search keys, all of which must match. Gmail gets the whole text as
-//! `X-GM-RAW`, which knows its own operators.
+//! `subject:x`, `is:unread`, `is:starred`, `larger:5M`, `smaller:100K`,
+//! quoted phrases and words, and `-word` or `-"phrase"` for mail without
+//! them) as IMAP search keys, all of which must match. Gmail gets the whole
+//! text as `X-GM-RAW`, which knows its own operators.
 //!
 //! Non-ASCII words go as UTF-8: quoted after `ENABLE UTF8=ACCEPT` (then
 //! without a CHARSET, as RFC 6855 wants), else as literals with `CHARSET
@@ -18,6 +19,12 @@ pub enum Term {
     Subject(String),
     /// Anywhere in the header or body.
     Text(String),
+    /// Nowhere in the header or body.
+    NotText(String),
+    /// More than this many bytes.
+    Larger(u64),
+    /// Fewer than this many bytes.
+    Smaller(u64),
     Unseen,
     Seen,
     Flagged,
@@ -51,8 +58,14 @@ impl Query {
     fn is_ascii(&self) -> bool {
         self.gmail.as_deref().is_none_or(str::is_ascii)
             && self.terms.iter().all(|term| match term {
-                Term::From(s) | Term::To(s) | Term::Subject(s) | Term::Text(s) => s.is_ascii(),
-                Term::Unseen | Term::Seen | Term::Flagged => true,
+                Term::From(s)
+                | Term::To(s)
+                | Term::Subject(s)
+                | Term::Text(s)
+                | Term::NotText(s) => s.is_ascii(),
+                Term::Larger(_) | Term::Smaller(_) | Term::Unseen | Term::Seen | Term::Flagged => {
+                    true
+                }
             })
     }
 
@@ -68,6 +81,9 @@ impl Query {
                 Term::To(s) => command.text(" TO ").string(s.clone()),
                 Term::Subject(s) => command.text(" SUBJECT ").string(s.clone()),
                 Term::Text(s) => command.text(" TEXT ").string(s.clone()),
+                Term::NotText(s) => command.text(" NOT TEXT ").string(s.clone()),
+                Term::Larger(n) => command.text(format!(" LARGER {n}")),
+                Term::Smaller(n) => command.text(format!(" SMALLER {n}")),
                 Term::Unseen => command.text(" UNSEEN"),
                 Term::Seen => command.text(" SEEN"),
                 Term::Flagged => command.text(" FLAGGED"),
@@ -132,7 +148,7 @@ pub fn parse(text: &str) -> Vec<Term> {
                 break;
             }
             chars.next();
-            if c == '"' && word.ends_with(':') {
+            if c == '"' && (word.ends_with(':') || word == "-") {
                 word.push_str(&quoted(&mut chars));
                 break;
             }
@@ -146,14 +162,26 @@ pub fn parse(text: &str) -> Vec<Term> {
 }
 
 fn term(word: &str) -> Option<Term> {
+    if let Some(negated) = word.strip_prefix('-') {
+        return (!negated.trim().is_empty()).then(|| Term::NotText(negated.to_string()));
+    }
     let Some((key, value)) = word.split_once(':') else {
         return Some(Term::Text(word.to_string()));
     };
+    let size = || bytes(value);
     let value = value.to_string();
     let known = match key.to_ascii_lowercase().as_str() {
         "from" => Term::From(value),
         "to" => Term::To(value),
         "subject" => Term::Subject(value),
+        "larger" => match size() {
+            Some(n) => Term::Larger(n),
+            None => return Some(Term::Text(word.to_string())),
+        },
+        "smaller" => match size() {
+            Some(n) => Term::Smaller(n),
+            None => return Some(Term::Text(word.to_string())),
+        },
         "is" => match value.to_ascii_lowercase().as_str() {
             "unread" => Term::Unseen,
             "read" => Term::Seen,
@@ -166,6 +194,21 @@ fn term(word: &str) -> Option<Term> {
         Term::From(v) | Term::To(v) | Term::Subject(v) if v.trim().is_empty() => None,
         _ => Some(known),
     }
+}
+
+/// A size: bytes, or with K or M (KB, MB; 1024-based) after the number.
+fn bytes(text: &str) -> Option<u64> {
+    let upper = text.trim().to_ascii_uppercase();
+    let number = upper.strip_suffix('B').unwrap_or(&upper);
+    let (digits, factor) = match number.as_bytes().last() {
+        Some(b'K') => (&number[..number.len() - 1], 1024),
+        Some(b'M') => (&number[..number.len() - 1], 1024 * 1024),
+        _ => (number, 1),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<u64>().ok()?.checked_mul(factor)
 }
 
 #[cfg(test)]
@@ -221,6 +264,33 @@ mod tests {
                 .sort("UNDELETED", false)
                 .render(false),
             "UID SORT (ARRIVAL) US-ASCII UNDELETED"
+        );
+    }
+
+    #[test]
+    fn reads_negations_and_sizes() {
+        assert_eq!(
+            parse(
+                "-spam -\"daily digest\" larger:5M smaller:100kb larger:2048 e-mail - -  larger:lots"
+            ),
+            vec![
+                Term::NotText("spam".into()),
+                Term::NotText("daily digest".into()),
+                Term::Larger(5 * 1024 * 1024),
+                Term::Smaller(100 * 1024),
+                Term::Larger(2048),
+                Term::Text("e-mail".into()),
+                Term::Text("larger:lots".into()),
+            ]
+        );
+        assert_eq!(bytes("1K"), Some(1024));
+        assert_eq!(bytes("3mb"), Some(3 * 1024 * 1024));
+        assert_eq!(bytes("M"), None);
+        assert_eq!(bytes("99999999999999999999K"), None);
+        let query = Query::new(Some("invoice -paid larger:1K"), false);
+        assert_eq!(
+            query.search("UNDELETED", false).render(false),
+            "UID SEARCH UNDELETED TEXT \"invoice\" NOT TEXT \"paid\" LARGER 1024"
         );
     }
 

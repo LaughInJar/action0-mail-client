@@ -226,6 +226,7 @@ async fn shares_the_mail_accounts_login() {
             },
             pinned: None,
             max_bytes: None,
+            sieve: None,
         },
     );
     let info = caldav

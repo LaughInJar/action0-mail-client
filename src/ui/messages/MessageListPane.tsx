@@ -14,6 +14,7 @@ import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { ListToolbar } from "./ListToolbar";
+import { AutoReplyNotice } from "../filters/AutoReplyNotice";
 import { MessageList } from "./MessageList";
 import {
   everywhereMailbox,
@@ -219,6 +220,15 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
           mailbox={mailbox}
           everywhere={everywhere}
           unified={unified}
+        />
+      )}
+      {route && (
+        <AutoReplyNotice
+          accountIds={
+            unified
+              ? accounts.map((candidate) => candidate.account.id)
+              : [route.accountId]
+          }
         />
       )}
       {unavailable.length > 0 && (

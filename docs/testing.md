@@ -53,6 +53,7 @@ The helpers in `src/test/`:
 | `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                                       |
 | `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`                      |
 | `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars and address books, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls) and `icsEvent()` |
+| `sieveBridge.ts`     | `fakeSieveBridge()`: an in-memory ManageSieve server behind the native bridge (one active script, writes recorded and checked against `expected`, no server found until "Use another server", `failNext`)                    |
 
 Run all tests with `npm test`, keep them running with `npm run test:watch`, or run a single file or test with `npx vitest run src/ui/actions.test.tsx -t "rolls back"`.
 
@@ -158,6 +159,7 @@ It returns Testing Library's render result plus `services` (the `AppServices`: a
 | `modules`         | one demo module                | Replaces the provider modules entirely; `data`, `calendar` and the other demo options then don't apply                                  |
 | `imap`            | none                           | Mail server accounts through this bridge (`fakeImapBridge().bridge`), as in the apps                                                    |
 | `caldav`          | none                           | Calendar servers through this bridge (`fakeDavServer().bridge`): calendar-only servers, and with `imap` the accounts' calendars         |
+| `sieve`           | none                           | With `imap`: the mail server accounts' filters through this bridge (`fakeSieveBridge().bridge`)                                         |
 
 Some things are fixed: the demo module answers without latency (`latencyMs: 0`) and without new mail arriving (`arrivalEveryMs: false`), and the query cache isn't persisted (`sessionStorage: undefined`), so every test starts cold. When the test finishes, the router is disposed and the query cache cleared.
 

@@ -30,9 +30,13 @@ pub enum ErrorKind {
     /// The SMTP server refused the mail's size.
     #[serde(rename = "tooBig")]
     TooBig,
-    /// The SMTP server refused a recipient or the mail.
+    /// The SMTP server refused a recipient or the mail, or the filter
+    /// server a script.
     #[serde(rename = "rejected")]
     Rejected,
+    /// The filters were changed elsewhere since they were read.
+    #[serde(rename = "changed")]
+    Changed,
     /// The server answered NO or BAD (or something else unexpected).
     #[serde(rename = "server")]
     Server,
@@ -46,6 +50,8 @@ pub enum ServerRole {
     Smtp,
     /// The calendar server (CalDAV).
     Caldav,
+    /// The filter server (ManageSieve).
+    Sieve,
 }
 
 /// A certificate the system doesn't trust, for the user to decide on.

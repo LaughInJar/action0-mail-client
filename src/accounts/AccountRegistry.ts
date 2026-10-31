@@ -148,7 +148,7 @@ export class AccountRegistry {
   }
 }
 
-/** An account with its session, mail provider and (if any) calendars. */
+/** An account with its session, mail provider and (if any) calendars and filters. */
 function handleOf(
   module: ProviderModule,
   account: Account,
@@ -160,6 +160,9 @@ function handleOf(
     provider: module.createProvider(account, auth),
     ...(module.createCalendar
       ? { calendar: module.createCalendar(account, auth) }
+      : {}),
+    ...(module.createFilters
+      ? { filters: module.createFilters(account, auth) }
       : {}),
   };
 }

@@ -10,6 +10,8 @@ import {
   type FakeCalendarData,
 } from "./FakeCalendarProvider";
 import { FakeMailProvider, type FakeMailData } from "./FakeMailProvider";
+import { FakeFilterProvider, type FakeFilterData } from "./FakeFilterProvider";
+import { createDemoFilters, createWorkDemoFilters } from "./demoFilters";
 import { createWorkArrival, createWorkDemoData, WORK_EMAIL } from "./demoWork";
 
 /** The demo account. */
@@ -49,6 +51,10 @@ export interface DemoModuleOptions {
   readonly guestNotices?: "ask" | "always";
   /** Reminders kept by the calendar, like Outlook's (tests). */
   readonly syncedReminders?: boolean;
+  /** Replaces the demo account's filters (used by tests). */
+  readonly filters?: () => FakeFilterData;
+  /** Replaces the work demo account's rules (used by tests). */
+  readonly workFilters?: () => FakeFilterData;
 }
 
 /** Provider module of the demo account: in-memory data, no sign-in. */
@@ -62,6 +68,8 @@ export function createDemoModule({
   calendarAccess = "granted",
   guestNotices = "ask",
   syncedReminders = false,
+  filters = createDemoFilters,
+  workFilters = createWorkDemoFilters,
 }: DemoModuleOptions = {}): ProviderModule {
   return {
     type: "demo",
@@ -88,6 +96,11 @@ export function createDemoModule({
         },
       );
     },
+    createFilters: (account) =>
+      new FakeFilterProvider(
+        account.email === WORK_EMAIL ? workFilters() : filters(),
+        { latencyMs },
+      ),
     createProvider: (account) => {
       const work = account.email === WORK_EMAIL;
       return new FakeMailProvider(work ? workData() : data(), {

@@ -128,7 +128,7 @@ export type ImapChange =
 /** What a list asks for. */
 export interface ImapListQuery {
   readonly mailboxId: string;
-  /** Words, `from:`, `to:`, `subject:`, `is:unread`, `is:starred`. */
+  /** Words, `-word`, `from:`, `to:`, `subject:`, `is:unread`, `is:starred`, `larger:`, `smaller:` (bytes, or `5K`, `2M`). */
   readonly search?: string;
   readonly order?: "newest" | "oldest";
   readonly cursor?: string;

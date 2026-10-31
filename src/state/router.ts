@@ -203,21 +203,34 @@ export function listRoute(route: NonNullable<Route>): NonNullable<Route> {
   return list;
 }
 
+/** An editor open over Settings (its own screen on phones). */
+export type SettingsEditor = "filter" | "auto-reply";
+
+const SETTINGS_EDITORS: readonly string[] = [
+  "filter",
+  "auto-reply",
+] satisfies SettingsEditor[];
+
 /**
  * What's open over the route (mail or calendar), in the URL so Back closes
- * it: Settings (`?settings`), or the original of a message
+ * it: Settings (`?settings`, or `?settings=<editor>` with an editor open
+ * over it), or the original of a message
  * (`?original=<messageId>&oa=<accountId>`; any account, since a row of
  * All inboxes may be another account's).
  */
 export type Overlay =
-  | { readonly kind: "settings" }
+  | { readonly kind: "settings"; readonly editor?: SettingsEditor }
   | { readonly kind: "original"; readonly message: MessageRef };
 
 /** The overlay a location hash names, if any. */
 export function overlayOf(hash: string): Overlay | null {
   const [, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
   const params = new URLSearchParams(query);
-  if (params.has("settings")) return { kind: "settings" };
+  const settings = params.get("settings");
+  if (settings !== null)
+    return SETTINGS_EDITORS.includes(settings)
+      ? { kind: "settings", editor: settings as SettingsEditor }
+      : { kind: "settings" };
   const messageId = params.get("original");
   const accountId = params.get("oa");
   return messageId && accountId
@@ -241,7 +254,9 @@ function withOverlay(hash: string, overlay: Overlay | null): string {
   if (!overlay) return hash;
   const flag =
     overlay.kind === "settings"
-      ? "settings"
+      ? overlay.editor
+        ? `settings=${overlay.editor}`
+        : "settings"
       : new URLSearchParams({
           original: overlay.message.messageId,
           oa: overlay.message.accountId,
@@ -280,6 +295,12 @@ export interface HashRouter {
   readonly openSettings: () => void;
   /** Closes Settings: Back if it was opened here, else the flag is removed. */
   readonly closeSettings: () => void;
+  /** The editor open over Settings, if any. */
+  readonly getSettingsEditor: () => SettingsEditor | null;
+  /** Opens an editor over Settings as a new history entry, so Back closes it. */
+  readonly openSettingsEditor: (editor: SettingsEditor) => void;
+  /** Closes the editor over Settings (Back if it was opened here); Settings stays. */
+  readonly closeSettingsEditor: () => void;
   /**
    * The message whose original is shown over the route, if any. The
    * identity only changes when it does.
@@ -392,6 +413,24 @@ export function createHashRouter(win: Window = window): HashRouter {
     },
     closeSettings: () => {
       close("settings");
+    },
+    getSettingsEditor: () =>
+      overlay?.kind === "settings" ? (overlay.editor ?? null) : null,
+    openSettingsEditor: (editor) => {
+      open({ kind: "settings", editor });
+    },
+    closeSettingsEditor: () => {
+      if (overlay?.kind !== "settings" || !overlay.editor) return;
+      if ((win.history.state as HistoryState | null)?.a0Overlay === true)
+        win.history.back();
+      else {
+        win.history.replaceState(
+          win.history.state,
+          "",
+          here({ kind: "settings" }),
+        );
+        sync();
+      }
     },
     getOriginal: () => (overlay?.kind === "original" ? overlay.message : null),
     openOriginal: (message) => {

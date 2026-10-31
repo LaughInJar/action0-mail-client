@@ -200,13 +200,15 @@ export class GmailHttp {
 
   /**
    * POSTs a JSON body to `path` and returns the parsed JSON response
-   * (`undefined` for 204 No Content). Only use it for idempotent operations,
-   * because failed attempts are retried.
+   * (`undefined` for 204 No Content). Failed attempts are retried, so
+   * requests that create something pass `retry: false`: after a network
+   * error or a 5xx the first attempt may have succeeded.
    */
   post<T = undefined>(
     path: string,
     body?: unknown,
     signal?: AbortSignal,
+    { retry = true }: { readonly retry?: boolean } = {},
   ): Promise<T> {
     const url = new URL(path, this.#base);
     // Some endpoints (messages.trash) require an empty body.
@@ -214,7 +216,9 @@ export class GmailHttp {
       body === undefined
         ? undefined
         : { payload: JSON.stringify(body), contentType: "application/json" };
-    return this.#limit(() => this.#request<T>(url, "POST", payload, signal));
+    return this.#limit(() =>
+      this.#request<T>(url, "POST", payload, signal, retry),
+    );
   }
 
   /** PATCHes `path` with a JSON body (changes only) and returns the parsed JSON response. */

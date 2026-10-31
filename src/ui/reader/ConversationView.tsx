@@ -19,6 +19,7 @@ import { mailActionItems } from "../actions/mailActionItems";
 import { OverflowToolbar } from "../common/OverflowToolbar";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { filterItems, useFilterLinkActions } from "../filters/filterLink";
 import { answerItems } from "./answerItems";
 import { useMailActions, type MailActions } from "../actions/useMailActions";
 import { errorMessage } from "../common/errorMessage";
@@ -77,6 +78,7 @@ export function ConversationView({
   const actions = useMailActions();
   const compose = useComposeActions();
   const original = useOriginalActions();
+  const filterLink = useFilterLinkActions();
   const messages = useMemo(() => {
     if (!thread) return undefined;
     if (!mailbox) return thread.messages;
@@ -208,6 +210,17 @@ export function ConversationView({
                   t,
                 ),
                 ...originalItems(original, answering, t),
+                ...filterItems(
+                  filterLink,
+                  () => {
+                    const { messageId } = answering();
+                    const from = messages?.find(
+                      (message) => message.id === messageId,
+                    )?.from;
+                    return { accountId, ...(from ? { from } : {}) };
+                  },
+                  t,
+                ),
               ]
             : []
         }

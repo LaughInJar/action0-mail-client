@@ -20,6 +20,7 @@ import { useBreakpoint, type Breakpoint } from "../layout/useBreakpoint";
 import { mailActionItems } from "../actions/mailActionItems";
 import { OverflowToolbar } from "../common/OverflowToolbar";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { filterItems, useFilterLinkActions } from "../filters/filterLink";
 import { answerItems } from "./answerItems";
 import { useMailActions } from "../actions/useMailActions";
 import {
@@ -207,6 +208,7 @@ function MessageView({
   const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
   const compose = useComposeActions();
   const original = useOriginalActions();
+  const filterLink = useFilterLinkActions();
   const canWrite = compose.canWriteFrom(accountId);
   const drafts = mailboxes?.find((mailbox) => mailbox.role === "drafts");
   const isDraft =
@@ -331,6 +333,14 @@ function MessageView({
                 ...originalItems(
                   original,
                   { accountId, messageId: message.id },
+                  t,
+                ),
+                ...filterItems(
+                  filterLink,
+                  {
+                    accountId,
+                    ...(message.from ? { from: message.from } : {}),
+                  },
                   t,
                 ),
               ]

@@ -12,6 +12,9 @@ import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
 import { SpellingSettings } from "./SpellingSettings";
 import { AiSettings } from "../ai/AiSettings";
+import { useAccounts } from "../../accounts/context";
+import { FilterSettings } from "../filters/FilterSettings";
+import { FILTER_SETTINGS_ID } from "../filters/filterLink";
 import { AI_SETTINGS_ID } from "../ai/aiSettingsLink";
 import { useT } from "../../i18n/context";
 import {
@@ -44,9 +47,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const s = t.settings;
   const { desktop, mobile, pwa } = usePlatform();
   const named = SECTIONS.map(([id, key]) => [id, s[key]] as const);
+  const filters = useAccounts().some((handle) => handle.filters);
   const sections: (readonly [string, string])[] = [
-    // The AI assistant after Writing.
+    // Filters and the AI assistant after Writing.
     ...named.slice(0, 3),
+    ...(filters ? [[FILTER_SETTINGS_ID, t.filters.section] as const] : []),
     [AI_SETTINGS_ID, t.ai.settings.section],
     ...named.slice(3),
     ...(desktop || mobile
@@ -214,6 +219,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             />
             <SignatureSettings />
           </SettingsSection>
+          <FilterSettings />
 
           <AiSettings />
           <SettingsSection id="settings-notifications" title={s.notifications}>
