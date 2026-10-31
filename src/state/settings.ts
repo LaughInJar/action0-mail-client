@@ -43,6 +43,8 @@ export interface AppSettings {
   readonly lastSendAccount: string;
   /** Desktop app: closing the window keeps it running in the tray. */
   readonly closeToTray: boolean;
+  /** Web app on a phone: installing was offered once (the bar). */
+  readonly installOffered: boolean;
   /** Event reminders show (notifications and the reminders panel). */
   readonly eventReminders: boolean;
   /** Misspelled words are underlined (mail, signatures, events). */
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastEventCalendar: "",
   lastSendAccount: "",
   closeToTray: true,
+  installOffered: false,
   eventReminders: true,
   spellcheck: true,
   spellLanguages: [],
@@ -236,6 +239,10 @@ export function parseSettings(value: unknown): AppSettings {
         : d.lastSendAccount,
     closeToTray:
       typeof raw.closeToTray === "boolean" ? raw.closeToTray : d.closeToTray,
+    installOffered:
+      typeof raw.installOffered === "boolean"
+        ? raw.installOffered
+        : d.installOffered,
     eventReminders:
       typeof raw.eventReminders === "boolean"
         ? raw.eventReminders

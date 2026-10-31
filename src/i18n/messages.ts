@@ -14,6 +14,7 @@ import { list } from "./texts/list";
 import { mailboxes } from "./texts/mailboxes";
 import { menus } from "./texts/menus";
 import { original } from "./texts/original";
+import { pwa } from "./texts/pwa";
 import { reader } from "./texts/reader";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
@@ -44,6 +45,7 @@ export const messages = {
     mailboxes: mailboxes.en,
     menus: menus.en,
     original: original.en,
+    pwa: pwa.en,
     reader: reader.en,
     settings: settings.en,
     shortcuts: shortcuts.en,
@@ -68,6 +70,7 @@ export const messages = {
     mailboxes: mailboxes.de,
     menus: menus.de,
     original: original.de,
+    pwa: pwa.de,
     reader: reader.de,
     settings: settings.de,
     shortcuts: shortcuts.de,

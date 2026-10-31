@@ -172,22 +172,30 @@ Attachments are never rendered as pages in the app's origin (`attachmentKind()` 
 
 A message's source is untrusted text. The view (`src/ui/original/`) only ever renders it as text nodes (React escapes it), never as HTML. The summary's SPF, DKIM and DMARC badges come only from the topmost `Authentication-Results` header, which the account's own provider added on arrival; lower ones may have been written by anyone, sender included (`authResults` in `src/core/rawMessage.ts`). None of it changes what the app trusts (remote images, links): it's information for the user.
 
+## The installable web app
+
+The web app's service worker (`src/sw/serviceWorker.ts`, built as `/sw.js`; production web builds only, never in the Tauri apps) keeps only the app's own files, listed at build time: `index.html`, the hashed `assets/`, `theme.js`, the icons and the manifest, in a cache named after their version (older ones are deleted). Every other request goes to the network untouched: the provider and AI APIs, sign-in, `redirect.html`, other sites. Mail and API answers are never stored, so installing the app changes nothing about what's kept ([what is stored where](#what-is-stored-where)).
+
+Content shared to the installed app ("Share → action0" on Android) arrives as a `POST /share-target`; the worker holds it in its memory only until the page takes it (once, by a random id in the address) and starts a new mail with it. Notifications shown through the worker carry only the title, the text and the page address of the message (`data: {tag, url}`); a click focuses the app or opens it at that address.
+
 ## App CSP
 
 Production builds of the web app carry this policy as a `<meta>` tag, injected by the `action0:csp` plugin in `vite.config.ts` (the dev server runs without it, because hot reload needs inline scripts):
 
-| Directive     | Value                                                                       | Why                                                                                                                 |
-| ------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `default-src` | `'self'`                                                                    | Everything else only from the app's origin                                                                          |
-| `script-src`  | `'self' https://accounts.google.com/gsi/client`                             | The app, and Google's sign-in script. No inline scripts (the theme script is a file, `public/theme.js`)             |
-| `style-src`   | `'self' 'unsafe-inline' https://accounts.google.com/gsi/style`              | Mail HTML is rendered in `srcdoc` frames, which inherit this policy and need inline styles; Google's sign-in styles |
-| `connect-src` | `'self' https: http://localhost:* http://127.0.0.1:*`                       | The provider APIs, iCal subscriptions, AI services, one-click unsubscribe (below), and local AI servers             |
-| `frame-src`   | `'self' https://accounts.google.com/gsi/ https://login.microsoftonline.com` | Google's sign-in frame; MSAL's hidden renewal frame, which returns to `redirect.html` (`'self'`)                    |
-| `img-src`     | `'self' data: blob: https: http:`                                           | Remote images in mail once allowed (the mail frame's own CSP blocks them until then); inline and viewer images      |
-| `font-src`    | `'self' data:`                                                              |                                                                                                                     |
-| `object-src`  | `'none'`                                                                    | No plugins                                                                                                          |
-| `base-uri`    | `'none'`                                                                    | No `<base>` hijacking                                                                                               |
-| `form-action` | `'none'`                                                                    | No form submissions                                                                                                 |
+| Directive      | Value                                                                       | Why                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `default-src`  | `'self'`                                                                    | Everything else only from the app's origin                                                                          |
+| `script-src`   | `'self' https://accounts.google.com/gsi/client`                             | The app, and Google's sign-in script. No inline scripts (the theme script is a file, `public/theme.js`)             |
+| `style-src`    | `'self' 'unsafe-inline' https://accounts.google.com/gsi/style`              | Mail HTML is rendered in `srcdoc` frames, which inherit this policy and need inline styles; Google's sign-in styles |
+| `connect-src`  | `'self' https: http://localhost:* http://127.0.0.1:*`                       | The provider APIs, iCal subscriptions, AI services, one-click unsubscribe (below), and local AI servers             |
+| `frame-src`    | `'self' https://accounts.google.com/gsi/ https://login.microsoftonline.com` | Google's sign-in frame; MSAL's hidden renewal frame, which returns to `redirect.html` (`'self'`)                    |
+| `img-src`      | `'self' data: blob: https: http:`                                           | Remote images in mail once allowed (the mail frame's own CSP blocks them until then); inline and viewer images      |
+| `font-src`     | `'self' data:`                                                              |                                                                                                                     |
+| `object-src`   | `'none'`                                                                    | No plugins                                                                                                          |
+| `worker-src`   | `'self'`                                                                    | The installable web app's service worker (`/sw.js`)                                                                 |
+| `manifest-src` | `'self'`                                                                    | Its manifest                                                                                                        |
+| `base-uri`     | `'none'`                                                                    | No `<base>` hijacking                                                                                               |
+| `form-action`  | `'none'`                                                                    | No form submissions                                                                                                 |
 
 **Why `connect-src https:`.** One-click unsubscribe (RFC 8058) sends a POST to the sender's server, which can be any host. `sendOneClickUnsubscribe()` (`src/providers/oneClickUnsubscribe.ts`) only accepts `https:` URLs and sends `List-Unsubscribe=One-Click` with `mode: "no-cors"`, `credentials: "omit"` and `referrerPolicy: "no-referrer"`; the answer is opaque, so the app can't read it. The decision (see `CLAUDE.md`) notes that remote images may already load from anywhere once allowed, so this barely widens what the app can reach. `http://localhost` and `127.0.0.1` are there for the AI assistant's local servers (Ollama, LM Studio), which run on the user's own computer.
 

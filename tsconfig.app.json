@@ -24,5 +24,6 @@
     "erasableSyntaxOnly": true,
     "isolatedModules": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/sw/serviceWorker.ts"]
 }

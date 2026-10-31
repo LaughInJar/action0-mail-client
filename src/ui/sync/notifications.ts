@@ -1,7 +1,7 @@
 import type { MessageId } from "../../core/ids";
 import type { Arrivals } from "../../data/sync";
 import type { NotificationsPort } from "../../platform/types";
-import type { HashRouter } from "../../state/router";
+import { formatRoute, type HashRouter, type Route } from "../../state/router";
 import type { I18n } from "../../i18n/context";
 
 /** The app is visible and focused: new mail shows up in it anyway. */
@@ -20,15 +20,18 @@ export function notifyArrivals(
 ): void {
   if (!notifications.allowed() || appInFront()) return;
   const { accountId, inboxId, messages } = arrivals;
+  const routeTo = (messageId?: MessageId): Route => ({
+    accountId,
+    mailboxId: inboxId,
+    // In All inboxes it opens there; otherwise in its account's Inbox.
+    ...(router.getRoute()?.unified ? { unified: true } : {}),
+    ...(messageId === undefined ? {} : { messageId }),
+  });
   const open = (messageId?: MessageId) => () => {
-    router.navigate({
-      accountId,
-      mailboxId: inboxId,
-      // In All inboxes it opens there; otherwise in its account's Inbox.
-      ...(router.getRoute()?.unified ? { unified: true } : {}),
-      ...(messageId === undefined ? {} : { messageId }),
-    });
+    router.navigate(routeTo(messageId));
   };
+  /** Where a click leads if the app was closed meanwhile (the installed web app). */
+  const url = (messageId?: MessageId) => `/${formatRoute(routeTo(messageId))}`;
 
   if (messages.length > 3) {
     const senders = [
@@ -39,6 +42,7 @@ export function notifyArrivals(
       body: senders.join(", "),
       tag: `a0-${accountId}`,
       onClick: open(),
+      url: url(),
     });
     return;
   }
@@ -49,5 +53,6 @@ export function notifyArrivals(
       // The same mail never notifies twice.
       tag: `a0-${message.id}`,
       onClick: open(message.id),
+      url: url(message.id),
     });
 }
