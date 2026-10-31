@@ -1,5 +1,7 @@
 /// <reference types="vitest/config" />
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -35,6 +37,9 @@ const PRODUCTION_CSP = [
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",
   "object-src 'none'",
+  // The service worker and the manifest (the installable web app).
+  "worker-src 'self'",
+  "manifest-src 'self'",
   "base-uri 'none'",
   "form-action 'none'",
 ].join("; ");
@@ -64,8 +69,86 @@ function contentSecurityPolicy(): Plugin {
   };
 }
 
+/** Every file in `public/`, as a site path ("/icons/icon-192.png"). */
+function publicFiles(): string[] {
+  const root = fileURLToPath(new URL("public", import.meta.url));
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? walk(join(dir, entry.name))
+        : [`/${relative(root, join(dir, entry.name)).replaceAll("\\", "/")}`],
+    );
+  return walk(root);
+}
+
+/**
+ * The installable web app's service worker (`src/sw/serviceWorker.ts`):
+ * built as `/sw.js` (no hash: its address must stay the same), with the
+ * list of the app's own files it keeps and a version from their contents
+ * filled in. Web builds only; the desktop and Android apps have none.
+ */
+function serviceWorker(): Plugin {
+  return {
+    name: "action0:sw",
+    apply: (_config, { command }) => command === "build" && !desktopBuild,
+    // After the pages are emitted, so `index.html` is in the list.
+    enforce: "post",
+    config: () => ({
+      build: {
+        rolldownOptions: {
+          input: {
+            sw: fileURLToPath(
+              new URL("src/sw/serviceWorker.ts", import.meta.url),
+            ),
+          },
+          output: {
+            entryFileNames: (chunk) =>
+              chunk.name === "sw" ? "sw.js" : "assets/[name]-[hash].js",
+          },
+        },
+      },
+    }),
+    generateBundle(_options, bundle) {
+      const built = Object.values(bundle)
+        .map((file) => file.fileName)
+        .filter(
+          (name) =>
+            name !== "sw.js" &&
+            name !== "redirect.html" &&
+            !name.endsWith(".map"),
+        )
+        .map((name) => `/${name}`);
+      const extra = publicFiles();
+      const files = [...built, ...extra].sort();
+      const hash = createHash("sha256").update(files.join("\n"));
+      for (const path of extra)
+        hash.update(
+          readFileSync(
+            fileURLToPath(new URL(`public${path}`, import.meta.url)),
+          ),
+        );
+      const build = `${version}-${hash.digest("hex").slice(0, 12)}`;
+      const worker = bundle["sw.js"];
+      if (worker?.type !== "chunk")
+        throw new Error("action0:sw: the service worker wasn't built.");
+      // A worker is one classic script: it can't load chunks it shares with the page.
+      if (worker.imports.length > 0)
+        throw new Error(
+          `action0:sw: the service worker shares code with the page (${worker.imports.join(", ")}); import only types from src/sw/ in the page.`,
+        );
+      const list = JSON.stringify(JSON.stringify(files)).slice(1, -1);
+      const code = worker.code
+        .replace("__A0_FILES__", list)
+        .replace("__A0_VERSION__", build);
+      if (code.includes("__A0_FILES__") || code.includes("__A0_VERSION__"))
+        throw new Error("action0:sw: the placeholders weren't filled in.");
+      worker.code = code;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), contentSecurityPolicy()],
+  plugins: [react(), tailwindcss(), contentSecurityPolicy(), serviceWorker()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },

@@ -19,18 +19,22 @@ npm run build   # tsc -b && vite build
 
 `dist/` then holds:
 
-| Path            | What it is                                                                                                        |
-| --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `index.html`    | The app (entry `src/main.tsx`)                                                                                    |
-| `redirect.html` | Where Microsoft's sign-in returns to (entry `src/redirect.ts`, from `redirect.html` in the project root)          |
-| `assets/`       | Hashed JS and CSS chunks; MSAL, the calendar, the composer, settings and `ical.js` are loaded on demand           |
-| `favicon.svg`   | Copied from `public/`                                                                                             |
-| `theme.js`      | Copied from `public/`: applies the saved theme before the first paint (a file, so the CSP needs no inline script) |
+| Path                   | What it is                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `index.html`           | The app (entry `src/main.tsx`)                                                                                        |
+| `redirect.html`        | Where Microsoft's sign-in returns to (entry `src/redirect.ts`, from `redirect.html` in the project root)              |
+| `assets/`              | Hashed JS and CSS chunks; MSAL, the calendar, the composer, settings and `ical.js` are loaded on demand               |
+| `favicon.svg`          | Copied from `public/`                                                                                                 |
+| `theme.js`             | Copied from `public/`: applies the saved theme before the first paint (a file, so the CSP needs no inline script)     |
+| `sw.js`                | The installable web app's service worker (from `src/sw/serviceWorker.ts`, not hashed: its address must stay the same) |
+| `manifest.webmanifest` | The web app's manifest (name, icons, the "New mail" shortcut, email links, the share target), from `public/`          |
+| `icons/`               | The app's icons for installing (PNG from the SVGs next to them, made with `rsvg-convert`)                             |
 
 What `vite.config.ts` adds:
 
 - **Plugins:** `@vitejs/plugin-react`, `@tailwindcss/vite`, and `action0:csp`, which injects the production Content Security Policy as a `<meta http-equiv="Content-Security-Policy">` at the top of `<head>`. It applies to `vite build` only (the dev server needs inline scripts for hot reload) and is skipped when the Tauri CLI builds the desktop app (it sets `TAURI_ENV_PLATFORM`), because the desktop app has its own CSP in `src-tauri/tauri.conf.json`. The directives and their reasons are in [security.md](security.md#app-csp).
 - **Two entries:** `build.rolldownOptions.input` lists `index.html` and `redirect.html`.
+- **The service worker** (`action0:sw`, web builds only): adds `src/sw/serviceWorker.ts` as a third entry, written as `sw.js`, and fills in the list of the app's files and a version made from them. The worker must be one script: the build fails if it shares a chunk with the page (the page may import only types from `src/sw/`). It's registered only by production builds (`startPwa` in `src/main.tsx`), so the dev server has none; try it with `npm run build && npm run preview`.
 - **`__APP_VERSION__`:** the `version` from `package.json`, compiled in. The app uses it as the "buster" of the persisted query cache (`src/data/queryClient.ts`), so a new version starts with an empty cache.
 - **Fixed port:** `server.port` and `preview.port` are 5173 with `strictPort`, because `http://localhost:5173` is the registered OAuth origin. `npm run preview` serves `dist/` there, so a production build can be tried with real sign-in locally.
 
@@ -43,7 +47,9 @@ There's no server side. Any static host works (GitHub Pages, Netlify, Cloudflare
 - **HTTPS.** Google and Microsoft only accept plain `http://` for `localhost`, so a deployment needs an `https://` origin.
 - **Serve it at the root of the host name.** The build uses Vite's default `base` (`/`), and the MSAL redirect URI is built from it (`redirectUri()` in `src/auth/microsoft/msal.ts`: `<origin>/redirect.html`).
 - **No rewrite rules needed.** Routing lives in the URL hash (`src/state/router.ts`), so the only pages are `/` (`index.html`) and `/redirect.html`. Serve `redirect.html` under exactly that address: it's the redirect URI registered in Entra.
-- **Caching.** Files in `assets/` have content hashes and can be cached for a long time; `index.html`, `redirect.html` and `theme.js` should be revalidated so a new deployment is picked up on reload.
+- **Caching.** Files in `assets/` have content hashes and can be cached for a long time; `index.html`, `redirect.html`, `theme.js`, `manifest.webmanifest` and above all `sw.js` should be revalidated (`Cache-Control: no-cache`), so a new deployment is picked up: the browser compares `sw.js` to find new versions, and the app then offers **Reload**.
+- **Content types.** `manifest.webmanifest` as `application/manifest+json` (most hosts know it), `sw.js` as JavaScript.
+- **The share target.** `POST /share-target` is answered by the service worker, never by the host; it only comes from the installed app, which has the worker.
 - **Optional headers.** The CSP comes as a `<meta>` tag, which can't express `frame-ancestors`. If the host can send headers, `frame-ancestors 'self'` keeps other sites from framing the app (not `'none'`: MSAL renews tokens in a hidden frame that loads `redirect.html` from the same origin).
 
 Then register the new origin with the OAuth clients, as described in the README:

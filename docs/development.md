@@ -65,6 +65,10 @@ The dev server runs without the app's Content Security Policy: the `action0:csp`
 
 To try the app on a phone, see [Testing on a phone](../README.md#testing-on-a-phone).
 
+### The installable web app
+
+The service worker is registered only by production builds: the dev server has none (hot reload and a worker that keeps files don't mix). To try installing, offline start, the update bar, email links or sharing, run `npm run build && npm run preview` (same port, so sign-in works), then use Chrome's install icon or DevTools → Application.
+
 ### Demo mode
 
 Opening the app with `?demo` connects two demo accounts without any sign-in (`src/main.tsx` removes the parameter, adds the first account if it isn't there yet, then adds the second with `AccountRegistry.addKnown`). Both are backed by the in-memory `FakeMailProvider` (`src/providers/fake/`):

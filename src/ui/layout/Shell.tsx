@@ -42,6 +42,7 @@ import { useOriginalCommand } from "../original/useOriginalCommand";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { ContextMenuHost } from "../common/ContextMenuHost";
 import { AndroidIntegration } from "../android/AndroidIntegration";
+import { PwaIntegration } from "../pwa/PwaIntegration";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
@@ -181,6 +182,7 @@ function MailApp() {
       <NotificationsBar />
       <DesktopIntegration compose={compose} />
       <AndroidIntegration compose={compose} />
+      <PwaIntegration />
       <div className="flex min-h-0 flex-1">{content}</div>
       {calendar === null ? (
         <MailCommands breakpoint={breakpoint} actions={actions} undo={undo} />

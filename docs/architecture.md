@@ -23,7 +23,7 @@ The domain types (mailboxes, intents, capabilities) are explained in [domain-mod
 | Network requests  | `fetch` from the page (CORS applies)                           | Through the native side (`net_fetch`), so CORS doesn't apply (iCal from any server) | The same as the desktop app                                                                |
 | Extras            | —                                                              | Tray, autostart, `mailto:` handler, native notifications, updater                   | Background check and notifications, Share → action0, `mailto:`, share sheet, release check |
 
-Everything that differs sits behind the `Platform` interface (`src/platform/types.ts`): `web.ts` is the web implementation, `native/` the Tauri ones (`desktop.ts`, `android.ts`), loaded only in an app. Only `src/platform/native` may import `@tauri-apps/*`; the rest of the code asks the platform (`usePlatform()`) to open links, save files, show notifications or set the unread badge. The Android app is described in [android.md](android.md).
+Everything that differs sits behind the `Platform` interface (`src/platform/types.ts`): `web.ts` is the web implementation (with `pwa.ts`, the installable web app: its service worker in `src/sw/`, installing, updates, email links), `native/` the Tauri ones (`desktop.ts`, `android.ts`), loaded only in an app. Only `src/platform/native` may import `@tauri-apps/*`; the rest of the code asks the platform (`usePlatform()`) to open links, save files, show notifications or set the unread badge. The Android app is described in [android.md](android.md).
 
 `src/main.tsx` decides which shell it is in, builds the services (below) and renders `<App>`.
 

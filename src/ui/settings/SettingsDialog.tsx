@@ -7,6 +7,7 @@ import { Sheet } from "../common/Sheet";
 import { usePlatform } from "../../platform/context";
 import { AndroidSettings } from "./AndroidSettings";
 import { DesktopSettings } from "./DesktopSettings";
+import { WebAppSettings } from "./WebAppSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
 import { SpellingSettings } from "./SpellingSettings";
@@ -41,7 +42,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const setTheme = useUi((state) => state.setTheme);
   const t = useT();
   const s = t.settings;
-  const { desktop, mobile } = usePlatform();
+  const { desktop, mobile, pwa } = usePlatform();
   const named = SECTIONS.map(([id, key]) => [id, s[key]] as const);
   const sections: (readonly [string, string])[] = [
     // The AI assistant after Writing.
@@ -50,7 +51,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     ...named.slice(3),
     ...(desktop || mobile
       ? [["settings-app", t.desktop.section] as const]
-      : []),
+      : pwa
+        ? [["settings-app", t.pwa.appTitle] as const]
+        : []),
   ];
   const set =
     <K extends keyof AppSettings>(key: K) =>
@@ -237,6 +240,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </SettingsSection>
           {desktop && <DesktopSettings id="settings-app" desktop={desktop} />}
           {mobile && <AndroidSettings id="settings-app" mobile={mobile} />}
+          {pwa && <WebAppSettings id="settings-app" pwa={pwa} />}
         </div>
       </div>
     </Sheet>

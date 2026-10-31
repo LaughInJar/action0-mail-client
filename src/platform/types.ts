@@ -13,6 +13,12 @@ export interface Notice {
   readonly tag: string;
   /** A click on it (the app comes forward first). */
   readonly onClick: () => void;
+  /**
+   * Where a click leads if the app has to open again first (the installed
+   * web app, closed meanwhile): a page address with the route, e.g.
+   * `/#/<account>/<mailbox>/<message>`.
+   */
+  readonly url?: string;
 }
 
 /** System notifications. */
@@ -51,6 +57,32 @@ export interface TrayTexts {
 
 /** How making action0 the default mail app went. */
 export type DefaultMailAppResult = "done" | "settings" | "manual";
+
+/**
+ * The installable web app (PWA): installing it, its updates and email
+ * links. The web app only.
+ */
+export interface PwaControls {
+  /** It runs installed (its own window). */
+  readonly installed: () => boolean;
+  /** The browser offers installing it (Chrome, Edge, Android). */
+  readonly canInstall: () => boolean;
+  /** Asks the browser to install it; true if the user agreed. */
+  readonly install: () => Promise<boolean>;
+  /** Installing takes the browser's own menu here: Safari on iOS or the Mac. */
+  readonly installSteps: () => "ios" | "macSafari" | undefined;
+  /** `mailto:` links can open in action0 (the browser asks first). */
+  readonly emailLinks: {
+    readonly supported: boolean;
+    readonly register: () => void;
+  };
+  /** A new version is ready to take over. */
+  readonly updateReady: () => boolean;
+  /** Switches to the new version (the page reloads). */
+  readonly reload: () => void;
+  /** Announces changes to the above. */
+  readonly subscribe: (listener: () => void) => () => void;
+}
 
 /** What only the desktop app has. */
 export interface DesktopControls {
@@ -165,6 +197,8 @@ export interface Platform {
   readonly desktop?: DesktopControls;
   /** The Android app's own controls. */
   readonly mobile?: MobileControls;
+  /** The installable web app's own controls (the web app). */
+  readonly pwa?: PwaControls;
   /**
    * Spell checking whose languages action0 sets (the Linux app). Elsewhere
    * the browser or the system decides, and Settings says where.

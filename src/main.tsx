@@ -13,6 +13,8 @@ import {
 } from "./app/services";
 import { messages } from "./i18n/messages";
 import { getLocalStorage, getSessionStorage } from "./lib/storage";
+import { startPwa } from "./platform/pwa";
+import { createWebPlatform } from "./platform/web";
 import "./index.css";
 
 /** True inside the desktop or Android app (Tauri). */
@@ -32,6 +34,8 @@ const native = inApp
       module.startNative(signedInPage),
     )
   : undefined;
+// The installable web app (service worker in production builds); never in the apps.
+const pwa = native ? undefined : startPwa({ register: import.meta.env.PROD });
 const caldav = native && createCaldavServices(native.caldav);
 const nativeServices = native && {
   native: { bridge: native.auth, accounts: native.accounts },
@@ -70,7 +74,7 @@ const services = createAppServices({
         icsFactory: (subscription) =>
           new IcsCalendarProvider(subscription, { fetch: native.fetch }),
       }
-    : {}),
+    : { platform: createWebPlatform(pwa) }),
   ...(caldav ? { caldav } : {}),
 });
 

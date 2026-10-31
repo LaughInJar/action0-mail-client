@@ -1,6 +1,6 @@
 # action0 mail
 
-A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly. The same app also comes as a desktop app for Linux, Windows and macOS (see [Desktop app](#desktop-app)).
+A fast, keyboard-first mail client that runs entirely in the browser. It is a static web app with no backend: it signs in with OAuth in the browser and talks to the mail provider's REST API directly. It installs like an app from the browser (see [Installing the web app](#installing-the-web-app)), and the same app also comes as a desktop app for Linux, Windows and macOS (see [Desktop app](#desktop-app)).
 
 **Status:** Gmail: reading, archive, read/unread, move, labels, stars, Trash and Spam, search, writing, attachments, live updates, unsubscribe and label management, settings and signatures, conversation view. Microsoft (Outlook.com, Microsoft 365 / Exchange Online): the same with folders, and categories as labels. Other mail servers (IMAP/SMTP: GMX, web.de, iCloud, Yahoo, Fastmail, your own server) in the desktop and Android apps. Calendar: Google and Microsoft calendars, CalDAV calendar servers (in the apps) and iCal subscriptions in one view, with answers to invitations, and creating and editing events. AI assistant: summaries, questions about mail and help writing, with your own Claude, OpenAI, Gemini, OpenRouter or local model, or your ChatGPT plan in the apps.
 
@@ -176,6 +176,19 @@ The address books are found with the same login, also where a provider keeps con
 | Your own server | Its address; a certificate your system doesn't trust can be trusted once | The server's login                                         |
 
 Servers that send invitations and answers themselves (iCloud, Fastmail, Nextcloud, …) do so; for the others action0 sends them as calendar mails from your mail account and asks first, like Google calendars. Answering an invitation that isn't in your calendar yet adds it to the calendar you used last for new events. Logins are kept in the app's encrypted vault and are only ever sent to that server.
+
+## Installing the web app
+
+The web app installs like an app, with its own window and icon: in Chrome or Edge, **Install action0** in Settings → App (or the install icon in the address bar); on Android, the same or **Add to Home screen**; on iPhone and iPad, Safari's Share → **Add to Home Screen**; in Safari on the Mac, File → **Add to Dock**. Phones offer it once in a bar. Installed, it
+
+- starts even without a network (its own files are kept; mail still loads from the provider, nothing of it is stored),
+- shows the unread count on its icon,
+- can notify you of new mail on phones (they only allow that for installed apps), while it's open or in the background,
+- opens a new mail from email links on web pages, if you choose **Use action0 for email links** in Settings → App (Chrome, Edge, Firefox ask first),
+- appears in Android's share sheet: sharing text, a link or files to action0 starts a new mail,
+- offers new versions with a **Reload** bar.
+
+The desktop and Android apps do all of this natively; installing the web app is for using it without them.
 
 ## Desktop app
 
