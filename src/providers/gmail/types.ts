@@ -133,10 +133,133 @@ export interface GmailListSendAsResponse {
   sendAs?: GmailSendAs[];
 }
 
-/** A person from the People API (`readMask=names,emailAddresses`). */
+/** Where a field of a person comes from, and whether it's the main one. */
+export interface PeopleFieldMetadata {
+  primary?: boolean;
+  /** `CONTACT` for the user's own contact data; `PROFILE` and others are read-only. */
+  source?: { type?: string; id?: string; etag?: string };
+}
+
+/** One entry of a person's field. Unknown parts are kept when it's sent back. */
+export interface PeopleEntry {
+  metadata?: PeopleFieldMetadata;
+  [key: string]: unknown;
+}
+
+export interface PeopleName extends PeopleEntry {
+  displayName?: string;
+  givenName?: string;
+  middleName?: string;
+  familyName?: string;
+}
+
+/** An email address, phone number, URL or nickname. */
+export interface PeopleTyped extends PeopleEntry {
+  value?: string;
+  /** `home`, `work`, `other`, … or a label the user typed. */
+  type?: string;
+  /** The type as Google shows it ("Home fax"). */
+  formattedType?: string;
+}
+
+export interface PeopleOrganization extends PeopleEntry {
+  name?: string;
+  title?: string;
+  department?: string;
+}
+
+export interface PeopleAddress extends PeopleEntry {
+  streetAddress?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+  type?: string;
+  formattedType?: string;
+}
+
+export interface PeopleBirthday extends PeopleEntry {
+  /** `year` is absent (or 0) for a birthday without a year. */
+  date?: { year?: number; month?: number; day?: number };
+  text?: string;
+}
+
+export interface PeopleBiography extends PeopleEntry {
+  value?: string;
+  contentType?: string;
+}
+
+export interface PeopleMembership extends PeopleEntry {
+  contactGroupMembership?: {
+    contactGroupResourceName?: string;
+    contactGroupId?: string;
+  };
+}
+
+export interface PeoplePhoto extends PeopleEntry {
+  url?: string;
+  /** Google's placeholder (initials), not a picture of the person. */
+  default?: boolean;
+}
+
+/** A person from the People API (contacts, other contacts, search results). */
 export interface PeoplePerson {
-  names?: { displayName?: string }[];
-  emailAddresses?: { value?: string }[];
+  /** `people/c…` or `otherContacts/c…`. */
+  resourceName?: string;
+  etag?: string;
+  metadata?: {
+    deleted?: boolean;
+    sources?: { type?: string; id?: string; etag?: string }[];
+  };
+  names?: PeopleName[];
+  nicknames?: PeopleTyped[];
+  emailAddresses?: PeopleTyped[];
+  phoneNumbers?: PeopleTyped[];
+  organizations?: PeopleOrganization[];
+  addresses?: PeopleAddress[];
+  birthdays?: PeopleBirthday[];
+  urls?: PeopleTyped[];
+  biographies?: PeopleBiography[];
+  memberships?: PeopleMembership[];
+  photos?: PeoplePhoto[];
+  [field: string]: unknown;
+}
+
+/** Response of `people.connections.list`. */
+export interface PeopleConnectionsResponse {
+  connections?: PeoplePerson[];
+  nextPageToken?: string;
+  nextSyncToken?: string;
+}
+
+/** Response of `otherContacts.list`. */
+export interface OtherContactsResponse {
+  otherContacts?: PeoplePerson[];
+  nextPageToken?: string;
+  nextSyncToken?: string;
+}
+
+/** A contact group (label) of the People API. */
+export interface PeopleContactGroup {
+  resourceName?: string;
+  name?: string;
+  /** The name in the user's language (system groups: "Starred"). */
+  formattedName?: string;
+  /** `USER_CONTACT_GROUP` or `SYSTEM_CONTACT_GROUP`. */
+  groupType?: string;
+}
+
+/** Response of `contactGroups.list`. */
+export interface PeopleContactGroupsResponse {
+  contactGroups?: PeopleContactGroup[];
+  nextPageToken?: string;
+}
+
+/** One answer of a People API batch (`people:batchGet`, `people:batchCreateContacts`). */
+export interface PeopleBatchItem {
+  httpStatusCode?: number;
+  person?: PeoplePerson;
+  status?: { code?: number; message?: string };
 }
 
 /** Response of `people:searchContacts` and `otherContacts:search`. */

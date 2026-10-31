@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { CalendarServerInfo } from "../accounts/calendarServer";
 import type { CalendarProvider } from "../core/calendar";
+import type { ContactsProvider } from "../core/contacts";
 import type { Account, EmailAddress, Sender } from "../core/model";
 import type { CalendarServerSources } from "../data/calendarServers";
 import { queryKeys } from "../data/keys";
@@ -24,6 +25,7 @@ import {
   CardDavAddressBooks,
   mergeMatches,
 } from "../providers/caldav/contacts";
+import { CardDavContactsProvider } from "../providers/caldav/CardDavContactsProvider";
 import type { CalendarMailer, ItipTexts } from "../providers/caldav/itip";
 import {
   createCalendarServers,
@@ -54,6 +56,11 @@ export interface CaldavServices {
     query: string,
     signal?: AbortSignal,
   ) => Promise<readonly EmailAddress[]>;
+  /**
+   * The contacts of a mail server account: its calendar server's address
+   * books ("Set up calendar and contacts" until it has them).
+   */
+  readonly accountContacts: (account: Account) => ContactsProvider;
   /** The servers for the calendar column and its dialogs. */
   readonly sources: CalendarServerSources;
   /** Connects the providers to the app's accounts, cache and settings. */
@@ -132,6 +139,16 @@ export function createCaldavServices(bridge: CaldavBridge): CaldavServices {
     }
     return found;
   };
+  const contactProviders = new Map<string, ContactsProvider>();
+  /** The contacts of a login, sharing its address books with the suggestions. */
+  const contactsOf = (key: string): ContactsProvider => {
+    let found = contactProviders.get(key);
+    if (!found) {
+      found = new CardDavContactsProvider({ books: booksOf(key), servers });
+      contactProviders.set(key, found);
+    }
+    return found;
+  };
   const contactsFor =
     (account: Account) =>
     async (query: string, signal?: AbortSignal): Promise<EmailAddress[]> => {
@@ -175,6 +192,7 @@ export function createCaldavServices(bridge: CaldavBridge): CaldavServices {
   return {
     servers,
     contactsFor,
+    accountContacts: (account) => contactsOf(account.id),
     accountCalendar: (account) =>
       provider(account.id, () => {
         const senders = sendersOf(account.id);
@@ -194,6 +212,10 @@ export function createCaldavServices(bridge: CaldavBridge): CaldavServices {
       current: servers.current,
       subscribe: servers.subscribe,
       providerFor,
+      contactsFor: (info) =>
+        info.contacts !== undefined || !info.contactsChecked
+          ? contactsOf(info.key)
+          : undefined,
     },
     bind: (bound) => {
       app = bound;

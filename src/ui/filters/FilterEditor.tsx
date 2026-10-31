@@ -29,8 +29,8 @@ import {
   HINT,
   LINK,
   PRIMARY,
-} from "./styles";
-import { useSaveShortcut } from "./useSaveShortcut";
+} from "../common/formStyles";
+import { useSaveShortcut } from "../common/useSaveShortcut";
 
 const KB = 1024;
 const MB = 1024 * 1024;

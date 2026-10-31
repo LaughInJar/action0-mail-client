@@ -28,6 +28,8 @@ import {
   DEMO_WORK_ACCOUNT,
 } from "../providers/fake/module";
 import { UI_STATE_KEY } from "../state/uiStore";
+import type { ContactsAccess } from "../core/contacts";
+import type { FakeContactsData } from "../providers/fake/FakeContactsProvider";
 import { mockViewport, type Viewport } from "./viewport";
 
 /** Fixed "now" for test data. */
@@ -72,6 +74,10 @@ export interface RenderAppOptions {
   readonly caldav?: CaldavBridge;
   /** Filter servers (ManageSieve), e.g. `fakeSieveBridge().bridge`; needs `imap`. */
   readonly sieve?: SieveBridge;
+  /** Replaces the demo account's contacts (default: the demo's). */
+  readonly contacts?: () => FakeContactsData;
+  /** The demo contacts' access (default: granted). */
+  readonly contactsAccess?: ContactsAccess;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -95,6 +101,8 @@ export function renderApp({
   imap,
   caldav,
   sieve,
+  contacts,
+  contactsAccess,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
@@ -118,6 +126,8 @@ export function renderApp({
         calendarAccess,
         guestNotices,
         syncedReminders,
+        ...(contacts ? { contacts } : {}),
+        ...(contactsAccess ? { contactsAccess } : {}),
       }),
       ...(imap
         ? [
@@ -130,6 +140,7 @@ export function renderApp({
                 ? {
                     createCalendar: calendarServers.accountCalendar,
                     contactsFor: calendarServers.contactsFor,
+                    createContacts: calendarServers.accountContacts,
                   }
                 : {}),
             }),

@@ -60,6 +60,7 @@ import {
   propHas,
   propText,
   sameUrl,
+  writable,
 } from "./dav";
 import {
   cancelMail,
@@ -1076,15 +1077,6 @@ function occurrenceAt(
     recurring: true,
     recurrenceId: details.recurrenceId,
   };
-}
-
-/** Write rights from `current-user-privilege-set` (absent: assumed). */
-function writable(resource: Parameters<typeof propHas>[0]): boolean {
-  const set = resource.props.get(`{${DAV}}current-user-privilege-set`);
-  if (!set) return true;
-  return ["write", "write-content", "all"].some(
-    (name) => set.getElementsByTagNameNS(DAV, name).length > 0,
-  );
 }
 
 /** `#RRGGBBAA` (Apple) as `#RRGGBB`; a palette colour if none. */

@@ -1,3 +1,4 @@
+import { useContactLink } from "../contacts/contactLink";
 import { messageKey, type AccountId, type MessageId } from "../../core/ids";
 import { useMessage } from "../../data/hooks";
 import { useT } from "../../i18n/context";
@@ -45,6 +46,7 @@ export function MessageMenu({
   const router = useRouter();
   const original = useOriginalActions();
   const filterLink = useFilterLinkActions();
+  const contactLink = useContactLink();
   const ai = useAiReaderActions();
   const { sources } = useCurrentList();
   const t = useT();
@@ -92,6 +94,7 @@ export function MessageMenu({
     route?.accountId === accountId
       ? route.mailboxId
       : (inbox ?? message.mailboxIds[0]);
+  const contact = from ? contactLink(accountId, from) : undefined;
   const sender: MenuEntry[] =
     from && (route?.unified || searchIn !== undefined)
       ? [
@@ -115,11 +118,12 @@ export function MessageMenu({
           {
             id: "copy-sender",
             label: m.copySender,
-            icon: "user",
+            icon: "copy",
             run: () => {
               copyText(from.address, store, t);
             },
           },
+          ...(contact ? [contact] : []),
         ]
       : [];
   const title = message.subject || t.common.noSubject;

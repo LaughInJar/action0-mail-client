@@ -4,6 +4,7 @@ import type {
   CalendarServers,
 } from "../accounts/calendarServer";
 import type { CalendarProvider } from "../core/calendar";
+import type { ContactsProvider } from "../core/contacts";
 
 /** Calendar servers (CalDAV) as the calendar sees them: the apps only. */
 export interface CalendarServerSources {
@@ -13,6 +14,13 @@ export interface CalendarServerSources {
   readonly subscribe: (listener: () => void) => () => void;
   /** The calendars of a calendar-only server (one provider per server). */
   readonly providerFor: (info: CalendarServerInfo) => CalendarProvider;
+  /**
+   * The address books of a calendar-only server (one provider per server),
+   * if it has (or may have: not looked for yet) any.
+   */
+  readonly contactsFor?: (
+    info: CalendarServerInfo,
+  ) => ContactsProvider | undefined;
 }
 
 /** Provided in the apps (wired in `src/app`); `null` in the web app. */

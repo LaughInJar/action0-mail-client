@@ -1,3 +1,4 @@
+import { useContactLink } from "../contacts/contactLink";
 import type { MessageKey } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
 import type { ListRow } from "../../data/listRows";
@@ -61,6 +62,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const selectedIds = useUi((state) => state.selectedIds);
   const original = useOriginalActions();
   const filterLink = useFilterLinkActions();
+  const contactLink = useContactLink();
   const ai = useAiReaderActions();
   const chosen = (rows ?? []).filter((row) => keys.includes(row.key));
   if (!route || chosen.length === 0) return null;
@@ -177,12 +179,14 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
         {
           id: "copy-sender",
           label: m.copySender,
-          icon: "user",
+          icon: "copy",
           run: () => {
             copyText(from.address, store, t);
           },
         },
       );
+      const contact = contactLink(single.accountId, from);
+      if (contact) sender.push(contact);
     }
   }
 

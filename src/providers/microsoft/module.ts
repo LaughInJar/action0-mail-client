@@ -11,16 +11,19 @@ import {
 } from "../../auth/microsoft/MicrosoftAuthSession";
 import {
   CALENDAR_SCOPES,
+  CONTACTS_SCOPES,
   GRAPH_SCOPES,
   msalLoader,
   PERSONAL_TENANT_ID,
   signInError,
 } from "../../auth/microsoft/msal";
+import type { MailErrorReason } from "../../core/errors";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
 import { SenderStore } from "../senderStore";
 import { GraphHttp } from "./http";
 import { GraphCalendarProvider } from "./calendar";
+import { GraphContactsProvider } from "./contacts";
 import { GraphFilterProvider } from "./filters";
 import { GraphProvider } from "./GraphProvider";
 
@@ -42,15 +45,22 @@ export interface MicrosoftModuleOptions {
 const NATIVE_SCOPES = [
   ...GRAPH_SCOPES,
   ...CALENDAR_SCOPES,
+  ...CONTACTS_SCOPES,
   "openid",
   "profile",
 ];
 
-/** What the calendar needs of a session: calendar tokens and consent. */
-type CalendarSession = AuthSession &
+/**
+ * What the calendar and the contacts need of a session: tokens for their
+ * own scopes, and consent to them.
+ */
+type ScopedTokenSession = AuthSession &
   ScopedSession & {
     readonly loginHint: string;
-    tokenFor(scopes: readonly string[]): Promise<string>;
+    tokenFor(
+      scopes: readonly string[],
+      reason?: MailErrorReason,
+    ): Promise<string>;
   };
 
 /** Wires Microsoft sign-in (MSAL) and the Graph provider into the account registry. */
@@ -69,7 +79,7 @@ export function createMicrosoftModule({
     /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email);
   const parts = {
     createCalendar: (_account: Account, auth: AuthSession) => {
-      const session = auth as CalendarSession;
+      const session = auth as ScopedTokenSession;
       return new GraphCalendarProvider(
         new GraphHttp({
           auth,
@@ -89,6 +99,18 @@ export function createMicrosoftModule({
       new GraphFilterProvider(new GraphHttp({ auth, ...net }), {
         personal: isPersonal(account),
       }),
+    createContacts: (_account: Account, auth: AuthSession) => {
+      const session = auth as ScopedTokenSession;
+      return new GraphContactsProvider(
+        new GraphHttp({
+          auth,
+          token: () =>
+            session.tokenFor(CONTACTS_SCOPES, "contactsAccessNeeded"),
+          ...net,
+        }),
+        session,
+      );
+    },
   };
   if (native)
     return {
@@ -122,8 +144,8 @@ export function createMicrosoftModule({
       try {
         result = await client.acquireTokenPopup({
           scopes: [...GRAPH_SCOPES],
-          // New accounts consent to calendar access right away.
-          extraScopesToConsent: [...CALENDAR_SCOPES],
+          // New accounts consent to calendar and contacts access right away.
+          extraScopesToConsent: [...CALENDAR_SCOPES, ...CONTACTS_SCOPES],
           prompt: "select_account",
         });
       } catch (error) {

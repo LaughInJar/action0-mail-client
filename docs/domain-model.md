@@ -1,6 +1,6 @@
 # Domain model
 
-The domain model is the provider-agnostic vocabulary that the interface, the data layer and every provider share. It lives in `src/core` and has no dependencies: identifiers, mailboxes, messages and conversations, the write operations (_intents_), what a provider can do (_capabilities_), outgoing mail, calendars and errors. The mailbox model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc8621), so Gmail's labels and the folders of Exchange (and later IMAP) fit the same types without provider branches in the UI. All values are plain, JSON-serializable data, so the cache can persist them unchanged (`src/core/model.ts`).
+The domain model is the provider-agnostic vocabulary that the interface, the data layer and every provider share. It lives in `src/core` and has no dependencies: identifiers, mailboxes, messages and conversations, the write operations (_intents_), what a provider can do (_capabilities_), outgoing mail, calendars, contacts and errors. The mailbox model follows [JMAP (RFC 8621)](https://www.rfc-editor.org/rfc/rfc8621), so Gmail's labels and the folders of Exchange (and later IMAP) fit the same types without provider branches in the UI. All values are plain, JSON-serializable data, so the cache can persist them unchanged (`src/core/model.ts`).
 
 - [Accounts and IDs](#accounts-and-ids)
 - [Mailboxes](#mailboxes)
@@ -9,6 +9,7 @@ The domain model is the provider-agnostic vocabulary that the interface, the dat
 - [Capabilities](#capabilities)
 - [Compose model](#compose-model)
 - [Calendar model](#calendar-model)
+- [Contacts](#contacts)
 - [Errors](#errors)
 
 How these types travel through the app is described in [architecture.md](architecture.md); how Gmail, Microsoft Graph, iCal and the fake provider map onto them is in [providers.md](providers.md). The reasons behind the model are in [decisions.md](decisions.md).
@@ -390,6 +391,54 @@ An event's `reminders` are minutes before its start, on-screen ones only, as the
 ### Invitations and answers
 
 A mail that carries a calendar invitation has `Message.invitation`: the event's iCalendar `uid` and the mail's `method` (`request`, `cancel` or `reply`). Gmail finds it in the mail's `text/calendar` part (`parseInvitation`, iMIP `METHOD` and the first `VEVENT`'s `UID`); Graph from Outlook's event messages. For a request, the reader looks the event up in the same account's calendar (`CalendarProvider.findInvitation(uid, signal, ics)`) and shows the answer buttons (`src/ui/reader/InvitationBar.tsx`). IMAP mails also carry the part itself (`Invitation.ics`): a CalDAV calendar then returns the invitation even when it isn't saved yet, as an event with `inCalendar: false` that answering puts into the default calendar; and a guest's answer (`reply`) is taken into the user's event with `applyReply` where the server doesn't do that. `respond(event, rsvp)` answers with an `Rsvp` (`accepted`, `tentative`, `declined`) and resolves to the updated event; `useRespond` (`src/data/calendar.ts`) applies the answer optimistically to every cached copy.
+
+## Contacts
+
+The contacts model (`src/core/contacts.ts`) describes one contact _source_: an account (Google Contacts, Outlook contacts, a mail server's CardDAV address books) or a calendar-only CardDAV server. `ContactsProvider.load` returns a `ContactSnapshot`: the source's address books, groups and contacts, Google's "Other contacts", and an opaque `token` with the provider's change tracking, which goes back to the provider on the next load ([providers.md](providers.md#contacts)).
+
+### Contacts and their fields
+
+`ContactFields` are the parts action0 shows and edits: the name (`given`, `middle`, `family`), `nickname`, `emails`, `phones`, `organization` (`company`, `title`, `department`), postal `addresses`, `birthday` (`month`, `day` and an optional `year`), `websites`, `notes` and `groupIds`. Empty text means "not set". Everything else a provider keeps (name prefixes, IM handles, anniversaries, custom fields, another birthday) stays as it is when these change; each provider writes only the parts that differ.
+
+Emails, phone numbers, websites and postal addresses carry a kind: `home`, `work` or `other` (`ValueKind`), and for phones also `mobile` (`PhoneKind`). A type of the provider's own that action0 has no kind for ("Assistant", "Work fax", Apple's labels) is kept as `label`: shown instead of the kind, and written back as long as the value stays.
+
+A `Contact` adds its `id`, the `addressBookId` it's in, the provider's `displayName`, a `photo`, a `version` and `other`:
+
+- `nameOf(contact)` is what it's listed under: the provider's display name, else `displayNameOf(fields)` (the full name, else the nickname, company, first email or first phone number). New and changed contacts get `displayNameOf` as their display name.
+- `photo` is `{ kind: "url" }`, a picture the page may show as it is (Google's photo URLs, a CardDAV card's own picture as a `data:` URL), or `{ kind: "fetch" }`, one to ask the provider for (`ContactsProvider.photo`; Outlook's, which may turn out to be none). Pictures elsewhere on the web are never loaded.
+- `version` is what was read (an ETag, a change key), so a change can tell whether the contact was changed elsewhere meanwhile (`contactChanged`).
+- `other` marks one of Google's "Other contacts" (people the user wrote to, saved by Google): read-only, it can only be added to the contacts.
+
+### Address books and groups
+
+The two ways of sorting contacts mirror folders and labels. An `AddressBook` (`id`, `name`, `readOnly`, `isDefault`) holds a contact, which is in exactly one: Google has a single one, Outlook the default Contacts folder and its sub-folders, a CardDAV server every address book under the login's home. A `ContactGroup` (`id`, `name`, optional `color`) is a tag, and a contact can be in several: Google's labels (and Starred), Outlook's categories (with their colours), the cards' CATEGORIES. Outlook and CardDAV groups are names (the id is the name); Google's are its contact group resource names.
+
+### What a source can hold
+
+`ContactsAccess` says whether the user let action0 at the contacts: `granted`, `readOnly` (Google without the write scope: the first change asks for it) or `missing` (Microsoft without `Contacts.ReadWrite`, a mail server without a contacts server; `setup` says whether access comes from a consent popup or from setting up a server). `ContactCapabilities` say what a source can store, and the editor offers only that:
+
+| Capability                          | Google                     | Outlook                         | CardDAV                    |
+| ----------------------------------- | -------------------------- | ------------------------------- | -------------------------- |
+| `emailKinds`, `maxEmails`           | kinds, any number          | no kinds, 3                     | kinds, any number          |
+| `phoneKinds`, `maxPhones`           | mobile, home, work, other  | mobile (1), home (2), work (2)  | mobile, home, work, other  |
+| `addressKinds`, `oneAddressPerKind` | home, work, other; several | home, work, other; one each     | home, work, other; several |
+| `websiteKinds`, `maxWebsites`       | kinds, any number          | no kinds, 1 (the business page) | kinds, any number          |
+| `birthdayYear`                      | optional                   | required                        | optional                   |
+| `groups`, `otherContacts`           | yes, yes                   | yes, no                         | yes, no                    |
+
+`fitTo(capabilities, fields)` puts fields into what a source can hold: a value of a kind the source lacks gets one it has where there's room (an "other" phone number becomes a mobile, home or work one on Outlook), what doesn't fit is left out, and `dropped` says so. Outlook's provider fits every write; imports and merges fit what they write, and their previews say when something is left out.
+
+### Duplicates and merging
+
+`findDuplicates(contacts)` groups contacts that look like the same person: the same email (case ignored), the same phone number (`phoneKey`: the last nine digits, so "+43 664 123 4567" and "0664 1234567" match; numbers under seven digits never do), or the same full name of two words or more (accents and case ignored). Groups are joined transitively, each says the strongest thing its contacts share (`email`, then `phone`, then `name`), and its most complete contact comes first (`completeness`: filled fields and values, a picture counts too). Other contacts never take part.
+
+`mergeFields(base, others)` makes one contact of several without overwriting anything: the base keeps what it has, gets every email, phone number, postal address, website and group of the others it doesn't have yet (compared as above; addresses by their words), empty fields (the name too) are filled from the first that has them, and notes are joined. Merging keeps the most complete contact with the merged fields (fitted to the source) and deletes the others; it only works within one source. An import's "add what's new" merges a card into the existing contact the same way.
+
+### Keys, lists and search
+
+Contact ids are opaque. `contactKeyOf(source, id)` (`src/data/contacts.ts`) is a JSON pair that names a contact across sources, for the URL and the selection; a `ContactList` (`all`, a `source`, a `book`, a `group`, or a source's `other` contacts) is written into the URL by `listToken` the same way. `matchesSearch(contact, query)` is true when every word of the query starts a word of the name, nickname, company or an email address (accents and case ignored); a query word of three or more digits also matches anywhere in a phone number.
+
+vCard files are read into `ParsedCard`s (the fields, the card's FN, its categories by name, its picture, whether it has more than action0 shows, and the card itself as 3.0 or 4.0) and written from `CardToWrite`s by the `ContactCards` service.
 
 ## Errors
 

@@ -129,9 +129,92 @@ function today(): string {
   return `${String(now.getFullYear())}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/**
+ * The contacts in the URL: `#/contacts/<list>` plus `/<contact>` (open),
+ * `/<contact>/edit` (being edited), `/new` (a new contact) or
+ * `/duplicates` (finding duplicates), and `?q=<search>`. `list` is `all`
+ * or names a source's address book or group, `contact` a contact; both
+ * are opaque (the data layer makes them).
+ */
+export interface ContactsRoute {
+  readonly list: string;
+  readonly contact?: string;
+  /** The open contact is being edited. */
+  readonly edit?: true;
+  /** A new contact, maybe started from mail with a name and an address. */
+  readonly create?: { readonly name?: string; readonly address?: string };
+  /** "Find duplicates" is open for the list's account. */
+  readonly duplicates?: true;
+  /** The import preview is open (the file itself is in memory only). */
+  readonly importing?: true;
+  /** Filters the list; never blank. */
+  readonly search?: string;
+}
+
+/** The list of every source's contacts. */
+export const ALL_CONTACTS = "all";
+
+/** Parses a contacts location hash; `null` for any other hash. */
+export function parseContactsHash(hash: string): ContactsRoute | null {
+  const [path, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
+  const [prefix, list, first, second, ...rest] = path
+    .split("/")
+    .map(safeDecode);
+  if (prefix !== "contacts" || rest.length > 0) return null;
+  const params = new URLSearchParams(query);
+  const search = params.get("q") ?? "";
+  const base = {
+    list: list || ALL_CONTACTS,
+    ...(search.trim() ? { search } : {}),
+    ...(params.has("import") ? { importing: true as const } : {}),
+  };
+  if (!first) return second === undefined ? base : null;
+  if (first === "new" && second === undefined) {
+    const name = params.get("name");
+    const address = params.get("address");
+    return {
+      ...base,
+      create: {
+        ...(name ? { name } : {}),
+        ...(address ? { address } : {}),
+      },
+    };
+  }
+  if (first === "duplicates" && second === undefined)
+    return { ...base, duplicates: true };
+  if (second === undefined) return { ...base, contact: first };
+  return second === "edit" ? { ...base, contact: first, edit: true } : null;
+}
+
+/** Formats a contacts route as a location hash. */
+export function formatContactsRoute(route: ContactsRoute): string {
+  const segments = [
+    route.list,
+    ...(route.create
+      ? ["new"]
+      : route.duplicates
+        ? ["duplicates"]
+        : route.contact !== undefined
+          ? [route.contact, ...(route.edit ? ["edit"] : [])]
+          : []),
+  ];
+  const params = new URLSearchParams();
+  if (route.search?.trim()) params.set("q", route.search);
+  if (route.create?.name) params.set("name", route.create.name);
+  if (route.create?.address) params.set("address", route.create.address);
+  const query = params.toString();
+  const flags = [
+    ...(query ? [query] : []),
+    ...(route.importing ? ["import"] : []),
+  ];
+  return `#/contacts/${segments.map(encodeURIComponent).join("/")}${
+    flags.length > 0 ? `?${flags.join("&")}` : ""
+  }`;
+}
+
 /** Parses a location hash. Unknown or partial hashes become `null`. */
 export function parseHash(hash: string): Route {
-  if (parseCalendarHash(hash)) return null;
+  if (parseCalendarHash(hash) || parseContactsHash(hash)) return null;
   const [path, query] = splitOnce(hash.replace(/^#\/?/, ""), "?");
   if (!path) return null;
   const all = path.split("/").map(safeDecode);
@@ -268,13 +351,18 @@ function sameOverlay(a: Overlay | null, b: Overlay | null): boolean {
   return withOverlay("", a) === withOverlay("", b);
 }
 
+/** The three parts of the app. */
+export type AppPart = "mail" | "calendar" | "contacts";
+
 /** Hash-based router. */
 export interface HashRouter {
   /**
    * Current mail route; the object identity only changes when the route
-   * changes. `null` while the calendar is open.
+   * changes. `null` while the calendar or the contacts are open.
    */
   readonly getRoute: () => Route;
+  /** Which part of the app is open. */
+  readonly part: () => AppPart;
   /** The last mail route (what the Mail switch goes back to), if any. */
   readonly getLastMailRoute: () => Route;
   /** The calendar, while it's open; otherwise `null`. Identity like {@link getRoute}. */
@@ -282,6 +370,15 @@ export interface HashRouter {
   /** Opens the calendar (a new history entry unless `replace`). */
   readonly openCalendar: (
     route: CalendarRoute,
+    options?: { replace?: boolean },
+  ) => void;
+  /** The contacts, while they're open; otherwise `null`. Identity like {@link getRoute}. */
+  readonly getContactsRoute: () => ContactsRoute | null;
+  /** The last contacts route (what the Contacts switch goes back to), if any. */
+  readonly getLastContactsRoute: () => ContactsRoute | null;
+  /** Opens the contacts (a new history entry unless `replace`). */
+  readonly openContacts: (
+    route: ContactsRoute,
     options?: { replace?: boolean },
   ) => void;
   /**
@@ -335,27 +432,43 @@ export function createHashRouter(win: Window = window): HashRouter {
   let current = parseHash(win.location.hash);
   let lastMail = current;
   let calendar = parseCalendarHash(win.location.hash);
+  let contacts = parseContactsHash(win.location.hash);
+  let lastContacts = contacts;
   let overlay = overlayOf(win.location.hash);
 
-  /** The location of the current mail route or calendar, with `over` open. */
+  /** The location of the current mail route, calendar or contacts, with `over` open. */
   const here = (over: Overlay | null) =>
     calendar
       ? withOverlay(formatCalendarRoute(calendar), over)
-      : formatLocation(current, over);
+      : contacts
+        ? withOverlay(formatContactsRoute(contacts), over)
+        : formatLocation(current, over);
 
   const sync = () => {
     const next = parseHash(win.location.hash);
     const nextCalendar = parseCalendarHash(win.location.hash);
+    const nextContacts = parseContactsHash(win.location.hash);
     const nextOverlay = overlayOf(win.location.hash);
     const routeChanged = formatRoute(next) !== formatRoute(current);
     const calendarChanged =
       (nextCalendar && formatCalendarRoute(nextCalendar)) !==
       (calendar && formatCalendarRoute(calendar));
+    const contactsChanged =
+      (nextContacts && formatContactsRoute(nextContacts)) !==
+      (contacts && formatContactsRoute(contacts));
     const overlayChanged = !sameOverlay(nextOverlay, overlay);
-    if (!routeChanged && !calendarChanged && !overlayChanged) return;
+    if (
+      !routeChanged &&
+      !calendarChanged &&
+      !contactsChanged &&
+      !overlayChanged
+    )
+      return;
     if (routeChanged) current = next;
     if (current !== null) lastMail = current;
     if (calendarChanged) calendar = nextCalendar;
+    if (contactsChanged) contacts = nextContacts;
+    if (contacts !== null) lastContacts = contacts;
     if (overlayChanged) overlay = nextOverlay;
     emitter.emit();
   };
@@ -396,7 +509,10 @@ export function createHashRouter(win: Window = window): HashRouter {
 
   return {
     getRoute: () => current,
+    part: () => (calendar ? "calendar" : contacts ? "contacts" : "mail"),
     getCalendarRoute: () => calendar,
+    getContactsRoute: () => contacts,
+    getLastContactsRoute: () => lastContacts,
     getLastMailRoute: () => lastMail,
     navigate: (route, { replace = false } = {}) => {
       go(formatLocation(route, replace ? overlay : null), replace);
@@ -404,6 +520,12 @@ export function createHashRouter(win: Window = window): HashRouter {
     openCalendar: (route, { replace = false } = {}) => {
       go(
         withOverlay(formatCalendarRoute(route), replace ? overlay : null),
+        replace,
+      );
+    },
+    openContacts: (route, { replace = false } = {}) => {
+      go(
+        withOverlay(formatContactsRoute(route), replace ? overlay : null),
         replace,
       );
     },

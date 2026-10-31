@@ -14,8 +14,8 @@ import {
   FIELD,
   HINT,
   PRIMARY,
-} from "./styles";
-import { useSaveShortcut } from "./useSaveShortcut";
+} from "../common/formStyles";
+import { useSaveShortcut } from "../common/useSaveShortcut";
 
 /** Props of {@link AutoReplyEditor}. */
 export interface AutoReplyEditorProps {

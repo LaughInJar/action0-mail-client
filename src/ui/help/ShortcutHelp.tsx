@@ -15,6 +15,7 @@ const GROUP_ORDER: readonly CommandGroup[] = [
   "goTo",
   "search",
   "calendar",
+  "contacts",
   "general",
 ];
 const groupRank = (group: CommandGroup) => {

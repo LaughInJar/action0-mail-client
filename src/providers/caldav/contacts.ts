@@ -1,9 +1,11 @@
 /**
- * Address books on a CardDAV server (RFC 6352), for address suggestions:
- * the vCards (3.0 and 4.0, read with ical.js) of every address book of a
- * login, kept in memory and brought up to date like calendars, and
- * searched locally.
+ * Address books on a CardDAV server (RFC 6352): the vCards (3.0 and 4.0,
+ * read with ical.js) of every address book of a login, kept in memory and
+ * brought up to date like calendars. Searched locally for address
+ * suggestions; the contacts view reads and writes them through
+ * `CardDavContactsProvider`.
  */
+import { fold, words } from "../../core/contacts";
 import { MailError } from "../../core/errors";
 import type { EmailAddress } from "../../core/model";
 import { loadIcal, type Ical, type IcalComponent } from "../ical/icalendar";
@@ -17,6 +19,7 @@ import {
   propHas,
   propText,
   sameUrl,
+  writable,
 } from "./dav";
 import type { CalendarServerList } from "./servers";
 import { DavStore } from "./store";
@@ -37,19 +40,6 @@ export interface ContactMatch {
   readonly address: EmailAddress;
   readonly score: number;
 }
-
-/** Lower case without accents ("Jürgen" → "jurgen"). */
-export function fold(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase();
-}
-
-const words = (text: string) =>
-  fold(text)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
 
 /** The contacts' addresses in a vCard file (one or several cards). */
 export function readContacts(ICAL: Ical, text: string): ContactEntry[] {
@@ -141,21 +131,32 @@ export function scoreOf(entry: ContactEntry, query: string): number {
 }
 
 /** An address book of the server, as found under the home. */
-interface Book {
+export interface AddressBookEntry {
+  /** Its URL, ending in "/". */
+  readonly url: string;
+  /** Its display name, else the last part of its path. */
+  readonly name: string;
+  /** The login may only read it (`current-user-privilege-set`). */
+  readonly readOnly: boolean;
   readonly store: DavStore;
 }
 
 /**
  * The address books of one login (a calendar server's, see
- * {@link CalendarServerList}). Servers set up before contacts were looked
- * for are checked once (`findContacts`).
+ * {@link CalendarServerList}), for suggestions and the contacts view.
+ * Servers set up before contacts were looked for are checked once
+ * (`findContacts`). Each book's objects are kept in memory (its
+ * {@link DavStore}) for the run.
  */
 export class CardDavAddressBooks {
+  readonly key: string;
   readonly #bridge: CaldavBridge;
-  readonly #key: string;
   readonly #servers: CalendarServerList;
   readonly #now: () => number;
-  #books: Promise<Book[]> | undefined;
+  /** Stores by book URL, kept across listings so their sync state stays. */
+  readonly #stores = new Map<string, DavStore>();
+  #listed: Promise<AddressBookEntry[]> | undefined;
+  #current: readonly AddressBookEntry[] = [];
   /** Read contacts by object URL, with the ETag they were read at. */
   readonly #read = new Map<
     string,
@@ -169,7 +170,7 @@ export class CardDavAddressBooks {
     readonly now?: () => number;
   }) {
     this.#bridge = options.bridge;
-    this.#key = options.key;
+    this.key = options.key;
     this.#servers = options.servers;
     this.#now = options.now ?? Date.now;
   }
@@ -177,15 +178,38 @@ export class CardDavAddressBooks {
   /** The login's address book home, looked for first if it never was. */
   async home(): Promise<string | undefined> {
     await this.#servers.ready;
-    let info = this.#servers.info(this.#key);
+    let info = this.#servers.info(this.key);
     if (info && !info.contactsChecked)
-      info = await this.#servers.findContacts(this.#key);
+      info = await this.#servers.findContacts(this.key);
     return info?.contacts;
+  }
+
+  /** The address books as last listed (none before the first listing). */
+  current(): readonly AddressBookEntry[] {
+    return this.#current;
+  }
+
+  /**
+   * The address books under the home: listed once, or again with
+   * `refresh` (books added on the server meanwhile then show up).
+   */
+  books(
+    signal?: AbortSignal,
+    refresh = false,
+  ): Promise<readonly AddressBookEntry[]> {
+    if (refresh || !this.#listed) {
+      const listing = this.#list(signal);
+      this.#listed = listing;
+      listing.catch(() => {
+        if (this.#listed === listing) this.#listed = undefined;
+      });
+    }
+    return this.#listed;
   }
 
   /** Every contact address matching `query`, best first. */
   async search(query: string, signal?: AbortSignal): Promise<ContactMatch[]> {
-    const books = await this.#booksOf(signal);
+    const books = await this.books(signal);
     const ICAL = await loadIcal();
     const matches = new Map<string, ContactMatch>();
     for (const book of books) {
@@ -218,19 +242,35 @@ export class CardDavAddressBooks {
     );
   }
 
-  /** The address books under the home, listed once per run. */
-  #booksOf(signal: AbortSignal | undefined): Promise<Book[]> {
-    this.#books ??= this.#list(signal);
-    this.#books.catch(() => {
-      this.#books = undefined;
-    });
-    return this.#books;
+  /**
+   * A request with this login. The native side's failures become
+   * `MailError`s, and a refused login is `auth-required`.
+   */
+  async send(request: DavRequest, signal?: AbortSignal): Promise<DavResponse> {
+    const service = hostOf(request.url);
+    let answer: DavResponse;
+    try {
+      answer = await this.#bridge.request(this.key, request, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw toMailError(error, { service });
+    }
+    if (answer.status === 401)
+      throw new MailError(
+        "auth-required",
+        "The contacts server refused the login.",
+        { status: 401, reason: "contactsLoginRefused", params: { service } },
+      );
+    return answer;
   }
 
-  async #list(signal: AbortSignal | undefined): Promise<Book[]> {
+  async #list(signal: AbortSignal | undefined): Promise<AddressBookEntry[]> {
     const home = await this.home();
-    if (!home) return [];
-    const answer = await this.#send(
+    if (!home) {
+      this.#current = [];
+      return [];
+    }
+    const answer = await this.send(
       {
         method: "PROPFIND",
         url: home,
@@ -248,29 +288,53 @@ export class CardDavAddressBooks {
         `The contacts server answered ${String(answer.status)}.`,
         { status: answer.status },
       );
-    return parseMultistatus(answer.body, answer.url)
+    const books = parseMultistatus(answer.body, answer.url)
       .resources.filter((resource) => !sameUrl(resource.url, home))
       .filter((resource) =>
         propHas(resource, DAV, "resourcetype", CARDDAV, "addressbook"),
       )
-      .map((resource) => ({
-        store: new DavStore(
-          resource.url.endsWith("/") ? resource.url : `${resource.url}/`,
-          propText(resource, DAV, "sync-token") !== undefined,
-          (request, inner) => this.#send(request, inner),
-          this.#now,
-          "addressbook",
-        ),
-      }));
+      .map((resource): AddressBookEntry => {
+        const url = resource.url.endsWith("/")
+          ? resource.url
+          : `${resource.url}/`;
+        let store = this.#stores.get(url);
+        if (!store) {
+          store = new DavStore(
+            url,
+            propText(resource, DAV, "sync-token") !== undefined,
+            (request, inner) => this.send(request, inner),
+            this.#now,
+            "addressbook",
+          );
+          this.#stores.set(url, store);
+        }
+        return {
+          url,
+          name: propText(resource, DAV, "displayname") ?? lastSegment(url),
+          readOnly: !writable(resource),
+          store,
+        };
+      });
+    this.#current = books;
+    return books;
   }
+}
 
-  async #send(request: DavRequest, signal?: AbortSignal): Promise<DavResponse> {
-    try {
-      return await this.#bridge.request(this.#key, request, signal);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      throw toMailError(error, { service: new URL(request.url).host });
-    }
+/** "contacts" for ".../addressbooks/me/contacts/". */
+function lastSegment(url: string): string {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    return decodeURIComponent(parts.at(-1) ?? url);
+  } catch {
+    return url;
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
   }
 }
 

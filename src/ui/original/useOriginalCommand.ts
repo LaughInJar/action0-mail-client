@@ -16,9 +16,7 @@ export function useOriginalCommand(actions: OriginalActions): void {
   const t = useT();
   const commands = useMemo((): Command[] => {
     const target = () =>
-      router.getCalendarRoute() === null
-        ? currentMessage(store, router)
-        : undefined;
+      router.part() === "mail" ? currentMessage(store, router) : undefined;
     return [
       {
         id: "reader.original",

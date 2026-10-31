@@ -30,7 +30,14 @@ import {
 } from "./filterLink";
 import { autoReplyStatus } from "./describe";
 import { FilterList } from "./FilterList";
-import { BUTTON, CONTROL, FIELD, HINT, LINK, PRIMARY } from "./styles";
+import {
+  BUTTON,
+  CONTROL,
+  FIELD,
+  HINT,
+  LINK,
+  PRIMARY,
+} from "../common/formStyles";
 import { useFilterActions } from "./useFilterActions";
 
 /** Settings → Filters: the accounts whose provider has filters. */

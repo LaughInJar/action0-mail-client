@@ -17,6 +17,12 @@ import {
   CALENDAR_SCOPES,
   GoogleCalendarProvider,
 } from "./calendar";
+import {
+  CONTACTS_READ_SCOPE,
+  CONTACTS_WRITE_SCOPE,
+  GoogleContactsProvider,
+  OTHER_CONTACTS_SCOPE,
+} from "./contacts";
 import { GmailFilterProvider, SETTINGS_SCOPE } from "./filters";
 import { GmailHttp, PEOPLE_API_BASE } from "./http";
 import { GmailProvider } from "./GmailProvider";
@@ -33,8 +39,10 @@ export const GMAIL_SCOPE = "https://mail.google.com/";
  * Read-only access to contacts and "other contacts" (people you've written
  * to), for address suggestions. Optional: users may decline them.
  */
-export const CONTACTS_SCOPES =
-  "https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
+export const CONTACTS_SCOPES = `${CONTACTS_READ_SCOPE} ${OTHER_CONTACTS_SCOPE}`;
+
+/** Changing contacts: asked for on the first change, so nobody reconnects. */
+export { CONTACTS_WRITE_SCOPE };
 
 /**
  * Changing Gmail settings (signatures, filters, the vacation responder).
@@ -45,7 +53,10 @@ export { SETTINGS_SCOPE };
 /** Permissions that are asked for but may be declined. */
 const OPTIONAL_SCOPES = `${CONTACTS_SCOPES} ${SETTINGS_SCOPE}`;
 
-/** Everything the desktop app asks for at once (it can't add scopes later). */
+/**
+ * What the apps ask for when connecting. Scopes asked for later (the
+ * contacts write scope) go through `requestScopes`, a new sign-in.
+ */
 const NATIVE_SCOPES = [
   GMAIL_SCOPE,
   ...OPTIONAL_SCOPES.split(" "),
@@ -86,7 +97,7 @@ export function createGmailModule({
       clientId,
       scope: GMAIL_SCOPE,
       optionalScope: OPTIONAL_SCOPES,
-      onDemandScopes: CALENDAR_SCOPES,
+      onDemandScopes: [...CALENDAR_SCOPES, CONTACTS_WRITE_SCOPE],
       loginHint: account.email,
       tokenStore: sessionTokenStore(account.id, tokenStorage),
     });
@@ -195,6 +206,18 @@ function gmailModule(
       new GmailFilterProvider(
         new GmailHttp({ auth, ...net }),
         auth as AuthSession & ScopedSession,
+      ),
+
+    createContacts: (_account, auth) =>
+      new GoogleContactsProvider(
+        new GmailHttp({
+          auth,
+          baseUrl: PEOPLE_API_BASE,
+          service: "Google Contacts",
+          ...net,
+        }),
+        auth as AuthSession & ScopedSession,
+        net,
       ),
 
     createProvider: (_account, auth) =>

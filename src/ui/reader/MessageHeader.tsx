@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import type { EmailAddress, Mailbox, Message } from "../../core/model";
+import type { MenuPosition } from "../../state/uiStore";
+import { belowElement } from "../common/menuPosition";
 import { displayName, formatFullDate } from "../common/format";
 import { Icon } from "../common/Icon";
 import { useT } from "../../i18n/context";
@@ -17,6 +19,8 @@ export interface MessageHeaderProps {
     readonly done: boolean;
     readonly onClick: () => void;
   };
+  /** Opens the menu of a sender or recipient (their names become buttons). */
+  readonly onPerson?: (person: EmailAddress, at: MenuPosition) => void;
 }
 
 /** Subject, label chips, sender (with Unsubscribe for lists), recipients and date. */
@@ -26,6 +30,7 @@ export function MessageHeader({
   subjectId,
   trailing,
   unsubscribe,
+  onPerson,
 }: MessageHeaderProps) {
   const t = useT();
   const labels = (mailboxes ?? []).filter(
@@ -71,9 +76,19 @@ export function MessageHeader({
         <Avatar address={message.from} unknown={t.common.unknownSender} />
         <div className="min-w-0 flex-1 space-y-0.5 text-sm">
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-semibold">
-              {displayName(message.from, t.common.unknownSender)}
-            </span>
+            {onPerson && message.from ? (
+              <PersonButton
+                person={message.from}
+                onPerson={onPerson}
+                className="font-semibold"
+              >
+                {displayName(message.from, t.common.unknownSender)}
+              </PersonButton>
+            ) : (
+              <span className="font-semibold">
+                {displayName(message.from, t.common.unknownSender)}
+              </span>
+            )}
             {message.from?.name && (
               <span className="min-w-0 truncate text-zinc-500">
                 {message.from.address}
@@ -107,21 +122,62 @@ export function MessageHeader({
               </span>
             )}
           </div>
-          <AddressLine label={t.common.to} addresses={message.to} />
-          <AddressLine label={t.common.cc} addresses={message.cc} />
-          <AddressLine label={t.common.replyTo} addresses={message.replyTo} />
+          <AddressLine
+            label={t.common.to}
+            addresses={message.to}
+            onPerson={onPerson}
+          />
+          <AddressLine
+            label={t.common.cc}
+            addresses={message.cc}
+            onPerson={onPerson}
+          />
+          <AddressLine
+            label={t.common.replyTo}
+            addresses={message.replyTo}
+            onPerson={onPerson}
+          />
         </div>
       </div>
     </header>
   );
 }
 
+/** A name that opens the person's menu. */
+function PersonButton({
+  person,
+  onPerson,
+  className = "",
+  children,
+}: {
+  person: EmailAddress;
+  onPerson: (person: EmailAddress, at: MenuPosition) => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={person.address}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPerson(person, belowElement(event.currentTarget));
+      }}
+      className={`rounded-sm text-left hover:underline focus-visible:underline ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function AddressLine({
   label,
   addresses,
+  onPerson,
 }: {
   label: string;
   addresses: readonly EmailAddress[];
+  onPerson: MessageHeaderProps["onPerson"];
 }) {
   if (addresses.length === 0) return null;
   return (
@@ -130,7 +186,13 @@ function AddressLine({
       {addresses.map((address, index) => (
         <span key={`${address.address}-${index}`} title={address.address}>
           {index > 0 && ", "}
-          {displayName(address, "")}
+          {onPerson ? (
+            <PersonButton person={address} onPerson={onPerson}>
+              {displayName(address, "")}
+            </PersonButton>
+          ) : (
+            displayName(address, "")
+          )}
         </span>
       ))}
     </p>

@@ -37,6 +37,8 @@ import type { SieveBridge } from "../providers/sieve/bridge";
 import type { MailServerAccountInfo } from "../accounts/mailServer";
 import type { CalendarServerSources } from "../data/calendarServers";
 import type { CaldavServices } from "./caldav";
+import type { ContactCards } from "../core/contacts";
+import { createContactCards } from "../providers/vcard/vcard";
 
 /** Everything the UI needs, created once at startup (or per test). */
 export interface AppServices {
@@ -59,6 +61,8 @@ export interface AppServices {
   readonly mailServers?: MailServerAccounts;
   /** Calendar servers (CalDAV): the apps only. */
   readonly calendarServers?: CalendarServerSources;
+  /** Reading and writing vCard files (contacts import and export). */
+  readonly contactCards: ContactCards;
 }
 
 /** What the native apps add to the composition: native sign-in and networking. */
@@ -146,6 +150,7 @@ export function createAppServices(options: AppServicesOptions): AppServices {
       ? { mailServers: options.createMailServers(registry) }
       : {}),
     ...(options.caldav ? { calendarServers: options.caldav.sources } : {}),
+    contactCards: createContactCards(),
     ai: createAiServices(
       options.ai ??
         createWebAiBackend({
@@ -217,6 +222,7 @@ export function createDefaultModules(
                 ? {
                     createCalendar: desktop.caldav.accountCalendar,
                     contactsFor: desktop.caldav.contactsFor,
+                    createContacts: desktop.caldav.accountContacts,
                   }
                 : {}),
             }),

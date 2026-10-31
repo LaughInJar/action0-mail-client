@@ -92,6 +92,15 @@ const enReasons: Reasons = {
     `${p.address ?? "This address"} isn’t a verified forwarding address in Gmail yet. Add and verify it in Gmail’s settings first.`,
   filterNeedsCondition: () => "A filter needs at least one condition.",
   filterNeedsAction: () => "A filter needs something to do.",
+  contactsAccessNeeded: () =>
+    "This account hasn’t allowed access to its contacts yet.",
+  contactChanged: () =>
+    "This contact was changed somewhere else meanwhile. It shows as it is now; try again.",
+  contactGone: () => "This contact no longer exists.",
+  addressBookReadOnly: () => "Contacts in this address book can’t be changed.",
+  contactsLoginRefused: (p) =>
+    `${p.service ?? "The contacts server"} refused the login. Set up the calendar and contacts server again with the right password.`,
+  vcardUnreadable: () => "This file doesn’t contain any contacts (vCard).",
 };
 
 const deReasons: Reasons = {
@@ -187,6 +196,16 @@ const deReasons: Reasons = {
     `${p.address ?? "Diese Adresse"} ist in Gmail noch keine bestätigte Weiterleitungsadresse. Füg sie zuerst in den Gmail-Einstellungen hinzu und bestätige sie.`,
   filterNeedsCondition: () => "Ein Filter braucht mindestens eine Bedingung.",
   filterNeedsAction: () => "Ein Filter muss etwas tun.",
+  contactsAccessNeeded: () =>
+    "Dieses Konto hat den Zugriff auf seine Kontakte noch nicht erlaubt.",
+  contactChanged: () =>
+    "Dieser Kontakt wurde inzwischen woanders geändert. Er wird jetzt so angezeigt, wie er ist; versuch es noch einmal.",
+  contactGone: () => "Diesen Kontakt gibt es nicht mehr.",
+  addressBookReadOnly: () =>
+    "Kontakte in diesem Adressbuch können nicht geändert werden.",
+  contactsLoginRefused: (p) =>
+    `${p.service ?? "Der Kontakteserver"} hat die Anmeldung abgelehnt. Richte den Kalender- und Kontakteserver mit dem richtigen Passwort neu ein.`,
+  vcardUnreadable: () => "Diese Datei enthält keine Kontakte (vCard).",
 };
 
 const en = {

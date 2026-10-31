@@ -5,6 +5,7 @@ import type {
 import type { ProviderModule } from "../../accounts/types";
 import { asAccountId } from "../../core/ids";
 import type { CalendarProvider } from "../../core/calendar";
+import type { ContactsProvider } from "../../core/contacts";
 import type { Account, EmailAddress } from "../../core/model";
 import { SenderStore } from "../senderStore";
 import type { SieveBridge } from "../sieve/bridge";
@@ -34,6 +35,8 @@ export interface ImapModuleOptions {
   ) => Promise<readonly EmailAddress[]>;
   /** Filter servers (ManageSieve), for the accounts' filters and automatic replies. */
   readonly sieve?: SieveBridge;
+  /** The account's contacts (CardDAV), if the app has calendar servers. */
+  readonly createContacts?: (account: Account) => ContactsProvider;
 }
 
 /** SMTP servers that put a copy of sent mail into Sent themselves. */
@@ -82,6 +85,9 @@ export function createImapModule(options: ImapModuleOptions): ProviderModule {
     restore: session,
     ...(options.createCalendar
       ? { createCalendar: options.createCalendar }
+      : {}),
+    ...(options.createContacts
+      ? { createContacts: options.createContacts }
       : {}),
     ...(sieve
       ? {

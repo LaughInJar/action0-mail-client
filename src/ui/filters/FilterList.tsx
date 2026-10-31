@@ -6,7 +6,7 @@ import { useT } from "../../i18n/context";
 import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { describeFilter } from "./describe";
-import { HINT } from "./styles";
+import { HINT } from "../common/formStyles";
 import type { FilterActions } from "./useFilterActions";
 
 /** Props of {@link FilterList}. */

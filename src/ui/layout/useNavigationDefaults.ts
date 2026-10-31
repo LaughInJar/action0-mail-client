@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useCalendarRoute, useRoute, useRouter } from "../../state/context";
+import { useAppPart, useRoute, useRouter } from "../../state/context";
 import type { Breakpoint } from "./useBreakpoint";
 import { useMailboxList } from "../common/mailboxNames";
 import { ALL_INBOXES_FROM, allInboxesRoute } from "../mailboxes/allInboxes";
@@ -17,7 +17,7 @@ import { ALL_INBOXES_FROM, allInboxesRoute } from "../mailboxes/allInboxes";
  */
 export function useNavigationDefaults(breakpoint: Breakpoint): void {
   const route = useRoute();
-  const calendar = useCalendarRoute();
+  const part = useAppPart();
   const router = useRouter();
   const accounts = useAccounts();
   const queryClient = useQueryClient();
@@ -29,8 +29,8 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
   );
 
   useEffect(() => {
-    // The calendar is open: mail has no route meanwhile.
-    if (calendar !== null) return;
+    // The calendar or the contacts are open: mail has no route meanwhile.
+    if (part !== "mail") return;
     if (route !== null) {
       startedAtRoot.current = false;
       if (!accounts.some((handle) => handle.account.id === route.accountId)) {
@@ -70,7 +70,7 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
     }
   }, [
     route,
-    calendar,
+    part,
     router,
     accounts,
     firstAccountId,

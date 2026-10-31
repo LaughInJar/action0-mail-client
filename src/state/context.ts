@@ -2,7 +2,9 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import { useStore } from "zustand";
 import type { MessageRef } from "../core/ids";
 import type {
+  AppPart,
   CalendarRoute,
+  ContactsRoute,
   HashRouter,
   Route,
   SettingsEditor,
@@ -44,6 +46,18 @@ export function useRoute(): Route {
 export function useCalendarRoute(): CalendarRoute | null {
   const router = useRouter();
   return useSyncExternalStore(router.subscribe, router.getCalendarRoute);
+}
+
+/** The contacts route while the contacts are open, else `null`; re-renders on navigation. */
+export function useContactsRoute(): ContactsRoute | null {
+  const router = useRouter();
+  return useSyncExternalStore(router.subscribe, router.getContactsRoute);
+}
+
+/** Which part of the app is open; re-renders when that changes. */
+export function useAppPart(): AppPart {
+  const router = useRouter();
+  return useSyncExternalStore(router.subscribe, router.part);
 }
 
 /** Whether Settings is open; re-renders when that changes. */

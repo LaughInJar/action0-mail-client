@@ -4,6 +4,7 @@ import { android } from "./texts/android";
 import { calendar } from "./texts/calendar";
 import { actions } from "./texts/actions";
 import { common } from "./texts/common";
+import { contacts } from "./texts/contacts";
 import { composer } from "./texts/composer";
 import { desktop } from "./texts/desktop";
 import { errors } from "./texts/errors";
@@ -34,6 +35,7 @@ export const messages = {
     actions: actions.en,
     calendar: calendar.en,
     common: common.en,
+    contacts: contacts.en,
     composer: composer.en,
     desktop: desktop.en,
     errors: errors.en,
@@ -60,6 +62,7 @@ export const messages = {
     actions: actions.de,
     calendar: calendar.de,
     common: common.de,
+    contacts: contacts.de,
     composer: composer.de,
     desktop: desktop.de,
     errors: errors.de,

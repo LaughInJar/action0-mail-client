@@ -1,5 +1,6 @@
 import type { ProviderModule } from "../../accounts/types";
 import type { CalendarAccess } from "../../core/calendar";
+import type { ContactsAccess } from "../../core/contacts";
 import { StaticAuthSession } from "../../auth/staticSession";
 import { asAccountId } from "../../core/ids";
 import type { Account } from "../../core/model";
@@ -12,6 +13,11 @@ import {
 import { FakeMailProvider, type FakeMailData } from "./FakeMailProvider";
 import { FakeFilterProvider, type FakeFilterData } from "./FakeFilterProvider";
 import { createDemoFilters, createWorkDemoFilters } from "./demoFilters";
+import {
+  FakeContactsProvider,
+  type FakeContactsData,
+} from "./FakeContactsProvider";
+import { createDemoContacts, createWorkDemoContacts } from "./demoContacts";
 import { createWorkArrival, createWorkDemoData, WORK_EMAIL } from "./demoWork";
 
 /** The demo account. */
@@ -55,6 +61,12 @@ export interface DemoModuleOptions {
   readonly filters?: () => FakeFilterData;
   /** Replaces the work demo account's rules (used by tests). */
   readonly workFilters?: () => FakeFilterData;
+  /** Replaces the demo account's contacts (used by tests). */
+  readonly contacts?: () => FakeContactsData;
+  /** Replaces the work demo account's contacts (used by tests). */
+  readonly workContacts?: () => FakeContactsData;
+  /** Contacts access as if the accounts hadn't allowed it (tests). */
+  readonly contactsAccess?: ContactsAccess;
 }
 
 /** Provider module of the demo account: in-memory data, no sign-in. */
@@ -70,6 +82,9 @@ export function createDemoModule({
   syncedReminders = false,
   filters = createDemoFilters,
   workFilters = createWorkDemoFilters,
+  contacts = createDemoContacts,
+  workContacts = createWorkDemoContacts,
+  contactsAccess = "granted",
 }: DemoModuleOptions = {}): ProviderModule {
   return {
     type: "demo",
@@ -100,6 +115,11 @@ export function createDemoModule({
       new FakeFilterProvider(
         account.email === WORK_EMAIL ? workFilters() : filters(),
         { latencyMs },
+      ),
+    createContacts: (account) =>
+      new FakeContactsProvider(
+        account.email === WORK_EMAIL ? workContacts() : contacts(),
+        { latencyMs, access: contactsAccess },
       ),
     createProvider: (account) => {
       const work = account.email === WORK_EMAIL;

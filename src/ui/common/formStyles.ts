@@ -1,4 +1,4 @@
-/** Class names shared by Settings → Filters and its editors. */
+/** Class names of form controls (Settings → Filters, the contact editor, …). */
 export const HINT = "text-xs text-zinc-500 dark:text-zinc-400";
 /** A field's look without its width (selects and short fields size themselves). */
 export const CONTROL =

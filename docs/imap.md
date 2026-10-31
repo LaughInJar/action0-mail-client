@@ -56,6 +56,7 @@ An IMAP account is a folder account, like Outlook:
 - **Conversations** are built from Message-ID / In-Reply-To / References (or the server's thread ids); opening one also finds your replies in Sent and messages in Archive.
 - **Sending** builds the mail with `buildMessage`, sends it over SMTP without the Bcc header, and keeps a copy with it in Sent (Gmail's SMTP keeps its own). Drafts live in Drafts, replaced on every save.
 - **Signatures** are kept in the app; From is the account's address with the name given when adding it; address suggestions come from the calendar server's address books (CardDAV, [caldav.md](caldav.md#contacts)) and recent mail.
+- **Contacts** are the calendar server's CardDAV address books, listed and edited in the contacts like Google's and Outlook's (create, change, delete, groups as CATEGORIES, import and export; changes made elsewhere meanwhile fail and reload instead of being overwritten). Until the account's calendar server is set up, the contacts' column offers **Set up calendar and contacts** ([caldav.md](caldav.md#contacts)).
 - **Invitations** carry their iCalendar part; once the account's calendar server is set up they're answered there ([caldav.md](caldav.md#invitations-and-guests)).
 
 ## New mail
@@ -76,4 +77,4 @@ The app checks every account every 60 s in front and every 5 minutes in the back
 - On servers without UIDPLUS, moved or deleted messages stay marked `\Deleted` (and hidden in action0) when another program has marked other messages in that folder, until it's expunged.
 - One trusted certificate per account.
 - Yahoo/AOL OAuth needs a registration Yahoo approved.
-- Calendars come from the account's calendar server (CalDAV), set up separately: [caldav.md](caldav.md).
+- Calendars and contacts come from the account's calendar server (CalDAV and CardDAV), set up separately: [caldav.md](caldav.md).

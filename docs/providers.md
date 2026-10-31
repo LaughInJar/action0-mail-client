@@ -1,11 +1,12 @@
 # Providers
 
-A provider is an adapter that translates between one service's API and the [domain model](domain-model.md): Gmail through its REST API, Exchange Online and Outlook.com through Microsoft Graph, Google and Microsoft calendars, iCal subscriptions, and an in-memory fake for tests and the demo. Everything above the providers (data layer, state, UI) only sees the contracts in `src/core`, `src/auth/types.ts` and `src/accounts/types.ts`; concrete providers are wired up in `src/app`, and ESLint keeps `src/ui`, `src/data`, `src/state`, `src/keyboard` and `src/compose` from importing `src/providers` or the concrete auth sessions in `src/auth/google`, `src/auth/microsoft` and `src/auth/native` (`eslint.config.js`). This document describes the contracts, each adapter, and how to add a new one.
+A provider is an adapter that translates between one service's API and the [domain model](domain-model.md): Gmail through its REST API, Exchange Online and Outlook.com through Microsoft Graph, Google and Microsoft calendars, iCal subscriptions, Google and Outlook contacts and CardDAV address books, and an in-memory fake for tests and the demo. Everything above the providers (data layer, state, UI) only sees the contracts in `src/core`, `src/auth/types.ts` and `src/accounts/types.ts`; concrete providers are wired up in `src/app`, and ESLint keeps `src/ui`, `src/data`, `src/state`, `src/keyboard` and `src/compose` from importing `src/providers` or the concrete auth sessions in `src/auth/google`, `src/auth/microsoft` and `src/auth/native` (`eslint.config.js`). This document describes the contracts, each adapter, and how to add a new one.
 
 - [The contracts](#the-contracts)
 - [Gmail](#gmail)
 - [Microsoft Graph](#microsoft-graph)
 - [Calendars](#calendars)
+- [Contacts](#contacts)
 - [Fake provider and demo data](#fake-provider-and-demo-data)
 - [Adding a provider](#adding-a-provider)
 
@@ -99,6 +100,23 @@ The calendar model itself is described in [Calendar model](domain-model.md#calen
 
 A filter is a `FilterSpec` (name, on/off, `FilterConditions`, `FilterActions`) plus its id, `more` (it has parts action0 doesn't show; editing keeps them) and `custom` (Sieve code action0 can't read: on/off and delete only). `FilterCapabilities` say which conditions and actions the editor offers, in the provider's words: Gmail skips the Inbox and applies labels, Outlook and Sieve move to a folder.
 
+### `ContactsProvider`
+
+`ContactsProvider` (`src/core/contacts.ts`) is the contacts of one source: an account (Google Contacts, Outlook contacts, a mail server's CardDAV address books) or a calendar-only CardDAV server. Like the others it rejects with `MailError`, and it caches nothing between calls: what `load` returned comes back to it on the next `load`, which is how it applies its sync tokens without keeping a copy. `requestAccess()` opens a consent popup and must be called from a click.
+
+| Member                                           | Meaning                                                                                                                                                                                               |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities`                                   | What a contact can hold (`ContactCapabilities`: kinds and limits, groups, Other contacts); see [the domain model](domain-model.md#what-a-source-can-hold)                                             |
+| `setup?`, `access`, `requestAccess`, `subscribe` | Access (`granted`, `readOnly`, `missing`), asking for it (`consent`), or the calendar server dialog (`server`: `requestAccess` rejects), and change notifications                                     |
+| `load(previous)`                                 | A `ContactSnapshot`: address books, groups, contacts, Other contacts, and an opaque `token`. With the last snapshot, only the changes since are fetched where the provider can                        |
+| `create`, `createMany`                           | New contacts (`NewContact`: fields, a picture, and for imports the vCard itself). `createMany` uses batches where the provider has them and returns a result per contact: its write, or why it failed |
+| `update(contact, fields)`                        | Changes only what differs from `contact`, the version shown; `contactChanged` when it was changed elsewhere since it was read                                                                         |
+| `remove(contacts)`                               | Deletes; the `ContactRemoval`'s `undo` creates them again, exactly where the provider can (CardDAV), else as new contacts with the same fields, groups and picture                                    |
+| `createGroup`, `addOther?`                       | A new group; adding one of Google's Other contacts to the contacts                                                                                                                                    |
+| `photo`, `rawCard?`                              | A contact's picture as a Blob; a CardDAV contact's card as the server keeps it (for exporting it unchanged)                                                                                           |
+
+Every write resolves to a `ContactWrite`: the contact as it is now, and an `undo` that puts things back (deletes what was created, writes the previous fields back). The data layer patches its cache around these and keeps the undo for the toast ([architecture.md](architecture.md#contacts)).
+
 ### `AuthSession`
 
 `AuthSession` (`src/auth/types.ts`) is the credentials of one account. Providers only call `getAccessToken()` and, on HTTP 401, `markExpired()`.
@@ -126,12 +144,12 @@ export interface AuthSession {
 }
 ```
 
-A `ScopedSession` adds permissions that are asked for only when needed (calendar access), so mail works without them: `hasScopes(scopes)`, `requestScopes(scopes)` (opens UI) and `subscribe`. The implementations:
+A `ScopedSession` adds permissions that are asked for only when needed (calendar access, editing Google contacts, Outlook contacts), so mail works without them: `hasScopes(scopes)`, `requestScopes(scopes)` (opens UI) and `subscribe`. The implementations:
 
 | Session                | File                                         | Used for                                                                                                                                                                           |
 | ---------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GoogleAuthSession`    | `src/auth/google/GoogleAuthSession.ts`       | Gmail in the browser: Google Identity Services token model, one-hour tokens, no refresh token; refreshed on the next click or key near expiry (`src/auth/refreshOnInteraction.ts`) |
-| `MicrosoftAuthSession` | `src/auth/microsoft/MicrosoftAuthSession.ts` | Microsoft in the browser: MSAL.js (loaded on first use), renews silently; `tokenFor(scopes)` gets calendar tokens                                                                  |
+| `MicrosoftAuthSession` | `src/auth/microsoft/MicrosoftAuthSession.ts` | Microsoft in the browser: MSAL.js (loaded on first use), renews silently; `tokenFor(scopes, reason)` gets calendar and contacts tokens                                             |
 | `NativeAuthSession`    | `src/auth/native/NativeAuthSession.ts`       | Both, in the desktop app: the native side signs in through the system browser and keeps the refresh token                                                                          |
 | `ImapSession`          | `src/providers/imap/ImapSession.ts`          | IMAP/SMTP accounts in the apps: the native side keeps the password or Yahoo/AOL sign-in and logs in itself; `reauth: "password"` makes the Reconnect bar ask for a new password    |
 | `StaticAuthSession`    | `src/auth/staticSession.ts`                  | The demo accounts, tests, and single calls with a freshly obtained token                                                                                                           |
@@ -161,6 +179,10 @@ export interface ProviderModule {
     account: Account,
     auth: AuthSession,
   ) => FilterProvider;
+  readonly createContacts?: (
+    account: Account,
+    auth: AuthSession,
+  ) => ContactsProvider;
 }
 
 export interface AccountHandle {
@@ -169,6 +191,7 @@ export interface AccountHandle {
   readonly provider: MailProvider;
   readonly calendar?: CalendarProvider;
   readonly filters?: FilterProvider;
+  readonly contacts?: ContactsProvider;
 }
 ```
 
@@ -185,7 +208,7 @@ A `ProviderSetup` (same file) lets the user configure a provider at runtime, suc
 - `remove(id)` forgets the account, calls `onRemove` (the composition root drops its cached data) and signs out.
 - `list()`, `get(id)`, `availableModules()` and `subscribe(listener)` read it.
 
-For each account, `handleOf` calls the module's `createProvider` and, if present, `createCalendar`.
+For each account, `handleOf` calls the module's `createProvider` and, if present, `createCalendar`, `createFilters` and `createContacts`.
 
 ## Gmail
 
@@ -196,13 +219,14 @@ For each account, `handleOf` calls the module's `createProvider` and, if present
 | `src/providers/gmail/labels.ts`                             | Labels to mailboxes, label colours                                          |
 | `src/providers/gmail/mappers.ts`, `mime.ts`, `addresses.ts` | Messages to summaries and full messages, MIME tree parsing, address headers |
 | `src/providers/gmail/calendar.ts`                           | `GoogleCalendarProvider` (see [Calendars](#calendars))                      |
+| `src/providers/gmail/contacts.ts`                           | `GoogleContactsProvider` (see [Contacts](#contacts))                        |
 | `src/providers/gmail/module.ts`                             | The `ProviderModule`: scopes, sign-in, wiring                               |
 | `src/providers/gmail/types.ts`                              | The shapes of Google's API answers that the adapter reads                   |
 | `src/providers/mime/buildMessage.ts`                        | Builds outgoing MIME messages                                               |
 
 ### Module and scopes
 
-`createGmailModule` (`src/providers/gmail/module.ts`) asks for the full-access scope `https://mail.google.com/` (`GMAIL_SCOPE`; needed for permanent deletion), the optional contacts scopes (`CONTACTS_SCOPES`) and `gmail.settings.basic` (`SETTINGS_SCOPE`, for signatures), and the calendar scopes on demand. New accounts are asked for calendar access while connecting. A token response doesn't say whose token it is, so `connect` asks Gmail's `profile` endpoint for the address and builds the account id `gmail:<lowercased address>`. In the desktop app the module signs in natively instead (`nativeSignIn`) and asks for every scope at once, and requests go through the native `fetch`.
+`createGmailModule` (`src/providers/gmail/module.ts`) asks for the full-access scope `https://mail.google.com/` (`GMAIL_SCOPE`; needed for permanent deletion), the optional contacts scopes (`CONTACTS_SCOPES`, read only) and `gmail.settings.basic` (`SETTINGS_SCOPE`, for signatures), and on demand the calendar scopes and the contacts write scope (`CONTACTS_WRITE_SCOPE`). New accounts are asked for calendar access while connecting. A token response doesn't say whose token it is, so `connect` asks Gmail's `profile` endpoint for the address and builds the account id `gmail:<lowercased address>`. In the desktop app the module signs in natively instead (`nativeSignIn`) and asks for every scope at once except the contacts write scope, which `requestScopes` asks for later with a new sign-in; requests go through the native `fetch`.
 
 ### HTTP client
 
@@ -297,12 +321,13 @@ Outgoing mail is a raw MIME message built by `buildMessage` (`src/providers/mime
 | `src/providers/microsoft/folders.ts`                                                  | Folders, views and categories to mailboxes                    |
 | `src/providers/microsoft/mappers.ts`                                                  | Messages, recipients, attachments, invitations                |
 | `src/providers/microsoft/calendar.ts`, `recurrence.ts`, `zones.ts`, `windowsZones.ts` | `GraphCalendarProvider` (see [Calendars](#calendars))         |
+| `src/providers/microsoft/contacts.ts`                                                 | `GraphContactsProvider` (see [Contacts](#contacts))           |
 | `src/providers/microsoft/module.ts`                                                   | The `ProviderModule`: MSAL sign-in, personal accounts, wiring |
 | `src/providers/microsoft/types.ts`                                                    | The shapes of Graph's answers that the adapter reads          |
 
 ### Module
 
-`createMicrosoftModule` signs in with an MSAL popup (`acquireTokenPopup`) for `GRAPH_SCOPES` (`Mail.ReadWrite`, `Mail.Send`, `People.Read`, `User.Read`, `MailboxSettings.ReadWrite`, `offline_access`; `src/auth/microsoft/msal.ts`) and asks for consent to `Calendars.ReadWrite` in the same popup. The account id is `microsoft:<lowercased sign-in name>`. Personal accounts (the personal tenant id, or an outlook/hotmail/live/msn address) get the lower attachment limit. Signatures, further From addresses and catch-all domains are stored in localStorage (`SenderStore`, see [IMAP's senders](#senders-and-signatures)), because Graph can't read or write Outlook's signatures or list "send as" addresses.
+`createMicrosoftModule` signs in with an MSAL popup (`acquireTokenPopup`) for `GRAPH_SCOPES` (`Mail.ReadWrite`, `Mail.Send`, `People.Read`, `User.Read`, `MailboxSettings.ReadWrite`, `offline_access`; `src/auth/microsoft/msal.ts`) and asks for consent to `Calendars.ReadWrite` and `Contacts.ReadWrite` in the same popup (`extraScopesToConsent`; the apps ask for them at sign-in). The account id is `microsoft:<lowercased sign-in name>`. Personal accounts (the personal tenant id, or an outlook/hotmail/live/msn address) get the lower attachment limit. Signatures, further From addresses and catch-all domains are stored in localStorage (`SenderStore`, see [IMAP's senders](#senders-and-signatures)), because Graph can't read or write Outlook's signatures or list "send as" addresses.
 
 ### HTTP client
 
@@ -495,6 +520,63 @@ The CalDAV provider has its own document: [caldav.md](caldav.md).
 - Reminders come from `VALARM`s with `DISPLAY` or `AUDIO` actions, relative to the start or end, or at a fixed time.
 - It is read-only: every change rejects with `readOnlyError()` (`calendarReadOnly`), and `respond` rejects too.
 
+## Contacts
+
+Each account module creates a contacts provider next to the mail provider (`createContacts`): Google, Microsoft, the IMAP module (through `CaldavServices.accountContacts` in `src/app/caldav.ts`) and the demo. Calendar-only CardDAV servers get one each through `CalendarServerSources.contactsFor` (`src/data/calendarServers.ts`, the apps only), for servers that have address books or haven't been checked yet. The data layer treats them all as contact _sources_ keyed by the account id or `caldav:<id>`, keeps their snapshots in memory only and makes every change optimistic ([architecture.md](architecture.md#contacts)).
+
+|                    | Google (`GoogleContactsProvider`)                         | Outlook (`GraphContactsProvider`)                      | CardDAV (`CardDavContactsProvider`)                   |
+| ------------------ | --------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| Access             | Read scope at connect (`readOnly`); write scope on demand | `Contacts.ReadWrite`, at connect or **Allow contacts** | `setup: "server"`: missing until the server is set up |
+| Address books      | One (`contacts`)                                          | The default Contacts folder and its sub-folders        | Every address book under the login's home             |
+| Groups             | Labels and Starred                                        | Categories (with colours)                              | The cards' CATEGORIES                                 |
+| Changes since      | Sync tokens (connections and Other contacts)              | Delta links per folder                                 | `sync-collection` or ETags, per address book          |
+| Conflicts          | The person's etag                                         | `If-Match` with the change key                         | `If-Match` with the ETag                              |
+| Deleted, then undo | Recreated as new contacts (with every writable field)     | Recreated in their folders (with every field)          | The same card put back at the same address            |
+| Pictures           | Google's photo URL                                        | Fetched (`photo/$value`) for the open contact          | Embedded in the card, as a `data:` URL                |
+
+### Google Contacts
+
+`src/providers/gmail/contacts.ts` uses the People API through a `GmailHttp` with its own base URL (`PEOPLE_API_BASE`).
+
+- **Access:** reading needs `contacts.readonly` (`CONTACTS_READ_SCOPE`, asked for when connecting, optional), so a source without it is `missing` and `load` rejects with `contactsAccessNeeded`. Changes need `https://www.googleapis.com/auth/contacts` (`CONTACTS_WRITE_SCOPE`), an on-demand scope of the web session, so nobody reconnects for it: without it the source is `readOnly`, and `requestAccess` asks for it together with `contacts.other.readonly` (declining only the Other contacts still allows editing). Every write without it rejects with `contactsAccessNeeded`.
+- **Loading:** `people/me/connections`, `otherContacts` and `contactGroups` in parallel, 1000 per page. Connections and Other contacts are read with `requestSyncToken`; the snapshot's token holds both sync tokens, the next load asks only for changes and applies them to the previous lists (deleted people go away), and an expired token loads everything again. Groups always load whole. Without the Other contacts scope there are none.
+- **The model:** one address book, `contacts`, read-only unless access is `granted`. Groups are the user's labels plus Starred; Google's system groups (My Contacts, Friends, Family, Coworkers, …) are hidden, but writes keep a contact's memberships in them, and new contacts always go into My Contacts. Only the user's own contact data is shown (not a linked Google profile's, which updates can't change). Google types other than home, work, other (and mobile for phones) become kind `other` with Google's name as the label. Google's placeholder pictures count as none; photo URLs are asked for at 200 px.
+- **Changes** go one at a time, as Google asks for a user's writes. `update` reads the person first: a different etag (or Google's 400 `FAILED_PRECONDITION`) is `contactChanged`. Then `updateContact` sends only the changed field families (`updatePersonFields`), with unchanged entries exactly as Google had them, so custom types and metadata survive. A 404 is `contactGone`; a 403 is `contactsAccessNeeded`, or `peopleApiDisabled` when the People API is switched off.
+- **New contacts:** `createContact`, or `batchCreateContacts` (200 per call) for imports, with progress per batch; a picture goes up afterwards with `updateContactPhoto`.
+- **Deleting** first reads the whole people (every writable field: events, relations, …) and their pictures, then `deleteContact` or `batchDeleteContacts` (500 per call). Undo creates them again from that, picture included. Other contacts can't be deleted (`addressBookReadOnly`); **Add to contacts** is `copyOtherContactToMyContactsGroup`, and its undo deletes the copy.
+- **Address suggestions** (`searchContacts`) are unchanged: the People API's search endpoints, see [Gmail](#contacts-senders-and-signatures).
+
+### Outlook contacts
+
+`src/providers/microsoft/contacts.ts` uses a `GraphHttp` whose tokens come from `session.tokenFor(CONTACTS_SCOPES, "contactsAccessNeeded")`. New accounts consent to `Contacts.ReadWrite` while connecting; for older ones, `access()` is `granted` until the first token request fails, then `missing`, and **Allow contacts** calls `requestScopes`.
+
+- **Address books:** the default Contacts folder (the fixed id `contacts`, reached through `me/contacts`; its Graph id is learned from the sub-folders' `parentFolderId` or a contact, and kept in the token with Outlook's name for it) and its sub-folders, found recursively through `childFolders`.
+- **Changes since:** each folder is followed with `contacts/delta` (pages of 200), its links kept in the snapshot's token. An expired link or a refused delta starts a fresh round, then falls back to a plain listing; errors such as a missing permission, being offline or throttling are passed on instead.
+- **Groups** are Outlook's categories (`me/outlook/masterCategories`, with their colours); a contact's categories are names, so the group id is the name. Categories used on contacts but missing from the list show without a colour. `createGroup` adds a category with a colour picked from its name (or returns the one that exists).
+- **Fields:** 3 email addresses without kinds; `businessPhones` (2), `homePhones` (2) and `mobilePhone`; one home, business and other address; the business home page as the one website; given, middle and surname, nickname, company, job title, department and personal notes. Everything is fitted to these limits (`GRAPH_CONTACT_CAPABILITIES`, `fitTo`) before writing. Outlook keeps a birthday at midnight of the zone it was entered in, so it's read as the nearest whole day in UTC and written as `YYYY-MM-DDT11:59:00Z`; it needs a year. The display name follows the name when it changes, or when it was only ever built from the fields.
+- **Writes:** `update` PATCHes only the changed properties with `If-Match`; 412 (or 409 `ErrorIrresolvableConflict`) is `contactChanged`, 404 `contactGone`, and undo PATCHes the old values back. Imports go through `$batch` (20 per request) with progress per batch; pictures go up one by one afterwards (`putBlob`), and a failed upload is ignored.
+- **Deleting** reads each contact whole first, so undo brings back fields action0 doesn't show; pictures are kept for undo only when 20 contacts or fewer are deleted. Undo creates them again in their folders, with new ids.
+- **Pictures:** Graph has no reliable "has a photo" flag, so every contact's photo is `fetch`; `photo()` reads `photo/$value` (404: none), and the UI asks only for the open contact's.
+- **Address suggestions** (`searchContacts`) still come from `me/people` (`People.Read`), see [Microsoft Graph](#contacts-senders-and-invitations).
+
+### CardDAV address books
+
+`CardDavContactsProvider` (`src/providers/caldav/CardDavContactsProvider.ts`) serves one login: a mail server account's calendar server (`accountContacts`) or a calendar-only server (`sources.contactsFor`). It shares the login's `CardDavAddressBooks` (`src/providers/caldav/contacts.ts`) with the address suggestions, so both read the same stores. The apps only; the setup and the native side are in [caldav.md](caldav.md#contacts).
+
+- **Access** is `granted` once the login has an address book home, or might have one (a server set up before address books were looked for is checked on the first load); otherwise `missing` with `setup: "server"`, and the UI offers **Set up calendar and contacts** (the calendar server dialog).
+- **Loading:** the address books are listed on every load (`PROPFIND` of the home: display name, write privilege, sync token), so new ones appear; each is a `DavStore` brought up to date with `sync-collection` or ETags and `addressbook-multiget`. Group cards (`KIND:group`, Apple's `X-ADDRESSBOOKSERVER-KIND:group`) are kept but not listed. The first writable address book is the default; read-only ones say so. A contact's id is its object URL and its version the ETag; groups are the union of the cards' CATEGORIES (`createGroup` sends nothing: a group exists once a contact has it). Pictures count only when embedded in the card.
+- **Writes** are conditional. A new contact is a `PUT` of `<book>/<uid>.vcf` with `If-None-Match: *` (a new vCard 3.0 card, or for imports the card itself, given a UID if it has none and converted to 3.0 if it was 2.1). A change re-reads the object (a different ETag is `contactChanged`), edits the card in place (`editCard`) and puts it with `If-Match`; a delete sends `DELETE` with `If-Match`. A 412 reloads the address book and fails as `contactChanged`; a read-only address book fails as `addressBookReadOnly` without a request (a 403 too); 404 or 410 is `contactGone`; a refused login is `auth-required` with `contactsLoginRefused`. A server that answers a `PUT` without an ETag is read again, so the next change can use it. Imports create up to 4 contacts at a time.
+- **Undo** is exact: a change puts the previous text back, and a delete puts the stored cards back at their addresses with `If-None-Match: *` (a delete that fails half-way puts back what it had already removed). Address data arrives inside XML, whose parser turns CRLF into LF, so cards get their CRLF back before they're edited or put back. `rawCard` gives the stored card, so an export writes it unchanged.
+
+### vCard
+
+`src/providers/vcard/vcard.ts` reads and writes vCards for the CardDAV provider and for import and export, splitting and unfolding the lines itself and reading each property with ical.js.
+
+- **Reading** (`readCard`, `fieldsOfCard`): vCard 3.0 and 4.0, and 2.1 (bare types like `TEL;CELL`, quoted-printable, character sets and base64), which is converted to 3.0 first (`fromVcard21`). Apple's item groups and labels are read; fax and pager numbers and other types become labels; a birthday without a year (`--MMDD`, or Apple's year 1604 with `X-APPLE-OMIT-YEAR`) has none. A card with properties outside `ContactFields` (IM handles, anniversaries, …) says so (`more`), for the import preview.
+- **Changing a card** (`editCard`) rewrites only the families whose values changed; values that stayed keep their lines, parameters and labels, unknown lines stay byte for byte, VERSION stays first (ical.js picks the vCard version from the first property) and REV is updated.
+- **New cards** (`newCard`) and exports are vCard 3.0 with a UID, base64 pictures and, for a birthday without a year, `BDAY;X-APPLE-OMIT-YEAR=1604:1604-MM-DD`.
+- **Files:** `createContactCards()` is the `ContactCards` service (`AppServices.contactCards`, the UI's `useContactCards`): `parse` splits a .vcf file into `ParsedCard`s, skipping unreadable cards and group cards; `format` writes one .vcf file, CardDAV cards as stored (`raw`).
+
 ## Fake provider and demo data
 
 `src/providers/fake/` holds in-memory providers that follow the same rules as the real ones: views are computed, counts are derived from the messages, results are sorted by date, and writes change what later reads return. Tests use them through `renderApp()` (`src/test/renderApp.tsx`), and the demo accounts are built from them.
@@ -518,6 +600,10 @@ Its data can turn on `editSenders` (addresses managed in action0, as for IMAP an
 
 `FakeCalendarProvider` (`src/providers/fake/FakeCalendarProvider.ts`) builds events from templates placed relative to "now" (weekdays of a repeating event, or a day offset from this week's Monday). It supports answers, editing with series scopes and undo. Options: `access` (start as `missing` to test "Allow calendar"), `guestNotices` (`ask` like Google or `always` like Microsoft), `syncedReminders` (one reminder per event with an Outlook-like `reminderSync`; otherwise up to 5). Tests can set `failWrites` and read every write from `writes`.
 
+### `FakeContactsProvider`
+
+`FakeContactsProvider` (`src/providers/fake/FakeContactsProvider.ts`) keeps a demo account's contacts in memory, Google-like (any number of values with kinds, labels and Starred, Other contacts, a picture by URL) or Outlook-like (folders, categories, Outlook's limits). Writes check the version like the real ones (`contactChanged`), and undoing a delete creates new contacts, as Google and Outlook do. Tests set `failWrites`, start with `access` `missing` or `readOnly` (through `DemoModuleOptions.contactsAccess`) and count `loads`. The demo data (`demoContacts.ts`) gives the first account about 20 contacts matching the demo mail's people, labels, two pairs of duplicates and three Other contacts, and the work account two folders (Contacts, Suppliers), two categories and one duplicate.
+
 ### Demo accounts
 
 `createDemoModule` (`src/providers/fake/module.ts`) is the `demo` provider module. It needs no sign-in (`StaticAuthSession`) and simulates 150 ms of latency. It has two accounts:
@@ -527,7 +613,7 @@ Its data can turn on `editSenders` (addresses managed in action0, as for IMAP an
 | `demo:demo@example.com`  | Gmail-like (`createDemoData` in `demoData.ts`): about 200 messages with timestamps relative to now, made reproducible by a seeded random generator; labels, inbox categories, two send-as addresses with signatures, contacts, attachments (a PDF, pictures), newsletters that offer unsubscribing, and an invitation mail. A new message arrives every 2 minutes (`createDemoArrival`). Its calendar (`demoCalendar.ts`) has Work, Personal and Holidays calendars and the event the invitation mail is about (`DEMO_INVITATION_UID`). |
 | `demo:demo@work.example` | Outlook-like (`createWorkDemoData` in `demoWork.ts`): about 40 messages in folders (`folders: true`), with categories in Outlook's colours, timed between the first account's so All inboxes mixes them. Mail arrives every 3 minutes (`createWorkArrival`). Its calendar is empty.                                                                                                                                                                                                                                                     |
 
-Opening the app with `/?demo` adds the first account through `registry.add("demo")` and the second through `registry.addKnown` (`src/main.tsx`). Tests replace the data, clock, calendar and arrival interval through `DemoModuleOptions`.
+Opening the app with `/?demo` adds the first account through `registry.add("demo")` and the second through `registry.addKnown` (`src/main.tsx`). Tests replace the data, clock, calendar, contacts and arrival interval through `DemoModuleOptions`.
 
 ## Adding a provider
 
@@ -539,7 +625,7 @@ The checklist below applies to any provider; the IMAP provider is the most recen
 4. **IDs and cursors.** Choose id formats that are opaque to everyone else, and keep invented ids recognisable to the provider itself (Graph prefixes its views with `view:`). Message ids must stay the same when a message moves or changes labels: the data layer, selections, undo steps and URLs rely on it. IMAP UIDs are per folder, so an IMAP adapter has to give messages stable ids itself, with RFC 8474's `EMAILID` where the server supports it, or with its own mapping. Cursors can be offsets or snapshot keys, as long as they come back unchanged.
 5. **Implement `MailProvider`.** Every method, with `MailError`s (codes and, where the app describes the cause, a `reason`) and `AbortSignal` support. Make the write methods do what `planChanges` predicts for the account's kinds (`src/data/optimistic.ts`): for a folder account, archive, trash and spam move into the folder with that role, and messages in Trash or Spam must not show up in other lists. Retries and concurrency limits belong in the provider's HTTP client, not the query client. Keep message bodies raw: they are sanitized when the reader shows them (`src/security/`). Reuse what's shared: `buildMessage` (`src/providers/mime/buildMessage.ts`) builds raw MIME for sending, `parseAddressList` (`src/core/addresses.ts`) parses address headers, `parseListUnsubscribe` and `parseInvitation` read headers and calendar parts, and `sendOneClickUnsubscribe` sends RFC 8058 requests.
 6. **Live updates.** Implement `changesSince` with an opaque token (for IMAP, for example per-folder `UIDVALIDITY`/`MODSEQ` state serialized like Graph's delta links) and return `reset: true` when the changes are too many or the token is unusable.
-7. **Calendar (optional).** Implement `CalendarProvider` and return it from the module's `createCalendar`. A read-only source can follow `IcsCalendarProvider`.
+7. **Calendar, filters and contacts (optional).** Implement `CalendarProvider`, `FilterProvider` or `ContactsProvider` and return them from the module's `createCalendar`, `createFilters` and `createContacts`. A read-only calendar can follow `IcsCalendarProvider`; a contacts provider gets its last snapshot back on every `load`, so it can sync without a cache of its own.
 8. **Auth session.** Implement `AuthSession` (and `ScopedSession` for permissions asked on demand), or reuse one. `getAccessToken` never opens UI; the HTTP layer calls `markExpired()` when the server rejects the credentials. Credentials follow [security.md](security.md): never in localStorage, and in the desktop app long-lived secrets only on the native side.
 9. **Provider module.** Write a `ProviderModule` in `src/providers/<name>/module.ts`: `type`, `label`, `prepare` (load what `connect` needs before the click), `connect` (interactive, builds the `Account` with the id `<type>:<lowercased address>`), `restore`, `createProvider`, `createCalendar`. Accept an optional `fetch`, as the Gmail and Microsoft modules do, so the desktop app can route requests through its native side.
 10. **Wiring.** Register the module in `createDefaultModules` in `src/app/services.ts` (for the web app, the desktop app or both); if the provider needs configuration entered at runtime, add a `ProviderSetup` in `createDefaultSetups`. Browsers can't open TCP connections, so an IMAP provider needs a transport on the desktop app's native side (`src-tauri/`, exposed to the UI through `src/platform/native`); plan that with the feature.

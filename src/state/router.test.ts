@@ -3,11 +3,13 @@ import { asAccountId, asMailboxId, asMessageId } from "../core/ids";
 import {
   createHashRouter,
   formatCalendarRoute,
+  formatContactsRoute,
   formatLocation,
   formatRoute,
   overlayOf,
   listRoute,
   parseCalendarHash,
+  parseContactsHash,
   parseHash,
   sameList,
 } from "./router";
@@ -329,6 +331,56 @@ describe("calendar routes", () => {
     router.navigate(router.getLastMailRoute());
     expect(router.getCalendarRoute()).toBeNull();
     expect(router.getRoute()).toEqual(route);
+    router.dispose();
+  });
+});
+
+describe("contacts routes", () => {
+  const contact = JSON.stringify(["gmail:jane@example.com", "people/c1"]);
+  const list = JSON.stringify(["gmail:jane@example.com", "group", "g/1"]);
+
+  it("round-trips lists, contacts, the editor, new contacts and searches", () => {
+    for (const route of [
+      { list: "all" },
+      { list, contact },
+      { list, contact, edit: true as const },
+      { list: "all", create: {} },
+      { list: "all", create: { name: "Anna Berger", address: "a@b.example" } },
+      { list, duplicates: true as const },
+      { list, search: "anna & co", importing: true as const },
+    ]) {
+      expect(parseContactsHash(formatContactsRoute(route))).toEqual(route);
+      expect(parseHash(formatContactsRoute(route))).toBeNull();
+      expect(parseCalendarHash(formatContactsRoute(route))).toBeNull();
+    }
+    expect(parseContactsHash("#/contacts")).toEqual({ list: "all" });
+    expect(
+      parseContactsHash(`#/contacts/all/${encodeURIComponent(contact)}/delete`),
+    ).toBeNull();
+    expect(parseContactsHash(formatRoute(route))).toBeNull();
+  });
+
+  it("knows which part of the app is open, and keeps the last contacts list", () => {
+    window.history.replaceState(null, "", "/#/contacts/all");
+    const router = createHashRouter(window);
+    expect(router.part()).toBe("contacts");
+    expect(router.getRoute()).toBeNull();
+    router.openContacts({ list, contact });
+    router.navigate(route);
+    expect(router.part()).toBe("mail");
+    expect(router.getContactsRoute()).toBeNull();
+    expect(router.getLastContactsRoute()).toEqual({ list, contact });
+    router.openCalendar({ view: "week", date: "2026-10-15" });
+    expect(router.part()).toBe("calendar");
+    router.dispose();
+  });
+
+  it("opens Settings over the contacts", () => {
+    window.history.replaceState(null, "", "/#/contacts/all?q=anna");
+    const router = createHashRouter(window);
+    router.openSettings();
+    expect(window.location.hash).toBe("#/contacts/all?q=anna&settings");
+    expect(router.getContactsRoute()).toEqual({ list: "all", search: "anna" });
     router.dispose();
   });
 });
