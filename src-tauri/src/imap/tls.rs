@@ -201,6 +201,7 @@ impl Seen {
                     ServerRole::Imap => "IMAP",
                     ServerRole::Smtp => "SMTP",
                     ServerRole::Caldav => "calendar",
+                    ServerRole::Sieve => "filter",
                 }
             ),
         )

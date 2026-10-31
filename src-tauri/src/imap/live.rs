@@ -8,6 +8,9 @@
 //! - `ACTION0_SMTP_HOST` (the IMAP host), `ACTION0_SMTP_PORT` (465),
 //!   `ACTION0_SMTP_SECURITY` (`tls`)
 //! - `ACTION0_SMTP_TO`: an address to send a test mail to (none: no mail)
+//! - `ACTION0_SIEVE_HOST` (the IMAP host), `ACTION0_SIEVE_PORT` (4190): the
+//!   filter server, logged in to with the IMAP login; its active script is
+//!   read and written back unchanged
 //!
 //! A certificate the system doesn't trust (a container's self-signed one)
 //! is trusted the way the UI does it: the refusal names it, then it's pinned.
@@ -55,6 +58,7 @@ fn configured() -> Option<ImapAccount> {
         },
         pinned: None,
         max_bytes: None,
+        sieve: None,
     })
 }
 
@@ -399,5 +403,45 @@ async fn live_idle_tells_of_new_mail() {
     task.abort();
     call(&imap, &key, "delete", json!({ "ids": [id] })).await;
     assert!(matches!(told, Ok(Some(()))), "IDLE said nothing");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_reads_and_writes_back_the_filters() {
+    let Some(mut account) = configured() else {
+        return;
+    };
+    trusting(&mut account).await;
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let address = sieve::SieveAddress {
+        host: var("ACTION0_SIEVE_HOST").unwrap_or_else(|| account.settings.imap.host.clone()),
+        port: var("ACTION0_SIEVE_PORT").map_or(sieve::PORT, |p| p.parse().expect("a port")),
+    };
+    let (imap, key, dir) = kept(&account, "sieve");
+    let server = imap
+        .set_sieve_server(&key, Some(address))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(server.chosen);
+    let read = imap.read_sieve(&key).await.unwrap();
+    assert_eq!(read.extensions, server.extensions);
+    if let Some(name) = read.name {
+        let request = sieve::SieveWrite {
+            name,
+            script: read.script.clone(),
+            expected: read.script.clone(),
+            activate: false,
+        };
+        imap.write_sieve(&key, &request).await.unwrap();
+        let changed = sieve::SieveWrite {
+            expected: format!("{}# not what's there\n", read.script),
+            ..request
+        };
+        let error = imap.write_sieve(&key, &changed).await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Changed);
+        assert_eq!(imap.read_sieve(&key).await.unwrap().script, read.script);
+    }
     let _ = std::fs::remove_dir_all(dir);
 }

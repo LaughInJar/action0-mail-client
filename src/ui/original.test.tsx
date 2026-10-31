@@ -234,10 +234,14 @@ describe("Show original", () => {
     };
     Object.defineProperty(provider, "capabilities", { value: capabilities });
     await subject("Your invoice 2026-1043");
-    // Nothing for ⋯ (every other button fits here).
+    // ⋯ has only what never gets a button of its own.
+    await user.click(screen.getByRole("button", { name: "More actions" }));
     expect(
-      screen.queryByRole("button", { name: "More actions" }),
-    ).not.toBeInTheDocument();
+      within(screen.getByRole("menu", { name: "More actions" }))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Filter mail like this"]);
+    await user.keyboard("{Escape}");
     await rightClick(
       user,
       await screen.findByRole("option", { name: /Your invoice 2026-1043/ }),

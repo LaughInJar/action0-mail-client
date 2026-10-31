@@ -18,6 +18,7 @@ import { useBreakpoint, useCoarsePointer } from "../layout/useBreakpoint";
 import { answerItems } from "../reader/answerItems";
 import { routeOfRow, useCurrentList } from "./useCurrentList";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { filterItems, useFilterLinkActions } from "../filters/filterLink";
 import { aiItems, useAiReaderActions } from "../ai/aiItems";
 import { aiTarget } from "../ai/useAi";
 
@@ -59,6 +60,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const router = useRouter();
   const selectedIds = useUi((state) => state.selectedIds);
   const original = useOriginalActions();
+  const filterLink = useFilterLinkActions();
   const ai = useAiReaderActions();
   const chosen = (rows ?? []).filter((row) => keys.includes(row.key));
   if (!route || chosen.length === 0) return null;
@@ -199,13 +201,21 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   );
   // A conversation row stands for its newest message shown here.
   const showing = single
-    ? entriesOf(
-        originalItems(
+    ? entriesOf([
+        ...originalItems(
           original,
           { accountId: single.accountId, messageId: single.summary.id },
           t,
         ),
-      )
+        ...filterItems(
+          filterLink,
+          {
+            accountId: single.accountId,
+            ...(single.summary.from ? { from: single.summary.from } : {}),
+          },
+          t,
+        ),
+      ])
     : [];
   const conversations = chosen.some((row) => row.thread !== undefined);
   const title = single

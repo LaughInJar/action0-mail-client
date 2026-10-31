@@ -33,6 +33,7 @@ import {
 import { createMicrosoftModule } from "../providers/microsoft/module";
 import type { ImapBridge } from "../providers/imap/bridge";
 import { createImapModule } from "../providers/imap/module";
+import type { SieveBridge } from "../providers/sieve/bridge";
 import type { MailServerAccountInfo } from "../accounts/mailServer";
 import type { CalendarServerSources } from "../data/calendarServers";
 import type { CaldavServices } from "./caldav";
@@ -75,6 +76,8 @@ export interface NativeServices {
   };
   /** Calendar servers (CalDAV) through the native side. */
   readonly caldav?: CaldavServices;
+  /** Filter servers (ManageSieve) of IMAP accounts, through the native side. */
+  readonly sieve?: SieveBridge;
 }
 
 /**
@@ -209,6 +212,7 @@ export function createDefaultModules(
               accounts: desktop.imap.accounts,
               settings: localStorage,
               fetch: desktop.fetch,
+              ...(desktop.sieve ? { sieve: desktop.sieve } : {}),
               ...(desktop.caldav
                 ? {
                     createCalendar: desktop.caldav.accountCalendar,

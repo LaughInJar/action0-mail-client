@@ -7,9 +7,12 @@ import { asAccountId } from "../../core/ids";
 import type { CalendarProvider } from "../../core/calendar";
 import type { Account, EmailAddress } from "../../core/model";
 import { SenderStore } from "../senderStore";
+import type { SieveBridge } from "../sieve/bridge";
+import { SieveFilterProvider } from "../sieve/SieveFilterProvider";
 import type { ImapBridge } from "./bridge";
 import { ImapProvider } from "./ImapProvider";
 import { ImapSession } from "./ImapSession";
+import { toMailbox, toMailError } from "./mappers";
 
 /** Options of {@link createImapModule}. */
 export interface ImapModuleOptions {
@@ -29,6 +32,8 @@ export interface ImapModuleOptions {
     query: string,
     signal?: AbortSignal,
   ) => Promise<readonly EmailAddress[]>;
+  /** Filter servers (ManageSieve), for the accounts' filters and automatic replies. */
+  readonly sieve?: SieveBridge;
 }
 
 /** SMTP servers that put a copy of sent mail into Sent themselves. */
@@ -41,6 +46,7 @@ const SAVES_SENT = /(^|\.)(gmail|googlemail)\.com$/i;
  */
 export function createImapModule(options: ImapModuleOptions): ProviderModule {
   const infos = new Map(options.accounts);
+  const { sieve } = options;
   const service = (account: Account) =>
     infos.get(account.id)?.settings.imap.host ??
     account.email.split("@").at(-1) ??
@@ -76,6 +82,34 @@ export function createImapModule(options: ImapModuleOptions): ProviderModule {
     restore: session,
     ...(options.createCalendar
       ? { createCalendar: options.createCalendar }
+      : {}),
+    ...(sieve
+      ? {
+          createFilters: (account: Account) => {
+            const info = infos.get(account.id);
+            return new SieveFilterProvider({
+              bridge: sieve,
+              key: account.id,
+              service: service(account),
+              addresses: () =>
+                Promise.resolve(
+                  new SenderStore(options.settings, account.id)
+                    .list({
+                      address: account.email,
+                      ...(info?.name ? { name: info.name } : {}),
+                    })
+                    .map((sender) => sender.address),
+                ),
+              mailboxes: () =>
+                options.bridge.call(account.id, "folders", {}).then(
+                  (folders) => folders.map(toMailbox),
+                  (error: unknown) => {
+                    throw toMailError(error, { service: service(account) });
+                  },
+                ),
+            });
+          },
+        }
       : {}),
     createProvider: (account, auth) => {
       const info = infos.get(account.id);

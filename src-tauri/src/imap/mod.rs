@@ -12,6 +12,8 @@
 //!   in, ID, ENABLE; [`ImapSession`] with the capabilities and the open folder.
 //! - `pool.rs`: up to two worker sessions per account.
 //! - `smtp.rs`: sending (our own small submission client).
+//! - `sieve.rs`: filters (a small ManageSieve client, and the `sieve_*`
+//!   commands of `src/providers/sieve/bridge.ts`).
 //! - `discover.rs`: finding an address's settings (autoconfig, ISPDB, MX).
 //! - `oauth.rs`: Yahoo/AOL sign-in.
 //!
@@ -91,6 +93,7 @@ mod proto;
 mod read;
 mod search;
 pub mod session;
+pub mod sieve;
 pub mod smtp;
 mod state;
 mod sync;
@@ -533,6 +536,7 @@ impl Imap {
             // Kept only if it was needed.
             pinned: trust.filter(|_| imap_tls.used_pin() || smtp_tls.used_pin()),
             max_bytes,
+            sieve: None,
         };
         let key = account.key();
         self.forget(&key);
@@ -882,6 +886,7 @@ mod tests {
             auth,
             pinned: Some(tls::format_fingerprint(&[0xAB; 32])),
             max_bytes: Some(1000),
+            sieve: None,
         }
     }
 

@@ -412,6 +412,7 @@ function errorText(cause: unknown, t: I18n, host: string): string {
       return e.tls(host);
     case "exists":
     case "rejected":
+    case "changed":
     case "server":
     case "tooBig":
       return e.server(failure.message);

@@ -967,6 +967,7 @@ mod tests {
                 },
                 pinned: Some(pin),
                 max_bytes: None,
+                sieve: None,
             },
         );
         let http = http();

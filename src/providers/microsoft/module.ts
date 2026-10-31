@@ -21,6 +21,7 @@ import type { Account } from "../../core/model";
 import { SenderStore } from "../senderStore";
 import { GraphHttp } from "./http";
 import { GraphCalendarProvider } from "./calendar";
+import { GraphFilterProvider } from "./filters";
 import { GraphProvider } from "./GraphProvider";
 
 /** Configuration of the Microsoft provider module. */
@@ -63,6 +64,9 @@ export function createMicrosoftModule({
   const net = fetch ? { fetch } : {};
   /** Personal accounts, by account id (their attachment limit is lower). */
   const personal = new Set<string>();
+  const isPersonal = (account: Account) =>
+    personal.has(account.id) ||
+    /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email);
   const parts = {
     createCalendar: (_account: Account, auth: AuthSession) => {
       const session = auth as CalendarSession;
@@ -77,11 +81,13 @@ export function createMicrosoftModule({
     },
     createProvider: (account: Account, auth: AuthSession) =>
       new GraphProvider(new GraphHttp({ auth, ...net }), {
-        personal:
-          personal.has(account.id) ||
-          /@(outlook|hotmail|live|msn)\.[a-z.]+$/i.test(account.email),
+        personal: isPersonal(account),
         senders: new SenderStore(settings, account.id),
         ...net,
+      }),
+    createFilters: (account: Account, auth: AuthSession) =>
+      new GraphFilterProvider(new GraphHttp({ auth, ...net }), {
+        personal: isPersonal(account),
       }),
   };
   if (native)

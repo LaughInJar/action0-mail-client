@@ -66,6 +66,7 @@ IMAP/SMTP accounts ([imap.md](imap.md)) exist only in the apps, where the native
 - **Looking up settings** sends the address's domain (never the address or password) to the provider's own autoconfig host and to Mozilla's ISPDB (`autoconfig.thunderbird.net`), and asks DNS for its MX records (desktop).
 - **No mail on disk**: lists, messages and attachments are fetched when needed and cached in memory only.
 - **SMTP** gets the message without its Bcc header; the copy kept in Sent has it, as other clients do. Addresses that would inject SMTP commands are refused.
+- **Filters (ManageSieve)** log in with the mail account's own login (SASL PLAIN, or OAUTHBEARER/XOAUTH2 for Yahoo/AOL tokens), always after STARTTLS (data sent before TLS is refused, the capabilities are read again after it), with the account's pinned certificate besides the system's checks. The filter server's host, port and Sieve extensions are kept in the account's `imap.vault` entry and go with it. Scripts pass through byte for byte, capped at 4 MB, and a write happens only if the server still has the script it was made from.
 
 ## What is stored where
 
@@ -98,7 +99,7 @@ The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include t
 
 The query cache (`src/data/queryClient.ts`) persists only queries marked `meta: { persist: true }` that succeeded: mailbox lists, message and conversation list pages (not search results), calendar lists and events (`src/data/hooks.ts`, `src/data/calendar.ts`). List pages hold message summaries (sender, recipients, subject, a short snippet, date, flags), not bodies. Restored entries older than `PERSIST_MAX_AGE_MS` (10 minutes) are discarded, and so is everything when the app version (the `buster`) changes; writes are throttled to one per second, and when storage is full the oldest query is dropped (`removeOldestQuery`). Complete messages and conversations are memory only.
 
-**Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values, the AI assistant's answers and the models services offer.
+**Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values, the AI assistant's answers and the models services offer, and an account's filters and automatic reply (they live on the server and are loaded when Settings → Filters or the list's notice needs them).
 
 **Desktop app, on disk:** the encrypted vaults (`accounts.vault`, `imap.vault` for IMAP accounts' settings and passwords or Yahoo/AOL refresh tokens, `caldav.vault` for calendar servers' addresses and separate logins, and `ai.vault` for the AI assistant's keys and sign-ins), PDFs opened with another app (emptied at every start), the window-state plugin's window geometry, and the web view's own localStorage and sessionStorage with the keys above. See [Desktop specifics](#desktop-specifics).
 
@@ -211,7 +212,7 @@ Defined in `src/providers/gmail/module.ts` and `src/providers/gmail/calendar.ts`
 | ------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `https://mail.google.com/` (`GMAIL_SCOPE`)                                            | Required  | Full mailbox access. Needed for permanent deletion ("Delete forever", "Empty Trash"); everything else would work with `gmail.modify`. Tokens with a narrower scope count as expired and ask for a reconnect |
 | `…/auth/contacts.readonly`, `…/auth/contacts.other.readonly` (`CONTACTS_SCOPES`)      | Optional  | Address suggestions from contacts and "other contacts" (People API)                                                                                                                                         |
-| `…/auth/gmail.settings.basic` (`SETTINGS_SCOPE`)                                      | Optional  | Editing signatures; declined, they're read-only and Settings offers **Allow editing**                                                                                                                       |
+| `…/auth/gmail.settings.basic` (`SETTINGS_SCOPE`)                                      | Optional  | Editing signatures, filters and the vacation responder; declined, they're read-only and Settings offers **Allow editing**                                                                                   |
 | `…/auth/calendar.calendarlist.readonly`, `…/auth/calendar.events` (`CALENDAR_SCOPES`) | On demand | Listing calendars; reading events, answering invitations, creating and editing events                                                                                                                       |
 | `openid`, `email`                                                                     | Desktop   | The ID token tells the native side who signed in                                                                                                                                                            |
 
@@ -221,16 +222,16 @@ Web app: connecting asks for the mail, optional and calendar scopes at once with
 
 Defined in `src/auth/microsoft/msal.ts`:
 
-| Scope                                     | When              | Why                                                                                                                    |
-| ----------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `Mail.ReadWrite`                          | Sign-in           | Reading, moving, flagging and deleting mail; drafts                                                                    |
-| `Mail.Send`                               | Sign-in           | Sending                                                                                                                |
-| `People.Read`                             | Sign-in           | Address suggestions                                                                                                    |
-| `User.Read`                               | Sign-in           | The signed-in user's basic profile (already there in a new registration)                                               |
-| `MailboxSettings.ReadWrite`               | Sign-in           | Outlook's category list (`me/outlook/masterCategories`): categories as labels, creating, recolouring and deleting them |
-| `offline_access`                          | Sign-in           | Refresh tokens (MSAL's silent renewal; the desktop vault)                                                              |
-| `Calendars.ReadWrite` (`CALENDAR_SCOPES`) | Sign-in, or later | The calendar: consented to when connecting (`extraScopesToConsent`), or later with **Allow calendar**                  |
-| `openid`, `profile`                       | Sign-in           | Added by MSAL on the web; requested explicitly by the desktop app                                                      |
+| Scope                                     | When              | Why                                                                                                   |
+| ----------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `Mail.ReadWrite`                          | Sign-in           | Reading, moving, flagging and deleting mail; drafts                                                   |
+| `Mail.Send`                               | Sign-in           | Sending                                                                                               |
+| `People.Read`                             | Sign-in           | Address suggestions                                                                                   |
+| `User.Read`                               | Sign-in           | The signed-in user's basic profile (already there in a new registration)                              |
+| `MailboxSettings.ReadWrite`               | Sign-in           | Outlook's category list (`me/outlook/masterCategories`), inbox rules and automatic replies            |
+| `offline_access`                          | Sign-in           | Refresh tokens (MSAL's silent renewal; the desktop vault)                                             |
+| `Calendars.ReadWrite` (`CALENDAR_SCOPES`) | Sign-in, or later | The calendar: consented to when connecting (`extraScopesToConsent`), or later with **Allow calendar** |
+| `openid`, `profile`                       | Sign-in           | Added by MSAL on the web; requested explicitly by the desktop app                                     |
 
 `GRAPH_SCOPES` are the first six. The desktop app requires `Mail.ReadWrite` and `Mail.Send` and fails a sign-in without them (`src/providers/microsoft/module.ts`). Adding a scope (as `MailboxSettings.ReadWrite` was for categories) makes existing accounts reconnect once.
 

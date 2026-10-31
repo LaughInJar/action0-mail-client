@@ -32,7 +32,10 @@ export function toMailServerError(error: unknown): MailServerError {
         kind as MailServerErrorKind,
         typeof message === "string" ? message : "",
         {
-          ...(server === "imap" || server === "smtp" || server === "caldav"
+          ...(server === "imap" ||
+          server === "smtp" ||
+          server === "caldav" ||
+          server === "sieve"
             ? { server }
             : {}),
           ...(typeof certificate === "object" && certificate !== null

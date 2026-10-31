@@ -13,16 +13,17 @@
 
 ## Pieces
 
-| Where                                              | What                                                                                                                                                              |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/accounts/mailServer.ts`                       | Provider-neutral shapes for adding an account (settings, discovery, setup, certificate, `MailServerError`) and the `MailServerAccounts` interface the wizard uses |
-| `src/app/mailServers.ts`                           | `MailServerAccounts` over the bridge, and the Yahoo/AOL app registrations (build or entered in the app)                                                           |
-| `src/providers/imap/bridge.ts`                     | The contract with the native side: `imap_call` operations and their JSON, bytes, append, send                                                                     |
-| `src/providers/imap/ImapProvider.ts`, `mappers.ts` | The `MailProvider`: folders and views, archive/trash/spam semantics, drafts, sending, signatures                                                                  |
-| `src/providers/imap/ImapSession.ts`, `module.ts`   | The session (no tokens; `reauth: "password"`) and the module (`connect(setup)`, account ids `imap:<address>`)                                                     |
-| `src/platform/native/imap.ts`                      | The bridge over Tauri commands; raw bytes for messages and attachments                                                                                            |
-| `src/ui/accounts/MailServerFlow.tsx`               | The wizard's steps: address, settings and password, certificate                                                                                                   |
-| `src-tauri/src/imap/`                              | The native side: connections and pool, TLS and pinning, discovery, own SMTP client, Yahoo/AOL OAuth, folders, listing, search, threads, parsing, sync, IDLE       |
+| Where                                              | What                                                                                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/accounts/mailServer.ts`                       | Provider-neutral shapes for adding an account (settings, discovery, setup, certificate, `MailServerError`) and the `MailServerAccounts` interface the wizard uses          |
+| `src/app/mailServers.ts`                           | `MailServerAccounts` over the bridge, and the Yahoo/AOL app registrations (build or entered in the app)                                                                    |
+| `src/providers/imap/bridge.ts`                     | The contract with the native side: `imap_call` operations and their JSON, bytes, append, send                                                                              |
+| `src/providers/imap/ImapProvider.ts`, `mappers.ts` | The `MailProvider`: folders and views, archive/trash/spam semantics, drafts, sending, signatures                                                                           |
+| `src/providers/imap/ImapSession.ts`, `module.ts`   | The session (no tokens; `reauth: "password"`) and the module (`connect(setup)`, account ids `imap:<address>`)                                                              |
+| `src/platform/native/imap.ts`                      | The bridge over Tauri commands; raw bytes for messages and attachments                                                                                                     |
+| `src/providers/sieve/`, `platform/native/sieve.ts` | Filters and the automatic reply: the Sieve script reader and writer and the `FilterProvider` over the ManageSieve bridge ([providers.md](providers.md#sieve-mail-servers)) |
+| `src/ui/accounts/MailServerFlow.tsx`               | The wizard's steps: address, settings and password, certificate                                                                                                            |
+| `src-tauri/src/imap/`                              | The native side: connections and pool, TLS and pinning, discovery, own SMTP client, Yahoo/AOL OAuth, folders, listing, search, threads, parsing, sync, IDLE                |
 
 The provider is described in [providers.md](providers.md#imap-and-smtp), the native side in [desktop-app.md](desktop-app.md#imap-and-smtp).
 

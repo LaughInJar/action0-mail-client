@@ -42,6 +42,7 @@ const nativeServices = native && {
   fetch: native.fetch,
   android: native.platform.kind === "android",
   imap: native.imap,
+  sieve: native.sieve,
   ...(caldav ? { caldav } : {}),
 };
 const services = createAppServices({

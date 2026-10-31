@@ -11,6 +11,7 @@ import { readConfig } from "../app/config";
 import { createMailServerAccounts } from "../app/mailServers";
 import type { ImapBridge } from "../providers/imap/bridge";
 import type { CaldavBridge } from "../providers/caldav/bridge";
+import type { SieveBridge } from "../providers/sieve/bridge";
 import { createCaldavServices } from "../app/caldav";
 import { createImapModule } from "../providers/imap/module";
 import type { CalendarAccess } from "../core/calendar";
@@ -69,6 +70,8 @@ export interface RenderAppOptions {
   readonly imap?: ImapBridge;
   /** Calendar servers (CalDAV), e.g. `fakeDavServer().bridge`; needs `imap` for account calendars. */
   readonly caldav?: CaldavBridge;
+  /** Filter servers (ManageSieve), e.g. `fakeSieveBridge().bridge`; needs `imap`. */
+  readonly sieve?: SieveBridge;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -91,6 +94,7 @@ export function renderApp({
   ai,
   imap,
   caldav,
+  sieve,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
@@ -121,6 +125,7 @@ export function renderApp({
               bridge: imap,
               accounts: new Map(),
               settings: window.localStorage,
+              ...(sieve ? { sieve } : {}),
               ...(calendarServers
                 ? {
                     createCalendar: calendarServers.accountCalendar,

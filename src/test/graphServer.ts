@@ -1,4 +1,8 @@
 import { http, HttpResponse, type HttpHandler } from "msw";
+import type {
+  GraphAutomaticReplies,
+  GraphMessageRule,
+} from "../providers/microsoft/filters";
 import { GRAPH_BASE } from "../providers/microsoft/http";
 import type {
   GraphAttachment,
@@ -43,6 +47,15 @@ export class FakeGraph {
   readonly people: { displayName: string; address: string }[] = [];
   /** The user's categories (`me/outlook/masterCategories`). */
   readonly categories: GraphCategory[] = [];
+  /** Inbox rules (`me/mailFolders/inbox/messageRules`), in any order. */
+  rules: GraphMessageRule[] = [];
+  /** `mailboxSettings.automaticRepliesSetting`. */
+  automaticReplies: GraphAutomaticReplies = {
+    status: "disabled",
+    externalAudience: "all",
+    internalReplyMessage: "",
+    externalReplyMessage: "",
+  };
   me = {
     displayName: "Max Muster",
     mail: "max@contoso.com",
@@ -347,6 +360,69 @@ export class FakeGraph {
       if (method === "DELETE") {
         this.categories.splice(index, 1);
         return { status: 204 };
+      }
+    }
+
+    // Inbox rules: PATCH replaces conditions, exceptions and actions as a whole.
+    if (path === "me/mailFolders/inbox/messageRules") {
+      if (method === "GET")
+        return {
+          status: 200,
+          body: {
+            value: [...this.rules].sort(
+              (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0),
+            ),
+          },
+        };
+      if (method === "POST") {
+        const created: GraphMessageRule = {
+          isEnabled: true,
+          ...(body as Omit<GraphMessageRule, "id">),
+          id: `rule-${String(this.#nextId++)}`,
+          hasError: false,
+          isReadOnly: false,
+        };
+        this.rules.push(created);
+        return { status: 201, body: created };
+      }
+    }
+    if (
+      (match = /^me\/mailFolders\/inbox\/messageRules\/([^/]+)$/.exec(path))
+    ) {
+      const index = this.rules.findIndex((rule) => rule.id === match?.[1]);
+      const found = this.rules[index];
+      if (!found) return notFound;
+      if (method === "GET") return { status: 200, body: found };
+      if (method === "PATCH") {
+        const updated = { ...found, ...(body as Partial<GraphMessageRule>) };
+        this.rules[index] = updated;
+        return { status: 200, body: updated };
+      }
+      if (method === "DELETE") {
+        this.rules.splice(index, 1);
+        return { status: 204 };
+      }
+    }
+
+    // Mailbox settings: PATCH merges inside automaticRepliesSetting.
+    if (path === "me/mailboxSettings") {
+      if (method === "GET")
+        return {
+          status: 200,
+          body: { automaticRepliesSetting: this.automaticReplies },
+        };
+      if (method === "PATCH") {
+        const { automaticRepliesSetting } = body as {
+          automaticRepliesSetting?: GraphAutomaticReplies;
+        };
+        this.automaticReplies = {
+          ...this.automaticReplies,
+          ...automaticRepliesSetting,
+        };
+        return {
+          status: 200,
+          body: { automaticRepliesSetting: this.automaticReplies },
+        };
       }
     }
 

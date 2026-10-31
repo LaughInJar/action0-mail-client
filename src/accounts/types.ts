@@ -1,5 +1,6 @@
 import type { AuthSession } from "../auth/types";
 import type { CalendarProvider } from "../core/calendar";
+import type { FilterProvider } from "../core/filters";
 import type { Account, ProviderType } from "../core/model";
 import type { MailProvider } from "../core/provider";
 
@@ -36,6 +37,12 @@ export interface ProviderModule {
     account: Account,
     auth: AuthSession,
   ) => CalendarProvider;
+
+  /** The account's filters and automatic reply, if the provider has them. */
+  readonly createFilters?: (
+    account: Account,
+    auth: AuthSession,
+  ) => FilterProvider;
 }
 
 /** A connected account with its session and provider. */
@@ -45,6 +52,8 @@ export interface AccountHandle {
   readonly provider: MailProvider;
   /** The account's calendars, if its provider has them. */
   readonly calendar?: CalendarProvider;
+  /** The account's filters and automatic reply, if its provider has them. */
+  readonly filters?: FilterProvider;
 }
 
 /**

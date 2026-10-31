@@ -13,6 +13,7 @@ import { entriesOf, grouped } from "../common/menuEntries";
 import { useComposeActions } from "../composer/useComposeActions";
 import { answerItems } from "./answerItems";
 import { originalItems, useOriginalActions } from "../original/originalActions";
+import { filterItems, useFilterLinkActions } from "../filters/filterLink";
 import { aiItems, useAiReaderActions } from "../ai/aiItems";
 import { aiTarget } from "../ai/useAi";
 import { useCurrentList } from "../messages/useCurrentList";
@@ -43,6 +44,7 @@ export function MessageMenu({
   const store = useUiStore();
   const router = useRouter();
   const original = useOriginalActions();
+  const filterLink = useFilterLinkActions();
   const ai = useAiReaderActions();
   const { sources } = useCurrentList();
   const t = useT();
@@ -131,7 +133,14 @@ export function MessageMenu({
         asking,
         acting,
         sender,
-        entriesOf(originalItems(original, ref, t)),
+        entriesOf([
+          ...originalItems(original, ref, t),
+          ...filterItems(
+            filterLink,
+            { accountId, ...(from ? { from } : {}) },
+            t,
+          ),
+        ]),
       )}
       onClose={onClose}
     />

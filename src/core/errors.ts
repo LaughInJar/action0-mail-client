@@ -77,7 +77,13 @@ export type MailErrorReason =
   | "eventGone"
   | "eventChanged"
   | "calendarLoginRefused"
-  | "calendarServerMissing";
+  | "calendarServerMissing"
+  | "noFilterServer"
+  | "filterExists"
+  | "filtersChanged"
+  | "forwardNotAllowed"
+  | "filterNeedsCondition"
+  | "filterNeedsAction";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

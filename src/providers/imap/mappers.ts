@@ -155,6 +155,11 @@ export function toMailError(
         reason: "signInFailed",
         params: { provider: context.service, detail: failure.message },
       });
+    case "changed":
+      return new MailError("provider", failure.message, {
+        ...options,
+        reason: "filtersChanged",
+      });
     case "server":
       return new MailError("provider", failure.message, options);
   }
