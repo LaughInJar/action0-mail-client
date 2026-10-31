@@ -34,6 +34,8 @@ export function createNativeCaldavBridge(invoke: Invoke): CaldavBridge {
     servers: () => call<CalendarServerInfo[]>("caldav_servers"),
     remove: (key) => call("caldav_remove", { key }),
     forgetCertificate: (key) => call("caldav_forget_certificate", { key }),
+    findContacts: (key) =>
+      call<CalendarServerInfo>("caldav_find_contacts", { key }),
     request: async (key, request, signal) => {
       if (signal?.aborted) throw abortError(signal);
       const id = (next = (next + 1) % 2 ** 31);

@@ -5,7 +5,7 @@ import type {
 import type { ProviderModule } from "../../accounts/types";
 import { asAccountId } from "../../core/ids";
 import type { CalendarProvider } from "../../core/calendar";
-import type { Account } from "../../core/model";
+import type { Account, EmailAddress } from "../../core/model";
 import { SenderStore } from "../senderStore";
 import type { ImapBridge } from "./bridge";
 import { ImapProvider } from "./ImapProvider";
@@ -22,6 +22,13 @@ export interface ImapModuleOptions {
   readonly fetch?: typeof fetch;
   /** The account's calendars (CalDAV), if the app has calendar servers. */
   readonly createCalendar?: (account: Account) => CalendarProvider;
+  /** The address books an account's suggestions come from (CardDAV). */
+  readonly contactsFor?: (
+    account: Account,
+  ) => (
+    query: string,
+    signal?: AbortSignal,
+  ) => Promise<readonly EmailAddress[]>;
 }
 
 /** SMTP servers that put a copy of sent mail into Sent themselves. */
@@ -82,6 +89,9 @@ export function createImapModule(options: ImapModuleOptions): ProviderModule {
         savesSent: SAVES_SENT.test(info?.settings.smtp.host ?? ""),
         senders: new SenderStore(options.settings, account.id),
         ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.contactsFor
+          ? { searchContacts: options.contactsFor(account) }
+          : {}),
         onAuthFailed: () => {
           auth.markExpired();
         },

@@ -392,7 +392,7 @@ Like Graph: archive, trash and spam move into the folder with that role, which `
 
 ### Senders and signatures
 
-`SenderStore` (`src/providers/senderStore.ts`) keeps what IMAP servers and Graph can't: an account's further From addresses with their settings and its catch-all domains under `a0.settings.senders.<accountId>`, and the signatures under `a0.settings.signatures.<accountId>`. The account's own address (with the name given when adding it) is always first and can't be removed; removing an address drops its signature. Mail goes out from whatever address the draft names: it's the `From` header and the SMTP sender, and the server decides whether it accepts it. There are no contacts (`contacts: false`): address suggestions come from recent mail.
+`SenderStore` (`src/providers/senderStore.ts`) keeps what IMAP servers and Graph can't: an account's further From addresses with their settings and its catch-all domains under `a0.settings.senders.<accountId>`, and the signatures under `a0.settings.signatures.<accountId>`. The account's own address (with the name given when adding it) is always first and can't be removed; removing an address drops its signature. Mail goes out from whatever address the draft names: it's the `From` header and the SMTP sender, and the server decides whether it accepts it. Address suggestions come from the CardDAV address books of the account's calendar server, else of calendar-only servers (`searchContacts` from `contactsFor` in `src/app/caldav.ts`), and then from recent mail (`recentToo`); without any, from recent mail only ([caldav.md](caldav.md#contacts)).
 
 ## Calendars
 

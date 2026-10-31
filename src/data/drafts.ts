@@ -275,8 +275,9 @@ const MAX_SUGGESTIONS = 8;
 
 /**
  * Addresses matching `text`: from the account's contacts when the provider
- * has them, otherwise (or if they're unavailable) from recent mail. Memory
- * only; never persisted.
+ * has them, otherwise (or if they're unavailable) from recent mail; with
+ * `recentToo`, the contacts first and then people from recent mail who
+ * aren't among them. Memory only; never persisted.
  */
 export function useAddressSuggestions(
   accountId: AccountId | undefined,
@@ -301,9 +302,10 @@ export function useAddressSuggestions(
     placeholderData: keepPreviousData,
   });
 
+  const recentToo = provider?.capabilities.recentToo === true;
   const fallback =
     provider !== undefined &&
-    (!provider.capabilities.contacts || contacts.isError);
+    (!provider.capabilities.contacts || contacts.isError || recentToo);
   const recent = useQuery({
     queryKey: [
       ...queryKeys.account(handle?.account.id ?? ("" as AccountId)),
@@ -318,6 +320,24 @@ export function useAddressSuggestions(
 
   return useMemo(() => {
     if (!query) return { suggestions: [] };
+    const needle = foldText(query);
+    const fromRecent = (recent.data ?? []).filter((address) =>
+      foldText(`${address.name ?? ""} ${address.address}`).includes(needle),
+    );
+    if (recentToo) {
+      const fromContacts = contacts.data ?? [];
+      const known = new Set(
+        fromContacts.map((address) => address.address.toLowerCase()),
+      );
+      return {
+        suggestions: [
+          ...fromContacts,
+          ...fromRecent.filter(
+            (address) => !known.has(address.address.toLowerCase()),
+          ),
+        ].slice(0, MAX_SUGGESTIONS),
+      };
+    }
     const notice =
       contacts.isError && isMailError(contacts.error, "unavailable")
         ? contacts.error
@@ -326,18 +346,14 @@ export function useAddressSuggestions(
       return {
         suggestions: (contacts.data ?? []).slice(0, MAX_SUGGESTIONS),
       };
-    const needle = foldText(query);
     return {
-      suggestions: (recent.data ?? [])
-        .filter((address) =>
-          foldText(`${address.name ?? ""} ${address.address}`).includes(needle),
-        )
-        .slice(0, MAX_SUGGESTIONS),
+      suggestions: fromRecent.slice(0, MAX_SUGGESTIONS),
       ...(notice ? { notice } : {}),
     };
   }, [
     query,
     fallback,
+    recentToo,
     contacts.data,
     contacts.isError,
     contacts.error,

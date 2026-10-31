@@ -73,7 +73,7 @@ import {
   type ItipTexts,
 } from "./itip";
 import type { CalendarServerDirectory } from "./servers";
-import { CalendarStore } from "./store";
+import { DavStore } from "./store";
 
 /** Colours for calendars that don't name one. */
 const PALETTE = ["#039be5", "#33b679", "#8e24aa", "#e67c73", "#f6bf26"];
@@ -102,7 +102,7 @@ export interface CaldavProviderOptions {
 interface Collection {
   readonly url: string;
   readonly readOnly: boolean;
-  readonly store: CalendarStore;
+  readonly store: DavStore;
 }
 
 /** Where an event lives, and its object parsed for changing. */
@@ -121,7 +121,7 @@ interface Located {
  * calendars of a mail server account, or of a calendar-only server, over
  * the apps' native side (which adds the login).
  *
- * Each calendar's objects are kept in memory ({@link CalendarStore}) and
+ * Each calendar's objects are kept in memory ({@link DavStore}) and
  * expanded with ical.js. Writes are conditional (`If-Match`): a change
  * made elsewhere meanwhile reloads the calendar and fails as
  * `eventChanged`. Servers that schedule themselves (RFC 6638) tell guests
@@ -204,7 +204,7 @@ export class CaldavCalendarProvider implements CalendarProvider {
         readOnly,
         store:
           known?.store ??
-          new CalendarStore(
+          new DavStore(
             url,
             propText(resource, DAV, "sync-token") !== undefined,
             (request, inner) => this.#send(request, inner),

@@ -217,7 +217,10 @@ function CalendarStep({
   const c = t.calendar.calendarStep;
   const sources = useCalendarServers();
   const mailServers = useMailServerAccounts();
-  const [found, setFound] = useState<string>();
+  const [found, setFound] = useState<{
+    readonly host: string;
+    readonly contacts: boolean;
+  }>();
   const done = useRef(false);
   const finish = useRef(onDone);
   useEffect(() => {
@@ -246,7 +249,10 @@ function CalendarStep({
           await sources.servers.remove(key);
           return;
         }
-        setFound(new URL(server.home).host);
+        setFound({
+          host: new URL(server.home).host,
+          contacts: server.contacts !== undefined,
+        });
       } catch {
         if (!run.skipped && !done.current) {
           done.current = true;
@@ -285,7 +291,11 @@ function CalendarStep({
         </>
       ) : (
         <>
-          <p className="text-sm">{c.found(found)}</p>
+          <p className="text-sm">
+            {found.contacts
+              ? c.foundWithContacts(found.host)
+              : c.found(found.host)}
+          </p>
           <button
             type="button"
             onClick={() => {

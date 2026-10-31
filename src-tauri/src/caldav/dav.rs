@@ -6,18 +6,24 @@
 pub const DAV: &str = "DAV:";
 /// The CalDAV namespace (RFC 4791).
 pub const CALDAV: &str = "urn:ietf:params:xml:ns:caldav";
+/// The CardDAV namespace (RFC 6352).
+pub const CARDDAV: &str = "urn:ietf:params:xml:ns:carddav";
 
 /// A PROPFIND body asking for `props` (`(namespace, name)`).
 pub fn propfind(props: &[(&str, &str)]) -> String {
     let props: String = props
         .iter()
         .map(|(namespace, name)| {
-            let prefix = if *namespace == CALDAV { "c" } else { "d" };
+            let prefix = match *namespace {
+                CALDAV => "c",
+                CARDDAV => "card",
+                _ => "d",
+            };
             format!("<{prefix}:{name}/>")
         })
         .collect();
     format!(
-        r#"<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop>{props}</d:prop></d:propfind>"#
+        r#"<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop>{props}</d:prop></d:propfind>"#
     )
 }
 
@@ -51,10 +57,11 @@ mod tests {
         let body = propfind(&[
             (DAV, "current-user-principal"),
             (CALDAV, "calendar-home-set"),
+            (CARDDAV, "addressbook-home-set"),
         ]);
-        assert!(
-            body.contains("<d:prop><d:current-user-principal/><c:calendar-home-set/></d:prop>")
-        );
+        assert!(body.contains(
+            "<d:prop><d:current-user-principal/><c:calendar-home-set/><card:addressbook-home-set/></d:prop>"
+        ));
         assert!(roxmltree::Document::parse(&body).is_ok());
     }
 

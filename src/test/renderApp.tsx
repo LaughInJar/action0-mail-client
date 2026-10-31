@@ -122,7 +122,10 @@ export function renderApp({
               accounts: new Map(),
               settings: window.localStorage,
               ...(calendarServers
-                ? { createCalendar: calendarServers.accountCalendar }
+                ? {
+                    createCalendar: calendarServers.accountCalendar,
+                    contactsFor: calendarServers.contactsFor,
+                  }
                 : {}),
             }),
           ]

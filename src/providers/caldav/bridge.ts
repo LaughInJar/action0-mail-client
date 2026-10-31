@@ -53,6 +53,11 @@ export interface CaldavBridge {
   readonly servers: () => Promise<readonly CalendarServerInfo[]>;
   readonly remove: (key: string) => Promise<void>;
   readonly forgetCertificate: (key: string) => Promise<void>;
+  /**
+   * Looks for the login's address books (servers set up before contacts
+   * were looked for), keeps what was found and returns the server's info.
+   */
+  readonly findContacts: (key: string) => Promise<CalendarServerInfo>;
   readonly request: (
     key: string,
     request: DavRequest,

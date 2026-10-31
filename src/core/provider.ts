@@ -53,6 +53,11 @@ export interface ProviderCapabilities {
   readonly compose: boolean;
   /** Supports {@link MailProvider.searchContacts}. */
   readonly contacts: boolean;
+  /**
+   * Address suggestions add people from recent mail after the contacts
+   * (the contacts may well be few or none: CardDAV address books).
+   */
+  readonly recentToo?: boolean;
   /** Most bytes of attachments one mail may carry (inline images included). */
   readonly maxAttachmentBytes: number;
   /**

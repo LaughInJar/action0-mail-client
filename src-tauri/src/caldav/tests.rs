@@ -37,12 +37,12 @@ fn multistatus(props: &str) -> ResponseTemplate {
     ResponseTemplate::new(207)
         .insert_header("content-type", "application/xml; charset=utf-8")
         .set_body_string(format!(
-            r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/</d:href><d:propstat><d:prop>{props}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#
+            r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/</d:href><d:propstat><d:prop>{props}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#
         ))
 }
 
 /// A server whose `.well-known` leads to `/dav/`, with a principal, a
-/// home, a calendar address and scheduling.
+/// home, a calendar address, scheduling and an address book home.
 async fn calendar_server() -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("PROPFIND"))
@@ -64,7 +64,8 @@ async fn calendar_server() -> MockServer {
         .and(header("authorization", BASIC))
         .respond_with(multistatus(
             "<c:calendar-home-set><d:href>/dav/calendars/me/</d:href></c:calendar-home-set>\
-             <c:calendar-user-address-set><d:href>/dav/principals/me/</d:href><d:href>mailto:me@example.org</d:href></c:calendar-user-address-set>",
+             <c:calendar-user-address-set><d:href>/dav/principals/me/</d:href><d:href>mailto:me@example.org</d:href></c:calendar-user-address-set>\
+             <card:addressbook-home-set><d:href>/dav/addressbooks/me/</d:href></card:addressbook-home-set>",
         ))
         .mount(&server)
         .await;
@@ -126,6 +127,12 @@ async fn finds_the_calendars_from_the_server_address() {
     assert!(!info.same_as_mail);
     assert!(info.scheduling);
     assert!(!info.pinned);
+    // The address books are on the same principal.
+    assert_eq!(
+        info.contacts,
+        Some(format!("{}/dav/addressbooks/me/", server.uri()))
+    );
+    assert!(info.contacts_checked);
     let kept = caldav.server(&info.key).unwrap();
     assert_eq!(
         kept.hosts,
@@ -479,4 +486,193 @@ async fn authorizes_with_a_password() {
     assert_eq!(authorizer.header().await.unwrap(), BASIC);
     // Nothing to renew: a refused password stays refused.
     assert!(!authorizer.renew().await.unwrap());
+}
+
+/// A calendar server whose principal has no address books.
+async fn calendars_only() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("PROPFIND"))
+        .and(path("/dav/principals/me/"))
+        .and(header("authorization", BASIC))
+        .respond_with(multistatus(
+            "<c:calendar-home-set><d:href>/dav/calendars/me/</d:href></c:calendar-home-set>",
+        ))
+        .mount(&server)
+        .await;
+    server
+}
+
+/// A contacts server whose `.well-known/carddav` leads to `/dav/`.
+async fn contacts_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("PROPFIND"))
+        .and(path("/.well-known/carddav"))
+        .respond_with(ResponseTemplate::new(301).insert_header("location", "/dav/"))
+        .mount(&server)
+        .await;
+    Mock::given(method("PROPFIND"))
+        .and(path("/dav/"))
+        .and(header("authorization", BASIC))
+        .respond_with(multistatus(
+            "<d:current-user-principal><d:href>/dav/principals/me/</d:href></d:current-user-principal>",
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("PROPFIND"))
+        .and(path("/dav/principals/me/"))
+        .and(header("authorization", BASIC))
+        .respond_with(multistatus(
+            "<card:addressbook-home-set><d:href>/dav/addressbooks/user/me/</d:href></card:addressbook-home-set>",
+        ))
+        .mount(&server)
+        .await;
+    server
+}
+
+fn password_login() -> Login {
+    Login::Password {
+        username: "me".into(),
+        password: "secret".into(),
+    }
+}
+
+#[tokio::test]
+async fn finds_address_books_on_a_contacts_server_of_their_own() {
+    let calendars = calendars_only().await;
+    let contacts = contacts_server().await;
+    let (imap, _) = states("contacts-host");
+    let login = password_login();
+    let mut authorizer = Authorizer::new(&imap, "caldav:x", &login);
+    let (config, seen) = crate::imap::tls::client_config(None).unwrap();
+    let client = http::client(config).unwrap();
+    // The calendar principal has none; the contacts server (found from its
+    // bare address through `.well-known/carddav`) has them.
+    let found = http::find_contacts(
+        &client,
+        &seen,
+        Some(Url::parse(&format!("{}/dav/principals/me/", calendars.uri())).unwrap()),
+        &[format!("{}/", contacts.uri())],
+        &mut authorizer,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        found.home,
+        format!("{}/dav/addressbooks/user/me/", contacts.uri())
+    );
+    assert_eq!(found.hosts, [origin_of(&contacts.uri())]);
+
+    // Nothing anywhere: none, and no failure.
+    let nothing = MockServer::start().await;
+    assert_eq!(
+        http::find_contacts(
+            &client,
+            &seen,
+            Some(Url::parse(&format!("{}/dav/principals/me/", calendars.uri())).unwrap()),
+            &[format!("{}/", nothing.uri())],
+            &mut authorizer,
+        )
+        .await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn looks_for_address_books_of_older_servers_once() {
+    let with = calendar_server().await;
+    let without = calendars_only().await;
+    let (imap, caldav) = states("older");
+    // As kept before contacts were looked for.
+    let older = |uri: &str| CalendarServer {
+        label: "Home".into(),
+        principal: format!("{uri}/dav/principals/me/"),
+        home: format!("{uri}/dav/calendars/me/"),
+        address: None,
+        hosts: vec![origin_of(uri)],
+        login: password_login(),
+        pinned: None,
+        scheduling: false,
+        contacts: None,
+        contacts_checked: false,
+    };
+    caldav.vault().put("caldav:with", older(&with.uri()));
+    caldav.vault().put("caldav:without", older(&without.uri()));
+
+    let info = caldav.find_contacts(&imap, "caldav:with").await.unwrap();
+    assert_eq!(
+        info.contacts,
+        Some(format!("{}/dav/addressbooks/me/", with.uri()))
+    );
+    assert!(info.contacts_checked);
+
+    let info = caldav.find_contacts(&imap, "caldav:without").await.unwrap();
+    assert_eq!(info.contacts, None);
+    // Looked for, so not again.
+    assert!(info.contacts_checked);
+    assert!(caldav.server("caldav:without").unwrap().contacts_checked);
+    assert_eq!(
+        serde_json::to_value(&info).unwrap()["contactsChecked"],
+        serde_json::json!(true)
+    );
+    assert!(
+        serde_json::to_value(&info)
+            .unwrap()
+            .get("contacts")
+            .is_none()
+    );
+}
+
+#[test]
+fn reads_servers_kept_before_contacts() {
+    let kept: CalendarServer = serde_json::from_value(serde_json::json!({
+        "label": "Home",
+        "principal": "https://dav.example.org/p/",
+        "home": "https://dav.example.org/c/",
+        "hosts": ["https://dav.example.org:443"],
+        "login": { "type": "sameAsMail" },
+        "scheduling": false,
+    }))
+    .unwrap();
+    assert_eq!(kept.contacts, None);
+    assert!(!kept.contacts_checked);
+}
+
+#[test]
+fn knows_where_a_providers_contacts_are() {
+    assert_eq!(
+        contacts_candidates(
+            "imap:me@fastmail.fm",
+            &Login::SameAsMail,
+            "https://caldav.fastmail.com/dav/calendars/user/me/"
+        ),
+        ["https://carddav.fastmail.com/dav/"]
+    );
+    // A calendar-only server: by the login's address, else by its host.
+    assert_eq!(
+        contacts_candidates(
+            "caldav:x",
+            &Login::Password {
+                username: "me@icloud.com".into(),
+                password: "x".into()
+            },
+            "https://p42-caldav.icloud.com/1/calendars/"
+        ),
+        ["https://contacts.icloud.com/"]
+    );
+    assert_eq!(
+        contacts_candidates(
+            "caldav:x",
+            &password_login(),
+            "https://caldav.gmx.net/begenda/dav/me/calendar/"
+        ),
+        ["https://carddav.gmx.net/"]
+    );
+    assert!(
+        contacts_candidates(
+            "caldav:x",
+            &password_login(),
+            "https://cloud.example.org/remote.php/dav/calendars/me/"
+        )
+        .is_empty()
+    );
 }

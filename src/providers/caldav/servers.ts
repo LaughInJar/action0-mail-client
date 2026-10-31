@@ -19,6 +19,8 @@ export type CalendarServerList = CalendarServers &
     readonly ready: Promise<void>;
     /** The connected servers right now (empty until {@link ready}). */
     readonly current: () => readonly CalendarServerInfo[];
+    /** Looks for a server's address books (once), keeps and returns its info. */
+    readonly findContacts: (key: string) => Promise<CalendarServerInfo>;
   };
 
 /**
@@ -57,6 +59,11 @@ export function createCalendarServers(
     remove: async (key) => {
       await bridge.remove(key);
       keep([...servers.values()].filter((s) => s.key !== key));
+    },
+    findContacts: async (key) => {
+      const info = await bridge.findContacts(key);
+      keep([...[...servers.values()].filter((s) => s.key !== key), info]);
+      return info;
     },
     forgetCertificate: async (key) => {
       await bridge.forgetCertificate(key);
