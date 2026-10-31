@@ -9,7 +9,7 @@ use reqwest::Method;
 use reqwest::header::{AUTHORIZATION, HeaderName, HeaderValue, LOCATION};
 use url::Url;
 
-use super::dav::{self, CALDAV, DAV};
+use super::dav::{self, CALDAV, CARDDAV, DAV};
 use super::{Login, basic_authorization};
 use crate::imap::tls::Seen;
 use crate::imap::{ErrorKind, Imap, MailServerError, ServerRole};
@@ -263,14 +263,31 @@ pub struct Found {
     pub principal: String,
     pub home: String,
     pub address: Option<String>,
+    /// The address book home (CardDAV `addressbook-home-set`), if the
+    /// principal has one.
+    pub contacts: Option<String>,
     /// The origins the walk ended up on (where the login may go later).
     pub hosts: Vec<String>,
     pub scheduling: bool,
 }
 
+/// Where a user's address books are.
+#[derive(Debug, PartialEq)]
+pub struct FoundContacts {
+    /// The address book home.
+    pub home: String,
+    /// The origins the walk ended up on.
+    pub hosts: Vec<String>,
+}
+
 /// The addresses one candidate is tried at: a bare server also at its
 /// `/.well-known/caldav` (first: that's where servers say where they are).
 fn starts(candidate: &str) -> Vec<Url> {
+    starts_at(candidate, "/.well-known/caldav")
+}
+
+/// [`starts`], with the `.well-known` path of the service looked for.
+fn starts_at(candidate: &str, well_known: &str) -> Vec<Url> {
     let Ok(url) = Url::parse(candidate.trim()) else {
         return Vec::new();
     };
@@ -279,7 +296,7 @@ fn starts(candidate: &str) -> Vec<Url> {
     }
     if url.path() == "/" || url.path().is_empty() {
         let mut known = url.clone();
-        known.set_path("/.well-known/caldav");
+        known.set_path(well_known);
         known.set_query(None);
         return vec![known, url];
     }
@@ -403,6 +420,7 @@ async fn walk(
         &[
             (CALDAV, "calendar-home-set"),
             (CALDAV, "calendar-user-address-set"),
+            (CARDDAV, "addressbook-home-set"),
             (DAV, "displayname"),
         ],
         authorizer,
@@ -414,6 +432,9 @@ async fn walk(
         .first()
         .and_then(|href| principal.join(href).ok())
         .ok_or_else(|| MailServerError::not_found(format!("{} has no calendars.", answer.url)))?;
+    let contacts = dav::hrefs(&xml, CARDDAV, "addressbook-home-set")
+        .first()
+        .and_then(|href| principal.join(href).ok());
     let addresses = dav::hrefs(&xml, CALDAV, "calendar-user-address-set");
     let address = addresses
         .iter()
@@ -441,18 +462,108 @@ async fn walk(
         });
 
     let mut hosts = Vec::new();
-    for url in [&answer.url, &principal, &home] {
-        if let Some(origin) = origin(url)
-            && !hosts.contains(&origin)
-        {
-            hosts.push(origin);
-        }
+    for url in [&answer.url, &principal, &home]
+        .into_iter()
+        .chain(contacts.as_ref())
+    {
+        add_origin(&mut hosts, url);
     }
     Ok(Found {
         principal: principal.to_string(),
         home: home.to_string(),
         address,
+        contacts: contacts.map(|url| url.to_string()),
         hosts,
         scheduling,
+    })
+}
+
+fn add_origin(hosts: &mut Vec<String>, url: &Url) {
+    if let Some(origin) = origin(url)
+        && !hosts.contains(&origin)
+    {
+        hosts.push(origin);
+    }
+}
+
+/// Looks for the user's address books with the login: at `principal`
+/// (the calendar server's), then at each of `candidates` (a provider's
+/// contacts server, from `current-user-principal`). Nothing found, or any
+/// failure: `None` (contacts never stand in the way of the calendars).
+pub async fn find_contacts(
+    http: &reqwest::Client,
+    seen: &Seen,
+    principal: Option<Url>,
+    candidates: &[String],
+    authorizer: &mut Authorizer<'_>,
+) -> Option<FoundContacts> {
+    if let Some(principal) = principal
+        && let Some(found) = contacts_at(http, seen, principal, authorizer).await
+    {
+        return Some(found);
+    }
+    for start in candidates
+        .iter()
+        .flat_map(|candidate| starts_at(candidate, "/.well-known/carddav"))
+    {
+        let Ok(answer) = propfind(
+            http,
+            seen,
+            start,
+            &[(DAV, "current-user-principal")],
+            authorizer,
+        )
+        .await
+        else {
+            continue;
+        };
+        let Ok(xml) = multistatus(&answer) else {
+            continue;
+        };
+        let principal = match dav::hrefs(&xml, DAV, "current-user-principal").first() {
+            Some(href) => match answer.url.join(href) {
+                Ok(url) => url,
+                Err(_) => continue,
+            },
+            None => answer.url.clone(),
+        };
+        if let Some(mut found) = contacts_at(http, seen, principal, authorizer).await {
+            if let Some(origin) = origin(&answer.url)
+                && !found.hosts.contains(&origin)
+            {
+                found.hosts.insert(0, origin);
+            }
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// A principal's address book home, if it names one.
+async fn contacts_at(
+    http: &reqwest::Client,
+    seen: &Seen,
+    principal: Url,
+    authorizer: &mut Authorizer<'_>,
+) -> Option<FoundContacts> {
+    let answer = propfind(
+        http,
+        seen,
+        principal,
+        &[(CARDDAV, "addressbook-home-set")],
+        authorizer,
+    )
+    .await
+    .ok()?;
+    let xml = multistatus(&answer).ok()?;
+    let home = dav::hrefs(&xml, CARDDAV, "addressbook-home-set")
+        .first()
+        .and_then(|href| answer.url.join(href).ok())?;
+    let mut hosts = Vec::new();
+    add_origin(&mut hosts, &answer.url);
+    add_origin(&mut hosts, &home);
+    Some(FoundContacts {
+        home: home.to_string(),
+        hosts,
     })
 }

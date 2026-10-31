@@ -10,7 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import type { CalendarServerInfo } from "../accounts/calendarServer";
 import type { CalendarProvider } from "../core/calendar";
-import type { Account, Sender } from "../core/model";
+import type { Account, EmailAddress, Sender } from "../core/model";
 import type { CalendarServerSources } from "../data/calendarServers";
 import { queryKeys } from "../data/keys";
 import { browserLanguages, localeFor, resolveLanguage } from "../i18n/locale";
@@ -20,6 +20,10 @@ import {
   CaldavCalendarProvider,
   type CaldavProviderOptions,
 } from "../providers/caldav/CaldavCalendarProvider";
+import {
+  CardDavAddressBooks,
+  mergeMatches,
+} from "../providers/caldav/contacts";
 import type { CalendarMailer, ItipTexts } from "../providers/caldav/itip";
 import {
   createCalendarServers,
@@ -39,6 +43,17 @@ export interface CaldavServices {
   readonly servers: CalendarServerList;
   /** The calendars of a mail server account ("Set up calendar" until it has a server). */
   readonly accountCalendar: (account: Account) => CalendarProvider;
+  /**
+   * Searches the address books a mail server account's suggestions come
+   * from: its own server's, else (none there) those of calendar-only
+   * servers.
+   */
+  readonly contactsFor: (
+    account: Account,
+  ) => (
+    query: string,
+    signal?: AbortSignal,
+  ) => Promise<readonly EmailAddress[]>;
   /** The servers for the calendar column and its dialogs. */
   readonly sources: CalendarServerSources;
   /** Connects the providers to the app's accounts, cache and settings. */
@@ -108,6 +123,38 @@ export function createCaldavServices(bridge: CaldavBridge): CaldavServices {
       texts,
     });
 
+  const books = new Map<string, CardDavAddressBooks>();
+  const booksOf = (key: string) => {
+    let found = books.get(key);
+    if (!found) {
+      found = new CardDavAddressBooks({ bridge, key, servers });
+      books.set(key, found);
+    }
+    return found;
+  };
+  const contactsFor =
+    (account: Account) =>
+    async (query: string, signal?: AbortSignal): Promise<EmailAddress[]> => {
+      await servers.ready;
+      const own = servers.info(account.id)
+        ? await booksOf(account.id).home()
+        : undefined;
+      const keys = own
+        ? [account.id]
+        : servers
+            .current()
+            .filter((info) => info.key.startsWith("caldav:"))
+            .map((info) => info.key);
+      const lists = await Promise.all(
+        keys.map((key) =>
+          booksOf(key)
+            .search(query, signal)
+            .catch(() => []),
+        ),
+      );
+      return mergeMatches(lists);
+    };
+
   const calendarOnly = new Map<string, CalendarProvider>();
   const providerFor = (info: CalendarServerInfo): CalendarProvider => {
     let found = calendarOnly.get(info.key);
@@ -127,6 +174,7 @@ export function createCaldavServices(bridge: CaldavBridge): CaldavServices {
 
   return {
     servers,
+    contactsFor,
     accountCalendar: (account) =>
       provider(account.id, () => {
         const senders = sendersOf(account.id);

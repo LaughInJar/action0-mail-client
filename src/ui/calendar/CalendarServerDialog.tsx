@@ -120,9 +120,12 @@ export function CalendarServerDialog({
           queryKey: queryKeys.calendarEvents(info.key),
         }),
       ]);
-      store
-        .getState()
-        .showToast({ message: s.connected(info.label), tone: "info" });
+      store.getState().showToast({
+        message: info.contacts
+          ? s.connectedWithContacts(info.label)
+          : s.connected(info.label),
+        tone: "info",
+      });
       onClose();
     } catch (cause) {
       if (

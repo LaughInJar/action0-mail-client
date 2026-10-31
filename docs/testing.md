@@ -40,19 +40,19 @@ jsdom is the default; a file opts into Node with a comment (see [Unit tests](#un
 
 The helpers in `src/test/`:
 
-| File                 | What it gives you                                                                                                                                                                                          |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                        |
-| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                         |
-| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                     |
-| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                                                                                                  |
-| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                                 |
-| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                       |
-| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                              |
-| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                                  |
-| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                     |
-| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`    |
-| `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls) and `icsEvent()` |
+| File                 | What it gives you                                                                                                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                                          |
+| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                                           |
+| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                                       |
+| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                                                                                                                    |
+| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                                                   |
+| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                                         |
+| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                                                |
+| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                                                    |
+| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                                       |
+| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`                      |
+| `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars and address books, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls) and `icsEvent()` |
 
 Run all tests with `npm test`, keep them running with `npm run test:watch`, or run a single file or test with `npx vitest run src/ui/actions.test.tsx -t "rolls back"`.
 

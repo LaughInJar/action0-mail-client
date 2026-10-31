@@ -1,6 +1,7 @@
 import type { DavRequest, DavResponse } from "./bridge";
 import {
   CALDAV,
+  CARDDAV,
   DAV,
   ETAGS_PROPFIND,
   multiget,
@@ -17,7 +18,10 @@ export type DavSend = (
   signal?: AbortSignal,
 ) => Promise<DavResponse>;
 
-/** One calendar object (an `.ics` resource): a single event or a series with its changes. */
+/**
+ * One object of a collection: a calendar object (`.ics`: a single event or
+ * a series with its changes) or a contact (`.vcf`).
+ */
 export interface StoredObject {
   readonly url: string;
   /** Unknown right after a write whose answer had none: the next sync fetches it. */
@@ -34,12 +38,14 @@ const FRESH_MS = 15_000;
 const XML = { "Content-Type": "application/xml; charset=utf-8" };
 
 /**
- * A calendar's objects, in memory only, brought up to date with the
- * server's change list (`sync-collection`, RFC 6578) or, where it has
- * none, by comparing ETags; only new and changed objects are fetched.
+ * A calendar's or address book's objects, in memory only, brought up to
+ * date with the server's change list (`sync-collection`, RFC 6578) or,
+ * where it has none, by comparing ETags; only new and changed objects are
+ * fetched.
  */
-export class CalendarStore {
+export class DavStore {
   readonly url: string;
+  readonly #kind: "calendar" | "addressbook";
   readonly #send: DavSend;
   readonly #now: () => number;
   /** The server keeps a change list for this calendar. */
@@ -54,8 +60,10 @@ export class CalendarStore {
     syncable: boolean,
     send: DavSend,
     now: () => number = Date.now,
+    kind: "calendar" | "addressbook" = "calendar",
   ) {
     this.url = url;
+    this.#kind = kind;
     this.#syncable = syncable;
     this.#send = send;
     this.#now = now;
@@ -189,7 +197,10 @@ export class CalendarStore {
           method: "REPORT",
           url: this.url,
           headers: { ...XML, Depth: "1" },
-          body: multiget(batch.map((url) => new URL(url).pathname)),
+          body: multiget(
+            batch.map((url) => new URL(url).pathname),
+            this.#kind,
+          ),
         },
         signal,
       );
@@ -197,7 +208,10 @@ export class CalendarStore {
         throw new Error(`HTTP ${String(answer.status)}`);
       for (const resource of parseMultistatus(answer.body, answer.url)
         .resources) {
-        const text = propText(resource, CALDAV, "calendar-data");
+        const text =
+          this.#kind === "calendar"
+            ? propText(resource, CALDAV, "calendar-data")
+            : propText(resource, CARDDAV, "address-data");
         if (resource.status === 404 || !text) {
           this.forget(resource.url);
           continue;

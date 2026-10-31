@@ -59,7 +59,19 @@ export interface FakeDavOptions {
   readonly connectFailures?: readonly MailServerError[];
   /** PUT answers leave out the ETag (some servers do). */
   readonly noEtagOnPut?: boolean;
+  /**
+   * Address books (CardDAV) by name: file name → vCard text. Without them
+   * the login has no address book home.
+   */
+  readonly addressBooks?: Readonly<
+    Record<string, Readonly<Record<string, string>>>
+  >;
+  /** Connected servers looked for address books already. Default: yes. */
+  readonly contactsChecked?: boolean;
 }
+
+/** The address book home of the fake server. */
+export const DAV_CONTACTS = `${DAV_ORIGIN}/addressbooks/me/`;
 
 const xmlEscape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -77,9 +89,26 @@ export function fakeDavServer(options: FakeDavOptions = {}) {
   let etagCounter = 1;
   const nextEtag = () => `"e${String(etagCounter++)}"`;
   const pathOf = (calendar: string) => `/calendars/me/${calendar}/`;
+  const bookPath = (book: string) => `/addressbooks/me/${book}/`;
   for (const [calendar, files] of Object.entries(options.objects ?? {}))
     for (const [file, text] of Object.entries(files))
       objects.set(`${pathOf(calendar)}${file}`, { text, etag: nextEtag() });
+  for (const [book, files] of Object.entries(options.addressBooks ?? {}))
+    for (const [file, text] of Object.entries(files))
+      objects.set(`${bookPath(book)}${file}`, { text, etag: nextEtag() });
+  /** Calendars and address books, by path. */
+  const collections = [
+    ...calendars.map((calendar) => ({
+      path: pathOf(calendar.name),
+      readOnly: calendar.readOnly === true,
+      kind: "calendar" as const,
+    })),
+    ...Object.keys(options.addressBooks ?? {}).map((book) => ({
+      path: bookPath(book),
+      readOnly: false,
+      kind: "addressbook" as const,
+    })),
+  ];
 
   const servers = new Map<string, CalendarServerInfo>();
   const info = (key: string, sameAsMail = true): CalendarServerInfo => ({
@@ -92,8 +121,19 @@ export function fakeDavServer(options: FakeDavOptions = {}) {
     sameAsMail,
     scheduling: options.scheduling ?? false,
     pinned: false,
+    ...(options.addressBooks && contactsChecked
+      ? { contacts: DAV_CONTACTS }
+      : {}),
+    contactsChecked,
   });
+  let contactsChecked = true;
   for (const key of options.connected ?? []) servers.set(key, info(key));
+  // Servers set up before contacts were looked for.
+  if (options.contactsChecked === false) {
+    contactsChecked = false;
+    for (const key of options.connected ?? []) servers.set(key, info(key));
+    contactsChecked = true;
+  }
   const failures = [...(options.connectFailures ?? [])];
   /** Every request, for assertions. */
   const requests: DavRequest[] = [];
@@ -109,7 +149,7 @@ export function fakeDavServer(options: FakeDavOptions = {}) {
     status: 207,
     headers: { "content-type": "application/xml; charset=utf-8" },
     body: `<?xml version="1.0" encoding="utf-8"?>
-<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:a="http://apple.com/ns/ical/">
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav" xmlns:cs="http://calendarserver.org/ns/" xmlns:a="http://apple.com/ns/ical/">
 ${responses.join("\n")}
 ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
 </d:multistatus>`,
@@ -118,10 +158,11 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
     `<d:response><d:href>${xmlEscape(href)}</d:href><d:propstat><d:prop>${props}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`;
   const missing = (href: string) =>
     `<d:response><d:href>${xmlEscape(href)}</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>`;
-  const inCalendar = (calendar: string) =>
-    [...objects.keys()].filter((path) => path.startsWith(pathOf(calendar)));
-  const calendarOf = (path: string) =>
-    calendars.find((calendar) => path.startsWith(pathOf(calendar.name)));
+  const inCollection = (collection: string) =>
+    [...objects.keys()].filter((path) => path.startsWith(collection));
+  const inCalendar = (calendar: string) => inCollection(pathOf(calendar));
+  const collectionOf = (path: string) =>
+    collections.find((collection) => path.startsWith(collection.path));
 
   const answer = (request: DavRequest): Omit<DavResponse, "url"> => {
     const url = new URL(request.url);
@@ -160,14 +201,34 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
         ),
       ]);
     }
-    const calendar = calendarOf(path);
+    if (
+      request.method === "PROPFIND" &&
+      path === "/addressbooks/me/" &&
+      options.addressBooks
+    ) {
+      return multistatus([
+        ok(
+          "/addressbooks/me/",
+          "<d:resourcetype><d:collection/></d:resourcetype>",
+        ),
+        ...Object.keys(options.addressBooks).map((book) =>
+          ok(
+            bookPath(book),
+            `<d:resourcetype><d:collection/><card:addressbook/></d:resourcetype><d:displayname>${xmlEscape(book)}</d:displayname>${syncable ? `<d:sync-token>v:${String(version)}</d:sync-token>` : ""}`,
+          ),
+        ),
+      ]);
+    }
+    const calendar = collectionOf(path);
     if (request.method === "PROPFIND" && calendar) {
       return multistatus([
         ok(
-          pathOf(calendar.name),
-          "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>",
+          calendar.path,
+          calendar.kind === "calendar"
+            ? "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            : "<d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>",
         ),
-        ...inCalendar(calendar.name).map((href) =>
+        ...inCollection(calendar.path).map((href) =>
           ok(href, `<d:getetag>${objects.get(href)?.etag ?? ""}</d:getetag>`),
         ),
       ]);
@@ -188,10 +249,11 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
       }
       const entries = new Map<string, boolean>();
       if (since === 0)
-        for (const href of inCalendar(calendar.name)) entries.set(href, false);
+        for (const href of inCollection(calendar.path))
+          entries.set(href, false);
       else
         for (const change of changes)
-          if (change.version > since && calendarOf(change.href) === calendar)
+          if (change.version > since && collectionOf(change.href) === calendar)
             entries.set(change.href, change.removed);
       return multistatus(
         [...entries].map(([href, removed]) =>
@@ -208,8 +270,11 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
     if (
       request.method === "REPORT" &&
       calendar &&
-      body.includes("calendar-multiget")
+      (body.includes("calendar-multiget") ||
+        body.includes("addressbook-multiget"))
     ) {
+      const data =
+        calendar.kind === "calendar" ? "c:calendar-data" : "card:address-data";
       const hrefs = [...body.matchAll(/<d:href>([^<]*)<\/d:href>/g)].map(
         (match) => decodeURIComponent(match[1] ?? ""),
       );
@@ -219,7 +284,7 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
           return stored
             ? ok(
                 href,
-                `<d:getetag>${stored.etag}</d:getetag><c:calendar-data>${xmlEscape(stored.text)}</c:calendar-data>`,
+                `<d:getetag>${stored.etag}</d:getetag><${data}>${xmlEscape(stored.text)}</${data}>`,
               )
             : missing(href);
         }),
@@ -282,6 +347,18 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
       servers.delete(key);
       return Promise.resolve();
     }),
+    findContacts: vi.fn<CaldavBridge["findContacts"]>((key) => {
+      const found = servers.get(key);
+      if (!found)
+        return Promise.reject(new MailServerError("notFound", "No server."));
+      const updated = {
+        ...found,
+        ...(options.addressBooks ? { contacts: DAV_CONTACTS } : {}),
+        contactsChecked: true,
+      };
+      servers.set(key, updated);
+      return Promise.resolve(updated);
+    }),
     forgetCertificate: vi.fn<CaldavBridge["forgetCertificate"]>(() =>
       Promise.resolve(),
     ),
@@ -302,6 +379,12 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
     /** Another client changes an object (or adds it). */
     edit: (calendar: string, file: string, text: string) => {
       const path = `${pathOf(calendar)}${file}`;
+      objects.set(path, { text, etag: nextEtag() });
+      record(path, false);
+    },
+    /** Another client changes (or adds) a contact. */
+    editCard: (book: string, file: string, text: string) => {
+      const path = `${bookPath(book)}${file}`;
       objects.set(path, { text, etag: nextEtag() });
       record(path, false);
     },

@@ -108,6 +108,11 @@ export interface ImapProviderOptions {
   readonly fetch?: typeof fetch;
   /** Told when the server refuses the login, so Reconnect shows. */
   readonly onAuthFailed?: () => void;
+  /** Searches the address books for this account (CardDAV; the apps). */
+  readonly searchContacts?: (
+    query: string,
+    signal?: AbortSignal,
+  ) => Promise<readonly EmailAddress[]>;
 }
 
 /** See the module docs. */
@@ -129,7 +134,9 @@ export class ImapProvider implements MailProvider {
       spam: true,
       deleteForever: true,
       compose: true,
-      contacts: false,
+      // The account's (or another calendar server's) address books, then recent mail.
+      contacts: options.searchContacts !== undefined,
+      ...(options.searchContacts ? { recentToo: true } : {}),
       maxAttachmentBytes: Math.floor(
         (options.maxBytes ?? DEFAULT_MAX_BYTES) / ENCODING_GROWTH,
       ),
@@ -439,10 +446,17 @@ export class ImapProvider implements MailProvider {
     return { messageId: asMessageId(sentId) };
   }
 
-  searchContacts(): Promise<readonly EmailAddress[]> {
-    return Promise.reject(
-      new MailError("unavailable", "IMAP accounts have no contacts."),
-    );
+  /** From the address books of the account's calendar server (CardDAV), if any. */
+  searchContacts(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<readonly EmailAddress[]> {
+    const search = this.#options.searchContacts;
+    if (!search)
+      return Promise.reject(
+        new MailError("unavailable", "IMAP accounts have no contacts."),
+      );
+    return search(query, signal);
   }
 
   async changesSince(

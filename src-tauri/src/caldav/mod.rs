@@ -11,7 +11,9 @@
 //!   server).
 //! - `http.rs`: one request with the login, redirects followed only to the
 //!   server's own hosts, failures as [`MailServerError`]s; and the walk from
-//!   an address to the principal, the calendar home and scheduling.
+//!   an address to the principal, the calendar home, scheduling and the
+//!   address book home (CardDAV, on the principal or at the provider's own
+//!   contacts server, whose host then joins the server's hosts).
 //! - `dav.rs`: the little XML that walk needs.
 //!
 //! A login lives only in `caldav.vault` (encrypted with the accounts' key),
@@ -92,6 +94,14 @@ pub struct CalendarServer {
     pub pinned: Option<String>,
     /// The server schedules itself (RFC 6638, `calendar-auto-schedule`).
     pub scheduling: bool,
+    /// The address book home (CardDAV `addressbook-home-set`), if the
+    /// login has address books.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contacts: Option<String>,
+    /// Address books were looked for (servers set up before contacts
+    /// weren't: [`Caldav::find_contacts`] does it once).
+    #[serde(default)]
+    pub contacts_checked: bool,
 }
 
 impl CalendarServer {
@@ -110,6 +120,17 @@ impl CalendarServer {
             same_as_mail: self.login == Login::SameAsMail,
             scheduling: self.scheduling,
             pinned: self.pinned.is_some(),
+            contacts: self.contacts.clone(),
+            contacts_checked: self.contacts_checked,
+        }
+    }
+
+    /// Adds origins the login may go to.
+    fn allow(&mut self, hosts: &[String]) {
+        for host in hosts {
+            if !self.hosts.contains(host) {
+                self.hosts.push(host.clone());
+            }
         }
     }
 }
@@ -128,6 +149,9 @@ pub struct Info {
     pub same_as_mail: bool,
     pub scheduling: bool,
     pub pinned: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contacts: Option<String>,
+    pub contacts_checked: bool,
 }
 
 /// How the UI asks to sign in (`CalendarServerLogin`).
@@ -289,6 +313,18 @@ impl Caldav {
         let http = http::client(config)?;
         let mut authorizer = Authorizer::new(imap, &key, &login);
         let found = http::find(&http, &seen, &setup.urls, &mut authorizer).await?;
+        // Address books: on the same principal, else the provider's own
+        // contacts server. Never in the way of the calendars.
+        let contacts = match found.contacts.clone() {
+            Some(home) => Some(http::FoundContacts {
+                home,
+                hosts: Vec::new(),
+            }),
+            None => {
+                let candidates = contacts_candidates(&key, &login, &found.home);
+                http::find_contacts(&http, &seen, None, &candidates, &mut authorizer).await
+            }
+        };
 
         let label = if let Some(address) = key.strip_prefix("imap:") {
             address.to_string()
@@ -306,7 +342,7 @@ impl Caldav {
                 })
                 .unwrap_or_default()
         };
-        let server = CalendarServer {
+        let mut server = CalendarServer {
             label,
             principal: found.principal,
             home: found.home,
@@ -316,13 +352,49 @@ impl Caldav {
             // Kept only if it was needed.
             pinned: pin.filter(|_| seen.used_pin()),
             scheduling: found.scheduling,
+            contacts: None,
+            contacts_checked: true,
         };
+        if let Some(contacts) = contacts {
+            server.allow(&contacts.hosts);
+            server.contacts = Some(contacts.home);
+        }
         {
             let _writing = self.writing.lock().expect("caldav lock");
             self.vault().put(&key, server.clone());
             self.clients.lock().expect("caldav lock").remove(&key);
         }
         Ok(server.info(&key))
+    }
+
+    /// Looks for the address books of a server set up before contacts were
+    /// looked for: on its principal, then at its provider's contacts
+    /// server. Keeps what was found (and that it was looked for, also when
+    /// nothing was).
+    pub async fn find_contacts(&self, imap: &Imap, key: &str) -> Result<Info, MailServerError> {
+        let server = self.server(key)?;
+        let client = self.client(key, &server)?;
+        let mut authorizer = Authorizer::new(imap, key, &server.login);
+        let principal = url::Url::parse(&server.principal).ok();
+        let candidates = contacts_candidates(key, &server.login, &server.home);
+        let found = http::find_contacts(
+            &client.http,
+            &client.seen,
+            principal,
+            &candidates,
+            &mut authorizer,
+        )
+        .await;
+        let _writing = self.writing.lock().expect("caldav lock");
+        // As it is now: it may have changed meanwhile.
+        let mut server = self.server(key)?;
+        if let Some(found) = found {
+            server.allow(&found.hosts);
+            server.contacts = Some(found.home);
+        }
+        server.contacts_checked = true;
+        self.vault().put(key, server.clone());
+        Ok(server.info(key))
     }
 
     /// One request of the UI to the server of `meta.key` (see the module
@@ -378,6 +450,30 @@ impl Caldav {
         }
         Ok(answer)
     }
+}
+
+/// Where a server's address books may be when its principal names none:
+/// the contacts server of its provider, known by the mail account's
+/// address, the login's address, or the calendar server's host.
+fn contacts_candidates(key: &str, login: &Login, home: &str) -> Vec<String> {
+    let address = key.strip_prefix("imap:").or(match login {
+        Login::Password { username, .. } if username.contains('@') => Some(username.as_str()),
+        _ => None,
+    });
+    let by_address = address
+        .and_then(|address| address.rsplit_once('@'))
+        .and_then(|(_, domain)| discover::contacts_for_domain(domain));
+    let by_host = || {
+        url::Url::parse(home)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+            .and_then(|host| discover::contacts_for_calendar_host(&host))
+    };
+    by_address
+        .or_else(by_host)
+        .map(str::to_string)
+        .into_iter()
+        .collect()
 }
 
 /// A certificate fingerprint the user chose, as it's kept.
@@ -453,6 +549,16 @@ pub async fn caldav_servers(caldav: State<'_, Caldav>) -> Result<Vec<Info>, Mail
 pub async fn caldav_remove(caldav: State<'_, Caldav>, key: String) -> Result<(), MailServerError> {
     caldav.remove(&key);
     Ok(())
+}
+
+/// Looks for the address books of a server set up before contacts were.
+#[tauri::command]
+pub async fn caldav_find_contacts(
+    imap: State<'_, Imap>,
+    caldav: State<'_, Caldav>,
+    key: String,
+) -> Result<Info, MailServerError> {
+    caldav.find_contacts(&imap, &key).await
 }
 
 /// Forgets a server's trusted certificate.

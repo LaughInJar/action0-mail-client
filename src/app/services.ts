@@ -210,7 +210,10 @@ export function createDefaultModules(
               settings: localStorage,
               fetch: desktop.fetch,
               ...(desktop.caldav
-                ? { createCalendar: desktop.caldav.accountCalendar }
+                ? {
+                    createCalendar: desktop.caldav.accountCalendar,
+                    contactsFor: desktop.caldav.contactsFor,
+                  }
                 : {}),
             }),
           ]

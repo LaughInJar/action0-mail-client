@@ -174,6 +174,58 @@ describe("calendars of mail server accounts", () => {
   });
 });
 
+describe("contacts on the calendar server", () => {
+  it("suggest addresses, then people from recent mail", async () => {
+    const dav = fakeDavServer({
+      objects: { personal: { "lunch.ics": lunch } },
+      addressBooks: {
+        contacts: {
+          "annika.vcf": [
+            "BEGIN:VCARD",
+            "VERSION:4.0",
+            "FN:Annika Bauer",
+            "EMAIL:annika@example.net",
+            "END:VCARD",
+          ].join("\r\n"),
+        },
+      },
+    });
+    const imap = fakeImapBridge({
+      discovery: GMX,
+      messages: [
+        imapMessage("m1", "f:INBOX", {
+          from: { name: "Anna Berger", address: "anna@example.org" },
+        }),
+      ],
+    });
+    const { user } = renderApp({ imap: imap.bridge, caldav: dav.bridge });
+    await addAccount(user);
+    expect(
+      await screen.findByText(
+        "This account’s calendars and contacts are on dav.example.com. Show them in action0 too?",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show them" }));
+    await toastText("Connected me@gmx.at");
+    await user.keyboard("c");
+    const compose = await dialog("New message");
+    await user.type(within(compose).getByLabelText("To"), "ann");
+    const list = await within(compose).findByRole("listbox", {
+      name: "Suggestions",
+    });
+    await waitFor(() => {
+      expect(
+        within(list)
+          .getAllByRole("option")
+          .map((option) => option.textContent),
+      ).toEqual([
+        expect.stringContaining("Annika Bauer") as unknown,
+        expect.stringContaining("Anna Berger") as unknown,
+      ]);
+    });
+  });
+});
+
 describe("calendar-only servers", () => {
   it("are added with their own login, shown, and removed", async () => {
     const dav = fakeDavServer({

@@ -158,10 +158,12 @@ The password stays in the app's encrypted vault (its key in the system's keychai
 
 ## Calendar servers (CalDAV)
 
-In the desktop and Android apps, calendars on a CalDAV server show up next to the others, and work like Google's: create, change and delete events (repeating ones too), reminders, guests, and **Yes / Maybe / No** to invitations, also right in invitation mails. The web app can't reach CalDAV servers (they don't allow browser apps), so there **Add calendar server…** is greyed out.
+In the desktop and Android apps, calendars on a CalDAV server show up next to the others and work like Google's: create, change and delete events (repeating ones too), reminders, guests, and **Yes / Maybe / No** to invitations, also right in invitation mails. The server's address books (CardDAV) give mail server accounts address suggestions: contacts first, then people from recent mail. The web app can't reach CalDAV servers (they don't allow browser apps), so there **Add calendar server…** is greyed out.
 
 - **A mail server account's calendars:** when you add the account, action0 looks for its calendar server (the way Thunderbird and iPhones do) and asks whether to show its calendars. Accounts added before get **Set up calendar** in the calendar's column. The mail login is used unless you enter another one.
 - **A calendar-only server** (Nextcloud, Radicale, Baïkal, a provider whose mail you don't use here): **Add calendar server…** in the calendar's column, with its address, user name and password.
+
+The address books are found with the same login, also where a provider keeps contacts on another host (Fastmail, iCloud, GMX, web.de, Yahoo). A mail server account uses its own server's contacts; accounts without any use those of your calendar-only servers (e.g. your Nextcloud). They're read for suggestions only and kept in memory.
 
 | Provider        | Server address (if it isn't found)                                       | Login                                                      |
 | --------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |

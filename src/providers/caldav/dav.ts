@@ -5,11 +5,12 @@
 
 export const DAV = "DAV:";
 export const CALDAV = "urn:ietf:params:xml:ns:caldav";
+export const CARDDAV = "urn:ietf:params:xml:ns:carddav";
 export const CALSERVER = "http://calendarserver.org/ns/";
 export const APPLE = "http://apple.com/ns/ical/";
 
 const XML_HEAD = '<?xml version="1.0" encoding="utf-8"?>';
-const NAMESPACES = `xmlns:d="${DAV}" xmlns:c="${CALDAV}" xmlns:cs="${CALSERVER}" xmlns:a="${APPLE}"`;
+const NAMESPACES = `xmlns:d="${DAV}" xmlns:c="${CALDAV}" xmlns:card="${CARDDAV}" xmlns:cs="${CALSERVER}" xmlns:a="${APPLE}"`;
 
 /** PROPFIND for the calendars of a calendar home (Depth: 1). */
 export const CALENDARS_PROPFIND = `${XML_HEAD}
@@ -26,7 +27,17 @@ export const CALENDARS_PROPFIND = `${XML_HEAD}
   </d:prop>
 </d:propfind>`;
 
-/** PROPFIND for the ETags of a calendar's objects (Depth: 1), when it has no change list. */
+/** PROPFIND for the address books of an address book home (Depth: 1). */
+export const ADDRESSBOOKS_PROPFIND = `${XML_HEAD}
+<d:propfind ${NAMESPACES}>
+  <d:prop>
+    <d:resourcetype/>
+    <d:displayname/>
+    <d:sync-token/>
+  </d:prop>
+</d:propfind>`;
+
+/** PROPFIND for the ETags of a collection's objects (Depth: 1), when it has no change list. */
 export const ETAGS_PROPFIND = `${XML_HEAD}
 <d:propfind ${NAMESPACES}>
   <d:prop>
@@ -47,16 +58,22 @@ export function syncCollection(token: string): string {
 </d:sync-collection>`;
 }
 
-/** The objects at these hrefs, with their ETags. */
-export function multiget(hrefs: readonly string[]): string {
+/** The objects at these hrefs, with their ETags: events, or contacts (vCards). */
+export function multiget(
+  hrefs: readonly string[],
+  kind: "calendar" | "addressbook" = "calendar",
+): string {
+  const report =
+    kind === "calendar" ? "c:calendar-multiget" : "card:addressbook-multiget";
+  const data = kind === "calendar" ? "c:calendar-data" : "card:address-data";
   return `${XML_HEAD}
-<c:calendar-multiget ${NAMESPACES}>
+<${report} ${NAMESPACES}>
   <d:prop>
     <d:getetag/>
-    <c:calendar-data/>
+    <${data}/>
   </d:prop>
 ${hrefs.map((href) => `  <d:href>${escapeXml(href)}</d:href>`).join("\n")}
-</c:calendar-multiget>`;
+</${report}>`;
 }
 
 export function escapeXml(text: string): string {

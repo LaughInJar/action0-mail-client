@@ -131,6 +131,27 @@ describe("the native CalDAV bridge", () => {
     expect(calls.map((call) => call.command)).toContain("caldav_abort");
   });
 
+  it("looks for a server's address books", async () => {
+    const info = {
+      key: "imap:me@example.org",
+      label: "me@example.org",
+      home: "https://dav.example.org/cal/",
+      principal: "https://dav.example.org/p/",
+      username: "",
+      sameAsMail: true,
+      scheduling: false,
+      pinned: false,
+      contacts: "https://dav.example.org/card/",
+      contactsChecked: true,
+    };
+    const { bridge, calls } = setup(() => Promise.resolve(info));
+    expect(await bridge.findContacts("imap:me@example.org")).toEqual(info);
+    expect(calls[0]).toMatchObject({
+      command: "caldav_find_contacts",
+      args: { key: "imap:me@example.org" },
+    });
+  });
+
   it("decodes an answer without a body", () => {
     expect(
       toDavResponse(framed({ status: 204, headers: [], url: "https://x/" })),

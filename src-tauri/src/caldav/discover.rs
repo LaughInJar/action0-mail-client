@@ -110,39 +110,122 @@ pub async fn discover_with(
     Ok(candidates)
 }
 
-/// Providers whose calendar servers action0 knows, by the address's domain.
-fn provider(domain: &str) -> Option<Candidate> {
+/// A provider action0 knows: its calendar server, and its contacts server
+/// where that's a host of its own (otherwise the address books are found
+/// on the calendar server's principal).
+struct Known {
+    name: &'static str,
+    caldav: &'static str,
+    carddav: Option<&'static str>,
+    app_password: Option<&'static str>,
+}
+
+const ICLOUD: Known = Known {
+    name: "iCloud",
+    caldav: "https://caldav.icloud.com/",
+    carddav: Some("https://contacts.icloud.com/"),
+    app_password: Some("https://account.apple.com/account/manage"),
+};
+const FASTMAIL: Known = Known {
+    name: "Fastmail",
+    caldav: "https://caldav.fastmail.com/dav/",
+    carddav: Some("https://carddav.fastmail.com/dav/"),
+    app_password: Some("https://app.fastmail.com/settings/security/apps"),
+};
+const MAILBOX_ORG: Known = Known {
+    name: "mailbox.org",
+    caldav: "https://dav.mailbox.org/",
+    carddav: None,
+    app_password: None,
+};
+const GMX: Known = Known {
+    name: "GMX",
+    caldav: "https://caldav.gmx.net/",
+    carddav: Some("https://carddav.gmx.net/"),
+    app_password: None,
+};
+const WEB_DE: Known = Known {
+    name: "WEB.DE",
+    caldav: "https://caldav.web.de/",
+    carddav: Some("https://carddav.web.de/"),
+    app_password: None,
+};
+const POSTEO: Known = Known {
+    name: "Posteo",
+    caldav: "https://posteo.de:8443/",
+    carddav: None,
+    app_password: None,
+};
+const YAHOO: Known = Known {
+    name: "Yahoo",
+    caldav: "https://caldav.calendar.yahoo.com/",
+    carddav: Some("https://carddav.address.yahoo.com/"),
+    app_password: Some("https://login.yahoo.com/account/security/app-passwords"),
+};
+const ZOHO: Known = Known {
+    name: "Zoho",
+    caldav: "https://calendar.zoho.com/caldav/",
+    carddav: None,
+    app_password: None,
+};
+
+/// Every provider of the table, to find one by its calendar server.
+const ALL: [&Known; 8] = [
+    &ICLOUD,
+    &FASTMAIL,
+    &MAILBOX_ORG,
+    &GMX,
+    &WEB_DE,
+    &POSTEO,
+    &YAHOO,
+    &ZOHO,
+];
+
+/// The provider of an address's domain, if action0 knows it.
+fn known(domain: &str) -> Option<&'static Known> {
     let registrable = registrable(domain);
     let brand = registrable.split('.').next().unwrap_or_default();
-    let known = |name: &str, url: &str, app_password: Option<&str>| Candidate {
-        url: url.into(),
-        source: CandidateSource::Provider,
-        provider_name: Some(name.into()),
-        app_password_url: app_password.map(str::to_string),
-    };
     Some(match (brand, registrable.as_str()) {
-        (_, "icloud.com" | "me.com" | "mac.com") => known(
-            "iCloud",
-            "https://caldav.icloud.com/",
-            Some("https://account.apple.com/account/manage"),
-        ),
-        ("fastmail" | "messagingengine", _) => known(
-            "Fastmail",
-            "https://caldav.fastmail.com/dav/",
-            Some("https://app.fastmail.com/settings/security/apps"),
-        ),
-        (_, "mailbox.org") => known("mailbox.org", "https://dav.mailbox.org/", None),
-        ("gmx", _) => known("GMX", "https://caldav.gmx.net/", None),
-        (_, "web.de") => known("WEB.DE", "https://caldav.web.de/", None),
-        ("posteo", _) => known("Posteo", "https://posteo.de:8443/", None),
-        ("yahoo" | "ymail" | "rocketmail", _) => known(
-            "Yahoo",
-            "https://caldav.calendar.yahoo.com/",
-            Some("https://login.yahoo.com/account/security/app-passwords"),
-        ),
-        ("zoho" | "zohomail", _) => known("Zoho", "https://calendar.zoho.com/caldav/", None),
+        (_, "icloud.com" | "me.com" | "mac.com") => &ICLOUD,
+        ("fastmail" | "messagingengine", _) => &FASTMAIL,
+        (_, "mailbox.org") => &MAILBOX_ORG,
+        ("gmx", _) => &GMX,
+        (_, "web.de") => &WEB_DE,
+        ("posteo", _) => &POSTEO,
+        ("yahoo" | "ymail" | "rocketmail", _) => &YAHOO,
+        ("zoho" | "zohomail", _) => &ZOHO,
         _ => return None,
     })
+}
+
+/// Providers whose calendar servers action0 knows, by the address's domain.
+fn provider(domain: &str) -> Option<Candidate> {
+    known(domain).map(|known| Candidate {
+        url: known.caldav.into(),
+        source: CandidateSource::Provider,
+        provider_name: Some(known.name.into()),
+        app_password_url: known.app_password.map(str::to_string),
+    })
+}
+
+/// The contacts server of the provider of an address's domain, where it's a
+/// host of its own.
+pub fn contacts_for_domain(domain: &str) -> Option<&'static str> {
+    known(&domain.trim().to_ascii_lowercase()).and_then(|known| known.carddav)
+}
+
+/// The contacts server of the provider whose calendar server is `host`
+/// (calendar-only servers, which have no address), where it's a host of
+/// its own.
+pub fn contacts_for_calendar_host(host: &str) -> Option<&'static str> {
+    ALL.iter()
+        .find(|known| {
+            url::Url::parse(known.caldav)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+                .is_some_and(|known_host| known_host.eq_ignore_ascii_case(host))
+        })
+        .and_then(|known| known.carddav)
 }
 
 /// The domain's `_caldavs._tcp` service and its TXT `path`, from the
@@ -243,6 +326,31 @@ mod tests {
             let found = discover_with(address, None, &no_srv).await.unwrap();
             assert_eq!(found[0].url, url, "{address}");
         }
+    }
+
+    #[test]
+    fn knows_providers_with_contacts_on_a_host_of_their_own() {
+        assert_eq!(
+            contacts_for_domain("fastmail.fm"),
+            Some("https://carddav.fastmail.com/dav/")
+        );
+        assert_eq!(
+            contacts_for_domain("me.com"),
+            Some("https://contacts.icloud.com/")
+        );
+        assert_eq!(
+            contacts_for_domain("gmx.at"),
+            Some("https://carddav.gmx.net/")
+        );
+        // Same server as the calendars, or not a known provider.
+        assert_eq!(contacts_for_domain("mailbox.org"), None);
+        assert_eq!(contacts_for_domain("example.org"), None);
+        assert_eq!(
+            contacts_for_calendar_host("caldav.fastmail.com"),
+            Some("https://carddav.fastmail.com/dav/")
+        );
+        assert_eq!(contacts_for_calendar_host("posteo.de"), None);
+        assert_eq!(contacts_for_calendar_host("cloud.example.org"), None);
     }
 
     #[tokio::test]

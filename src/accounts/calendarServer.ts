@@ -68,6 +68,13 @@ export interface CalendarServerInfo {
   readonly scheduling: boolean;
   /** A certificate the system doesn't trust is trusted for it. */
   readonly pinned: boolean;
+  /**
+   * The address book home (CardDAV `addressbook-home-set`), if the login
+   * has address books (on the same server, or the provider's contacts host).
+   */
+  readonly contacts?: string;
+  /** Address books were looked for (servers set up before contacts weren't). */
+  readonly contactsChecked: boolean;
 }
 
 /** Connecting and keeping calendar servers (the apps only). */

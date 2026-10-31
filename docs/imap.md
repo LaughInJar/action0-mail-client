@@ -54,7 +54,7 @@ An IMAP account is a folder account, like Outlook:
 - **Search** runs on the server: words, `from:`, `to:`, `subject:`, `is:unread`, `is:starred`.
 - **Conversations** are built from Message-ID / In-Reply-To / References (or the server's thread ids); opening one also finds your replies in Sent and messages in Archive.
 - **Sending** builds the mail with `buildMessage`, sends it over SMTP without the Bcc header, and keeps a copy with it in Sent (Gmail's SMTP keeps its own). Drafts live in Drafts, replaced on every save.
-- **Signatures** are kept in the app; From is the account's address with the name given when adding it; address suggestions come from recent mail.
+- **Signatures** are kept in the app; From is the account's address with the name given when adding it; address suggestions come from the calendar server's address books (CardDAV, [caldav.md](caldav.md#contacts)) and recent mail.
 - **Invitations** carry their iCalendar part; once the account's calendar server is set up they're answered there ([caldav.md](caldav.md#invitations-and-guests)).
 
 ## New mail

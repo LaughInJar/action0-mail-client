@@ -84,6 +84,8 @@ const en = {
     connect: "Connect",
     connecting: "Connecting…",
     connected: (name: string) => `Calendars of ${name} are shown`,
+    connectedWithContacts: (name: string) =>
+      `Calendars and contacts of ${name} are used`,
     disconnect: "Stop showing these calendars",
     forgetCertificate: "Forget the trusted certificate",
     certificateForgotten: "The certificate is no longer trusted.",
@@ -104,6 +106,8 @@ const en = {
     looking: "Looking for the account’s calendars…",
     found: (host: string) =>
       `This account’s calendars are on ${host}. Show them in action0’s calendar too?`,
+    foundWithContacts: (host: string) =>
+      `This account’s calendars and contacts are on ${host}. Show them in action0 too?`,
     show: "Show them",
     notNow: "Not now",
   },
@@ -379,6 +383,8 @@ const de: typeof en = {
     connect: "Verbinden",
     connecting: "Wird verbunden …",
     connected: (name) => `Die Kalender von ${name} werden angezeigt`,
+    connectedWithContacts: (name) =>
+      `Die Kalender und Kontakte von ${name} werden verwendet`,
     disconnect: "Diese Kalender nicht mehr anzeigen",
     forgetCertificate: "Vertrauenswürdiges Zertifikat vergessen",
     certificateForgotten: "Dem Zertifikat wird nicht mehr vertraut.",
@@ -399,6 +405,8 @@ const de: typeof en = {
     looking: "Die Kalender des Kontos werden gesucht …",
     found: (host) =>
       `Die Kalender dieses Kontos liegen auf ${host}. Auch im Kalender von action0 anzeigen?`,
+    foundWithContacts: (host) =>
+      `Die Kalender und Kontakte dieses Kontos liegen auf ${host}. Auch in action0 anzeigen?`,
     show: "Anzeigen",
     notNow: "Jetzt nicht",
   },
