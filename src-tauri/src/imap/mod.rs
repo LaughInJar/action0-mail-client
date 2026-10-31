@@ -342,6 +342,25 @@ impl Imap {
         Ok((Credential::Token(tokens.access_token), true))
     }
 
+    /// The account's login as an HTTP `Authorization` value, for its
+    /// calendar server: Basic with the username and password, or Bearer
+    /// with a Yahoo/AOL access token (renewed first if `renew`); and
+    /// whether it's a token (worth renewing once when it's refused).
+    pub async fn http_authorization(
+        &self,
+        key: &str,
+        renew: bool,
+    ) -> Result<(String, bool), MailServerError> {
+        let account = self.account(key)?;
+        Ok(match self.credential(key, renew).await?.0 {
+            Credential::Password(password) => (
+                crate::caldav::basic_authorization(&account.settings.username, &password),
+                false,
+            ),
+            Credential::Token(token) => (format!("Bearer {token}"), true),
+        })
+    }
+
     fn fresh_token(&self, key: &str) -> Option<String> {
         let tokens = self.tokens.lock().expect("imap lock");
         let token = tokens.get(key)?;
@@ -723,12 +742,18 @@ pub async fn imap_reconnect(
     Ok(())
 }
 
-/// Forgets an account (and its trusted certificate), closing its connections.
+/// Forgets an account (and its trusted certificate), closing its
+/// connections; its calendar server's login goes too.
 #[tauri::command]
-pub async fn imap_remove(imap: State<'_, Imap>, key: String) -> Result<(), MailServerError> {
+pub async fn imap_remove(
+    imap: State<'_, Imap>,
+    caldav: State<'_, crate::caldav::Caldav>,
+    key: String,
+) -> Result<(), MailServerError> {
     #[cfg(desktop)]
     imap.idlers.stop(&key);
     imap.remove(&key);
+    caldav.remove(&key);
     Ok(())
 }
 

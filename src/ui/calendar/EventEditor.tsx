@@ -743,8 +743,12 @@ function Form({
               />
             </div>
             {values.guests.length > 0 &&
-              source.provider.guestNotices === "always" && (
-                <p className="text-xs text-zinc-500">{c.guestsNotified}</p>
+              source.provider.guestNotices !== "ask" && (
+                <p className="text-xs text-zinc-500">
+                  {source.provider.guestNotices === "always"
+                    ? c.guestsNotified
+                    : c.guestsNotNotified}
+                </p>
               )}
           </Row>
         )}

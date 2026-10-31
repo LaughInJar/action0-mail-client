@@ -44,6 +44,8 @@ pub enum ErrorKind {
 pub enum ServerRole {
     Imap,
     Smtp,
+    /// The calendar server (CalDAV).
+    Caldav,
 }
 
 /// A certificate the system doesn't trust, for the user to decide on.

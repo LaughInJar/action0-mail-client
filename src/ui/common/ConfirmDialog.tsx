@@ -6,6 +6,8 @@ import { useMailActions } from "../actions/useMailActions";
 import { useLabelActions } from "../labels/useLabelActions";
 import { useUnsubscribe } from "../reader/useUnsubscribe";
 import { useFocusTrap } from "./useFocusTrap";
+import { errorMessage } from "./errorMessage";
+import { useCalendarServers } from "../../data/calendarServers";
 import { useT } from "../../i18n/context";
 
 /** Shows the confirmation dialog while a destructive action waits for it. */
@@ -25,6 +27,7 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
   const labels = useLabelActions();
   const unsubscribe = useUnsubscribe();
   const subscriptions = useSubscriptions();
+  const calendarServers = useCalendarServers();
   const store = useUiStore();
   const t = useT();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -49,6 +52,23 @@ function ConfirmDialog({ confirm }: { confirm: ConfirmState }) {
           message: t.calendar.removed(action.name),
           tone: "info",
         });
+        break;
+      case "remove-calendar-server":
+        setConfirm(null);
+        calendarServers?.servers.remove(action.key).then(
+          () => {
+            store.getState().showToast({
+              message: t.calendar.server.removed(action.name),
+              tone: "info",
+            });
+          },
+          (cause: unknown) => {
+            store.getState().showToast({
+              message: errorMessage(cause, t),
+              tone: "error",
+            });
+          },
+        );
         break;
       case "delete-forever":
       case "empty":

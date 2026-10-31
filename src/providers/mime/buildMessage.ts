@@ -35,6 +35,14 @@ export interface OutgoingMessage {
   readonly messageId?: string;
   /** Where replies should go. */
   readonly replyTo?: readonly EmailAddress[];
+  /**
+   * An iCalendar part next to the text (iMIP): what calendar programs read
+   * as an invitation, update, cancellation or answer.
+   */
+  readonly calendar?: {
+    readonly method: "REQUEST" | "CANCEL" | "REPLY";
+    readonly ics: string;
+  };
 }
 
 /** Options of {@link buildMessage}. */
@@ -98,6 +106,14 @@ export function buildMessage(
   let body: Part = multipart("alternative", boundary(), [
     textPart("text/plain", message.text),
     textPart("text/html", message.html),
+    ...(message.calendar
+      ? [
+          textPart(
+            `text/calendar; method=${message.calendar.method}`,
+            message.calendar.ics,
+          ),
+        ]
+      : []),
   ]);
   if (inline.length > 0)
     body = multipart("related", boundary(), [body, ...inline.map(filePart)]);
@@ -130,7 +146,7 @@ function multipart(
   };
 }
 
-function textPart(type: "text/plain" | "text/html", text: string): Part {
+function textPart(type: string, text: string): Part {
   return {
     headers: [
       `Content-Type: ${type}; charset=UTF-8`,

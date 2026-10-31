@@ -349,7 +349,7 @@ export type EventTime =
 
 Timed events carry an ISO instant with offset plus the IANA zone they were planned in; all-day events carry local dates, and their end is exclusive (a one-day event ends the next day). `timeOf` turns either into epoch milliseconds (all-day dates at local midnight).
 
-`CalendarProvider` is the calendar counterpart of `MailProvider`, described in [providers.md](providers.md). Its flags say what a source supports: `canRespond`, `canEdit`, `guestNotices` (`ask`: guests hear about changes only when asked, Google; `always`: Microsoft tells them whatever you do), `maxReminders` and `reminderSync`. `access()` is `granted` or `missing`, because calendar access is optional per account; `requestAccess()` asks for it from a click.
+`CalendarProvider` is the calendar counterpart of `MailProvider`, described in [providers.md](providers.md). Its flags say what a source supports: `canRespond`, `canEdit`, `guestNotices` (`ask`: guests hear about changes only when asked, Google; `always`: Microsoft tells them whatever you do; `never`: nothing can tell them, a CalDAV server without scheduling and no account to send from), `maxReminders` and `reminderSync`. `access()` is `granted` or `missing`, because calendar access is optional per account; `requestAccess()` asks for it from a click, unless `setup` is `server` (CalDAV): then the UI opens the calendar server setup instead.
 
 ### Editing and series scopes
 
@@ -382,7 +382,7 @@ An event's `reminders` are minutes before its start, on-screen ones only, as the
 
 ### Invitations and answers
 
-A mail that carries a calendar invitation has `Message.invitation`: the event's iCalendar `uid` and the mail's `method` (`request`, `cancel` or `reply`). Gmail finds it in the mail's `text/calendar` part (`parseInvitation`, iMIP `METHOD` and the first `VEVENT`'s `UID`); Graph from Outlook's event messages. For a request, the reader looks the event up in the same account's calendar (`CalendarProvider.findInvitation(uid)`) and shows the answer buttons (`src/ui/reader/InvitationBar.tsx`). `respond(event, rsvp)` answers with an `Rsvp` (`accepted`, `tentative`, `declined`) and resolves to the updated event; `useRespond` (`src/data/calendar.ts`) applies the answer optimistically to every cached copy.
+A mail that carries a calendar invitation has `Message.invitation`: the event's iCalendar `uid` and the mail's `method` (`request`, `cancel` or `reply`). Gmail finds it in the mail's `text/calendar` part (`parseInvitation`, iMIP `METHOD` and the first `VEVENT`'s `UID`); Graph from Outlook's event messages. For a request, the reader looks the event up in the same account's calendar (`CalendarProvider.findInvitation(uid, signal, ics)`) and shows the answer buttons (`src/ui/reader/InvitationBar.tsx`). IMAP mails also carry the part itself (`Invitation.ics`): a CalDAV calendar then returns the invitation even when it isn't saved yet, as an event with `inCalendar: false` that answering puts into the default calendar; and a guest's answer (`reply`) is taken into the user's event with `applyReply` where the server doesn't do that. `respond(event, rsvp)` answers with an `Rsvp` (`accepted`, `tentative`, `declined`) and resolves to the updated event; `useRespond` (`src/data/calendar.ts`) applies the answer optimistically to every cached copy.
 
 ## Errors
 

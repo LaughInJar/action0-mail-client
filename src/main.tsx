@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { readConfig } from "./app/config";
+import { createCaldavServices } from "./app/caldav";
 import { createMailServerAccounts } from "./app/mailServers";
 import { IcsCalendarProvider } from "./providers/ical/IcsCalendarProvider";
 import { DEMO_ACCOUNT, DEMO_WORK_ACCOUNT } from "./providers/fake/module";
@@ -31,11 +32,13 @@ const native = inApp
       module.startNative(signedInPage),
     )
   : undefined;
+const caldav = native && createCaldavServices(native.caldav);
 const nativeServices = native && {
   native: { bridge: native.auth, accounts: native.accounts },
   fetch: native.fetch,
   android: native.platform.kind === "android",
   imap: native.imap,
+  ...(caldav ? { caldav } : {}),
 };
 const services = createAppServices({
   modules: createDefaultModules(
@@ -68,6 +71,7 @@ const services = createAppServices({
           new IcsCalendarProvider(subscription, { fetch: native.fetch }),
       }
     : {}),
+  ...(caldav ? { caldav } : {}),
 });
 
 // `?demo` in the URL connects the demo accounts that aren't yet (no

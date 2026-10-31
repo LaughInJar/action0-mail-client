@@ -22,6 +22,7 @@ import {
   type NativeStart,
 } from "./common";
 import { createNativeAiBackend } from "./ai";
+import { createNativeCaldavBridge } from "./caldav";
 import { createNativeImapBridge } from "./imap";
 import { createNativeFetch } from "./nativeFetch";
 
@@ -239,5 +240,6 @@ export async function startAndroid(
         imapKept.accounts.map((account) => [account.key, account]),
       ),
     },
+    caldav: createNativeCaldavBridge(invoke),
   };
 }

@@ -101,6 +101,8 @@ export function useEventActions(): EventActions {
     ): Promise<boolean | null> => {
       if (!guests) return false;
       if (source.provider.guestNotices === "always") return true;
+      // Nothing can tell them (no account sends calendar mail from there).
+      if (source.provider.guestNotices === "never") return false;
       const answer = await ask({
         title: c.notifyTitle(kind),
         message: c.notifyMessage,

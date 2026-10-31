@@ -79,6 +79,8 @@ export interface ProviderCapabilities {
   readonly editSenders: boolean;
   /** Supports {@link MailProvider.getRawMessage} (a message's headers and source). */
   readonly rawSource: boolean;
+  /** Supports {@link MailProvider.sendCalendarMail} (invitations and answers, iMIP). */
+  readonly calendarMail: boolean;
   /**
    * Where {@link MailProvider.updateSignature} keeps signatures: with the
    * provider (Gmail), or only in this browser (Graph can't read Outlook's).
@@ -176,6 +178,24 @@ export interface MailboxChange {
   readonly parentId?: MailboxId | null;
   readonly color?: MailboxColor | null;
   readonly hidden?: boolean;
+}
+
+/**
+ * A calendar mail (iMIP, RFC 6047): an invitation, update, cancellation or
+ * answer, with its iCalendar part next to the text. Sent right away, with
+ * a copy in Sent; no draft.
+ */
+export interface CalendarMail {
+  readonly from: EmailAddress;
+  readonly to: readonly EmailAddress[];
+  readonly subject: string;
+  readonly text: string;
+  readonly html: string;
+  readonly calendar: {
+    readonly method: "REQUEST" | "CANCEL" | "REPLY";
+    /** The VCALENDAR, with its `METHOD`. */
+    readonly ics: string;
+  };
 }
 
 /** A From address as the user set it up (its signature is saved apart). */
@@ -364,6 +384,9 @@ export interface MailProvider {
     draft: DraftInput & { readonly id: DraftId },
     signal?: AbortSignal,
   ): Promise<{ readonly messageId: MessageId }>;
+
+  /** Sends a calendar mail (only if {@link ProviderCapabilities.calendarMail}). */
+  sendCalendarMail(mail: CalendarMail, signal?: AbortSignal): Promise<void>;
 
   /**
    * People whose name or address matches `query`, best matches first (only

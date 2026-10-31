@@ -11,6 +11,10 @@
 //! trusts: a server that gets a proper certificate later keeps working, and
 //! an account's SMTP server on another host with a valid certificate needs
 //! no pin of its own.
+//!
+//! [`client_config`] gives the same checks as a rustls configuration, for
+//! HTTPS clients (calendar servers), with a [`Seen`] handle that tells
+//! what the last handshake saw.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -93,7 +97,7 @@ pub fn parse_fingerprint(text: &str) -> Option<[u8; 32]> {
 
 /// What a handshake saw.
 #[derive(Debug, Default)]
-struct Seen {
+struct Saw {
     /// The server's (end-entity) certificate.
     certificate: Option<CertificateDer<'static>>,
     /// The system refused it, and it isn't the pinned one.
@@ -108,7 +112,7 @@ struct Seen {
 struct Verifier {
     system: Arc<dyn ServerCertVerifier>,
     pin: Option<[u8; 32]>,
-    seen: Arc<Mutex<Seen>>,
+    seen: Arc<Mutex<Saw>>,
     provider: Arc<CryptoProvider>,
 }
 
@@ -176,10 +180,78 @@ impl ServerCertVerifier for Verifier {
     }
 }
 
+/// What the handshakes of a configuration saw (the last one), to tell a
+/// refused certificate from other failures.
+#[derive(Clone, Debug, Default)]
+pub struct Seen(Arc<Mutex<Saw>>);
+
+impl Seen {
+    /// The `untrusted` error for a certificate the checks refused.
+    pub fn refusal(&self, server: ServerRole) -> Option<MailServerError> {
+        let seen = self.0.lock().expect("tls lock");
+        if !seen.refused {
+            return None;
+        }
+        let certificate = details(seen.certificate.as_ref()?, server);
+        let mut error = MailServerError::new(
+            super::error::ErrorKind::Untrusted,
+            format!(
+                "The certificate of the {} server isn't trusted.",
+                match server {
+                    ServerRole::Imap => "IMAP",
+                    ServerRole::Smtp => "SMTP",
+                    ServerRole::Caldav => "calendar",
+                }
+            ),
+        )
+        .on(server);
+        error.certificate = Some(Box::new(certificate));
+        Some(error)
+    }
+
+    /// True if the handshake got through because of the pinned certificate.
+    pub fn used_pin(&self) -> bool {
+        self.0.lock().expect("tls lock").pinned
+    }
+}
+
+/// TLS settings (TLS 1.2 or later) with the system's checks plus `pin`,
+/// and what their handshakes see.
+pub fn client_config(pin: Option<&str>) -> Result<(ClientConfig, Seen), MailServerError> {
+    client_config_with(system_verifier()?, pin)
+}
+
+/// The same with other checks than the system's (tests: their own CA).
+pub fn client_config_with(
+    system: Arc<dyn ServerCertVerifier>,
+    pin: Option<&str>,
+) -> Result<(ClientConfig, Seen), MailServerError> {
+    let pin = match pin {
+        Some(text) => Some(parse_fingerprint(text).ok_or_else(|| {
+            MailServerError::tls("The trusted certificate isn't a SHA-256 fingerprint.")
+        })?),
+        None => None,
+    };
+    let seen = Seen::default();
+    let verifier = Verifier {
+        system,
+        pin,
+        seen: seen.0.clone(),
+        provider: provider(),
+    };
+    let config = ClientConfig::builder_with_provider(provider())
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .map_err(|error| MailServerError::tls(error.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    Ok((config, seen))
+}
+
 /// TLS for one connection (TLS 1.2 or later), and what its handshake saw.
 pub struct Connector {
     connector: TlsConnector,
-    seen: Arc<Mutex<Seen>>,
+    seen: Seen,
 }
 
 impl Connector {
@@ -193,25 +265,7 @@ impl Connector {
         system: Arc<dyn ServerCertVerifier>,
         pin: Option<&str>,
     ) -> Result<Self, MailServerError> {
-        let pin = match pin {
-            Some(text) => Some(parse_fingerprint(text).ok_or_else(|| {
-                MailServerError::tls("The trusted certificate isn't a SHA-256 fingerprint.")
-            })?),
-            None => None,
-        };
-        let seen = Arc::new(Mutex::new(Seen::default()));
-        let verifier = Verifier {
-            system,
-            pin,
-            seen: seen.clone(),
-            provider: provider(),
-        };
-        let config = ClientConfig::builder_with_provider(provider())
-            .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
-            .map_err(|error| MailServerError::tls(error.to_string()))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(verifier))
-            .with_no_client_auth();
+        let (config, seen) = client_config_with(system, pin)?;
         Ok(Self {
             connector: TlsConnector::from(Arc::new(config)),
             seen,
@@ -230,37 +284,15 @@ impl Connector {
             .map_err(|_| MailServerError::unreachable(format!("“{host}” isn't a server name.")))?;
         match self.connector.connect(name, stream).await {
             Ok(stream) => Ok(stream),
-            Err(error) => Err(self.refusal(server).unwrap_or_else(|| {
+            Err(error) => Err(self.seen.refusal(server).unwrap_or_else(|| {
                 MailServerError::tls(format!("TLS didn't work out: {error}")).on(server)
             })),
         }
     }
 
-    /// The `untrusted` error for a certificate the checks refused.
-    fn refusal(&self, server: ServerRole) -> Option<MailServerError> {
-        let seen = self.seen.lock().expect("tls lock");
-        if !seen.refused {
-            return None;
-        }
-        let certificate = details(seen.certificate.as_ref()?, server);
-        let mut error = MailServerError::new(
-            super::error::ErrorKind::Untrusted,
-            format!(
-                "The certificate of the {} server isn't trusted.",
-                match server {
-                    ServerRole::Imap => "IMAP",
-                    ServerRole::Smtp => "SMTP",
-                }
-            ),
-        )
-        .on(server);
-        error.certificate = Some(Box::new(certificate));
-        Some(error)
-    }
-
     /// True if the handshake got through because of the pinned certificate.
     pub fn used_pin(&self) -> bool {
-        self.seen.lock().expect("tls lock").pinned
+        self.seen.used_pin()
     }
 }
 

@@ -10,6 +10,8 @@ import { createAppServices } from "../app/services";
 import { readConfig } from "../app/config";
 import { createMailServerAccounts } from "../app/mailServers";
 import type { ImapBridge } from "../providers/imap/bridge";
+import type { CaldavBridge } from "../providers/caldav/bridge";
+import { createCaldavServices } from "../app/caldav";
 import { createImapModule } from "../providers/imap/module";
 import type { CalendarAccess } from "../core/calendar";
 import type { IcsFactory } from "../data/calendar";
@@ -65,6 +67,8 @@ export interface RenderAppOptions {
   readonly ai?: AiBackend;
   /** Mail server accounts through this bridge (as in the apps). */
   readonly imap?: ImapBridge;
+  /** Calendar servers (CalDAV), e.g. `fakeDavServer().bridge`; needs `imap` for account calendars. */
+  readonly caldav?: CaldavBridge;
 }
 
 /** Renders the whole app against the in-memory demo provider. */
@@ -86,6 +90,7 @@ export function renderApp({
   workData = () => createWorkDemoData(TEST_NOW),
   ai,
   imap,
+  caldav,
 }: RenderAppOptions = {}) {
   mockViewport(viewport);
   if (!reminders) turnRemindersOff(window.localStorage);
@@ -96,6 +101,7 @@ export function renderApp({
       ...(workAccount ? [DEMO_WORK_ACCOUNT] : []),
     ]);
 
+  const calendarServers = caldav && createCaldavServices(caldav);
   const services = createAppServices({
     modules: modules ?? [
       createDemoModule({
@@ -115,6 +121,9 @@ export function renderApp({
               bridge: imap,
               accounts: new Map(),
               settings: window.localStorage,
+              ...(calendarServers
+                ? { createCalendar: calendarServers.accountCalendar }
+                : {}),
             }),
           ]
         : []),
@@ -134,6 +143,7 @@ export function renderApp({
             }),
         }
       : {}),
+    ...(calendarServers ? { caldav: calendarServers } : {}),
     localStorage: window.localStorage,
     // No query persistence in UI tests: every test starts cold.
     sessionStorage: undefined,

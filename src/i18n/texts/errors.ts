@@ -77,6 +77,12 @@ const enReasons: Reasons = {
   icsBadUrl: () => "That isn’t a web address (https:// or webcal://).",
   calendarReadOnly: () => "Events in this calendar can’t be changed.",
   eventGone: () => "This event no longer exists.",
+  eventChanged: () =>
+    "This event was changed somewhere else meanwhile. The calendar shows it as it is now; try again.",
+  calendarServerMissing: () =>
+    "This account's calendar server isn't set up yet.",
+  calendarLoginRefused: (p) =>
+    `${p.service ?? "The calendar server"} refused the login. Set up the calendar server again with the right password.`,
 };
 
 const deReasons: Reasons = {
@@ -157,6 +163,12 @@ const deReasons: Reasons = {
   calendarReadOnly: () =>
     "Termine in diesem Kalender können nicht geändert werden.",
   eventGone: () => "Diesen Termin gibt es nicht mehr.",
+  eventChanged: () =>
+    "Dieser Termin wurde inzwischen woanders geändert. Der Kalender zeigt ihn jetzt so, wie er ist; versuch es noch einmal.",
+  calendarServerMissing: () =>
+    "Der Kalenderserver dieses Kontos ist noch nicht eingerichtet.",
+  calendarLoginRefused: (p) =>
+    `${p.service ?? "Der Kalenderserver"} hat die Anmeldung abgelehnt. Richte den Kalenderserver mit dem richtigen Passwort neu ein.`,
 };
 
 const en = {

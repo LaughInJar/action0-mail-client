@@ -1,10 +1,14 @@
 /** Building blocks of the Add account wizard's steps. */
 import { useState, type ReactNode } from "react";
+import type { MailServerCertificate } from "../../accounts/mailServer";
 import { useT } from "../../i18n/context";
 import { Icon } from "../common/Icon";
 
 export const PRIMARY_BUTTON =
   "w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60 pointer-coarse:min-h-11";
+
+export const SECONDARY_BUTTON =
+  "w-full rounded-lg border border-zinc-300 px-4 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
 
 export function StepFrame({
   titleId,
@@ -118,5 +122,71 @@ export function CopyableValue({ value }: { value: string }) {
         </button>
       )}
     </span>
+  );
+}
+
+/** A certificate the system doesn't trust: its details, trust it or not. */
+export function CertificateStep({
+  titleId,
+  certificate,
+  busy,
+  onTrust,
+  onCancel,
+  error,
+}: {
+  readonly titleId: string;
+  readonly certificate: MailServerCertificate;
+  readonly busy: boolean;
+  readonly onTrust: () => void;
+  readonly onCancel: () => void;
+  readonly error: string | undefined;
+}) {
+  const t = useT();
+  const c = t.imap.certificate;
+  const date = (iso: string) =>
+    new Intl.DateTimeFormat(t.locale, { dateStyle: "medium" }).format(
+      new Date(iso),
+    );
+  const host = certificate.names[0] ?? certificate.subject;
+  return (
+    <StepFrame titleId={titleId} title={c.title} onBack={onCancel}>
+      <p className="text-sm">{c.text(host)}</p>
+      <dl className="space-y-2 rounded-lg bg-zinc-100 p-3 text-sm dark:bg-zinc-800">
+        <div>
+          <dt className="font-medium">{c.fingerprint}</dt>
+          <dd className="font-mono text-xs break-all">{certificate.sha256}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">{c.subject}</dt>
+          <dd className="break-words">
+            {[certificate.subject, ...certificate.names]
+              .filter((value, index, all) => all.indexOf(value) === index)
+              .join(", ")}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium">{c.issuer}</dt>
+          <dd className="break-words">{certificate.issuer}</dd>
+        </div>
+        <div>
+          <dd>
+            {c.valid(date(certificate.notBefore), date(certificate.notAfter))}
+          </dd>
+        </div>
+      </dl>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">{c.check}</p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onTrust}
+        className={PRIMARY_BUTTON}
+      >
+        {busy ? t.imap.connecting : c.trust}
+      </button>
+      <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
+        {t.common.cancel}
+      </button>
+      <ErrorNote message={error} />
+    </StepFrame>
   );
 }

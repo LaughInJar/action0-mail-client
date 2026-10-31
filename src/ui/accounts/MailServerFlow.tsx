@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useMailServerAccounts } from "../../accounts/context";
 import {
   isMailServerError,
@@ -11,11 +11,14 @@ import {
   type MailServerSettings,
 } from "../../accounts/mailServer";
 import type { AccountHandle } from "../../accounts/types";
+import { useCalendarServers } from "../../data/calendarServers";
 import { useT, type I18n } from "../../i18n/context";
 import {
+  CertificateStep,
   ErrorNote,
   ExternalLink,
   PRIMARY_BUTTON,
+  SECONDARY_BUTTON,
   StepFrame,
 } from "./wizardParts";
 
@@ -27,8 +30,6 @@ const OAUTH_NAMES: Readonly<Record<MailServerOAuth, string>> = {
 
 const FIELD =
   "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 pointer-coarse:min-h-11";
-const SECONDARY_BUTTON =
-  "w-full rounded-lg border border-zinc-300 px-4 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
 
 /** Props of {@link MailServerFlow}. */
 export interface MailServerFlowProps {
@@ -72,8 +73,18 @@ export function MailServerFlow({
   const [error, setError] = useState<string>();
   const addressId = useId();
   const nameId = useId();
+  const calendarServers = useCalendarServers();
+  const [added, setAdded] = useState<AccountHandle>();
 
   if (!servers) return null;
+  if (added)
+    return (
+      <CalendarStep
+        titleId={titleId}
+        handle={added}
+        onDone={() => onAdded(added)}
+      />
+    );
 
   const lookUp = async () => {
     const trimmed = address.trim();
@@ -103,7 +114,11 @@ export function MailServerFlow({
           setSettings(undefined);
           setDiscovery(undefined);
         }}
-        onAdded={onAdded}
+        onAdded={async (handle) => {
+          // Its calendars next, where the app has calendar servers.
+          if (calendarServers) setAdded(handle);
+          else await onAdded(handle);
+        }}
       />
     );
 
@@ -179,6 +194,118 @@ export function MailServerFlow({
         )}
         <ErrorNote message={error} />
       </form>
+    </StepFrame>
+  );
+}
+
+/**
+ * After the mail: the account's calendar server is looked for (with the
+ * mail login), and if one answers, the user decides whether its calendars
+ * show. Nothing found, or a server that wants more: done (they can be set
+ * up later in the calendar).
+ */
+function CalendarStep({
+  titleId,
+  handle,
+  onDone,
+}: {
+  readonly titleId: string;
+  readonly handle: AccountHandle;
+  readonly onDone: () => Promise<void>;
+}) {
+  const t = useT();
+  const c = t.calendar.calendarStep;
+  const sources = useCalendarServers();
+  const mailServers = useMailServerAccounts();
+  const [found, setFound] = useState<string>();
+  const done = useRef(false);
+  const finish = useRef(onDone);
+  useEffect(() => {
+    finish.current = onDone;
+  });
+  const key = handle.account.id;
+
+  useEffect(() => {
+    if (!sources) return;
+    const run = { skipped: false };
+    void (async () => {
+      try {
+        const info = await mailServers?.info(key);
+        const candidates = await sources.servers.discover(
+          handle.account.email,
+          info?.settings.imap.host,
+        );
+        if (candidates.length === 0) throw new Error("none");
+        const server = await sources.servers.connect({
+          key,
+          urls: candidates.map((candidate) => candidate.url),
+          login: { sameAsMail: true },
+        });
+        // Skipped meanwhile: not wanted.
+        if (run.skipped || done.current) {
+          await sources.servers.remove(key);
+          return;
+        }
+        setFound(new URL(server.home).host);
+      } catch {
+        if (!run.skipped && !done.current) {
+          done.current = true;
+          await finish.current();
+        }
+      }
+    })();
+    return () => {
+      run.skipped = true;
+    };
+  }, [sources, mailServers, key, handle.account.email]);
+
+  const end = async (keep: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (!keep) await sources?.servers.remove(key).catch(() => undefined);
+    await finish.current();
+  };
+
+  return (
+    <StepFrame titleId={titleId} title={handle.account.email}>
+      {found === undefined ? (
+        <>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400" role="status">
+            {c.looking}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              void end(false);
+            }}
+            className={SECONDARY_BUTTON}
+          >
+            {c.notNow}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-sm">{c.found(found)}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void end(true);
+            }}
+            className={PRIMARY_BUTTON}
+          >
+            {c.show}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void end(false);
+            }}
+            className={SECONDARY_BUTTON}
+          >
+            {c.notNow}
+          </button>
+        </>
+      )}
     </StepFrame>
   );
 }
@@ -556,72 +683,6 @@ function OAuthSignIn({
         </button>
       </form>
     </details>
-  );
-}
-
-/** A certificate the system doesn't trust: its details, trust it or not. */
-function CertificateStep({
-  titleId,
-  certificate,
-  busy,
-  onTrust,
-  onCancel,
-  error,
-}: {
-  readonly titleId: string;
-  readonly certificate: MailServerCertificate;
-  readonly busy: boolean;
-  readonly onTrust: () => void;
-  readonly onCancel: () => void;
-  readonly error: string | undefined;
-}) {
-  const t = useT();
-  const c = t.imap.certificate;
-  const date = (iso: string) =>
-    new Intl.DateTimeFormat(t.locale, { dateStyle: "medium" }).format(
-      new Date(iso),
-    );
-  const host = certificate.names[0] ?? certificate.subject;
-  return (
-    <StepFrame titleId={titleId} title={c.title} onBack={onCancel}>
-      <p className="text-sm">{c.text(host)}</p>
-      <dl className="space-y-2 rounded-lg bg-zinc-100 p-3 text-sm dark:bg-zinc-800">
-        <div>
-          <dt className="font-medium">{c.fingerprint}</dt>
-          <dd className="font-mono text-xs break-all">{certificate.sha256}</dd>
-        </div>
-        <div>
-          <dt className="font-medium">{c.subject}</dt>
-          <dd className="break-words">
-            {[certificate.subject, ...certificate.names]
-              .filter((value, index, all) => all.indexOf(value) === index)
-              .join(", ")}
-          </dd>
-        </div>
-        <div>
-          <dt className="font-medium">{c.issuer}</dt>
-          <dd className="break-words">{certificate.issuer}</dd>
-        </div>
-        <div>
-          <dd>
-            {c.valid(date(certificate.notBefore), date(certificate.notAfter))}
-          </dd>
-        </div>
-      </dl>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">{c.check}</p>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={onTrust}
-        className={PRIMARY_BUTTON}
-      >
-        {busy ? t.imap.connecting : c.trust}
-      </button>
-      <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
-        {t.common.cancel}
-      </button>
-      <ErrorNote message={error} />
-    </StepFrame>
   );
 }
 

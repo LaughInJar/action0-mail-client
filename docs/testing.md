@@ -40,18 +40,19 @@ jsdom is the default; a file opts into Node with a comment (see [Unit tests](#un
 
 The helpers in `src/test/`:
 
-| File                 | What it gives you                                                                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                     |
-| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                      |
-| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                  |
-| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                                                                                               |
-| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                              |
-| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                    |
-| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                           |
-| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                               |
-| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                  |
-| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()` |
+| File                 | What it gives you                                                                                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                        |
+| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                         |
+| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                     |
+| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                                                                                                  |
+| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                                 |
+| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                       |
+| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                              |
+| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                                  |
+| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                     |
+| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`    |
+| `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls) and `icsEvent()` |
 
 Run all tests with `npm test`, keep them running with `npm run test:watch`, or run a single file or test with `npx vitest run src/ui/actions.test.tsx -t "rolls back"`.
 
@@ -155,6 +156,8 @@ It returns Testing Library's render result plus `services` (the `AppServices`: a
 | `platform`        | the web app's                  | For example `fakeDesktopPlatform().platform`                                                                                            |
 | `setups`          | none                           | Runtime provider setups, for the Add account wizard                                                                                     |
 | `modules`         | one demo module                | Replaces the provider modules entirely; `data`, `calendar` and the other demo options then don't apply                                  |
+| `imap`            | none                           | Mail server accounts through this bridge (`fakeImapBridge().bridge`), as in the apps                                                    |
+| `caldav`          | none                           | Calendar servers through this bridge (`fakeDavServer().bridge`): calendar-only servers, and with `imap` the accounts' calendars         |
 
 Some things are fixed: the demo module answers without latency (`latencyMs: 0`) and without new mail arriving (`arrivalEveryMs: false`), and the query cache isn't persisted (`sessionStorage: undefined`), so every test starts cold. When the test finishes, the router is disposed and the query cache cleared.
 
@@ -294,6 +297,7 @@ cargo test
 | `shell.rs`                | Finding `mailto:` links among the start arguments                                                                                                                                                                                                                                             |
 | `files.rs`                | Keeping file names inside their folder                                                                                                                                                                                                                                                        |
 | `background.rs`           | The Android background check against a local mock server (`wiremock`): new Gmail mail notified once, Graph's answer, grouping, first sight only counting, nothing while off or without a token, UTC times                                                                                     |
+| `caldav/`                 | Calendar servers: the host allow-list, the login header, redirects within the hosts, discovery order, the setup walk against a local mock server, pinning                                                                                                                                     |
 | `imap/`                   | IMAP sessions against a scripted server over an in-memory stream (`imap/testing.rs`): logins, STARTTLS, capabilities, folders, listing, search, moves, appends, sync; certificate pinning with certificates made in the test (`rcgen`); settings lookup against `wiremock`; the SMTP dialogue |
 
 The IMAP module also has live tests against a real server, skipped unless `ACTION0_IMAP_TEST` is set (`imap/live.rs` lists the variables: host, port, security, user, password, and an SMTP server to send through). Dovecot in Docker works well for this: run them with `cargo test --locked -- --ignored live`.

@@ -43,6 +43,7 @@ import type {
   NewMailbox,
   ProviderCapabilities,
   SenderSettings,
+  CalendarMail,
 } from "../../core/provider";
 import {
   buildMessage,
@@ -140,6 +141,7 @@ export class ImapProvider implements MailProvider {
       senders: true,
       editSenders: true,
       rawSource: true,
+      calendarMail: true,
       signatureStore: "browser",
       // Like mail programs (Thunderbird): Sent, Trash, Junk, in the UI's language.
       roleNames: "client",
@@ -367,6 +369,40 @@ export class ImapProvider implements MailProvider {
    * Sends over SMTP (without the Bcc header), keeps a copy in Sent (with
    * it) unless the server does that itself, and deletes the draft.
    */
+  /** Over SMTP, with a copy in Sent (unless the server keeps one). */
+  async sendCalendarMail(
+    mail: CalendarMail,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const message = encoder.encode(
+      buildMessage({
+        ...mail,
+        cc: [],
+        bcc: [],
+        date: new Date(),
+        messageId: newMessageId(mail.from.address),
+      }),
+    );
+    try {
+      await this.#options.bridge.send(
+        this.#options.key,
+        {
+          from: mail.from.address,
+          to: mail.to.map((recipient) => recipient.address),
+        },
+        message,
+      );
+    } catch (error) {
+      throw this.#error(error);
+    }
+    if (!this.#options.savesSent)
+      await this.#append(
+        await this.#roleFolder("sent", signal),
+        ["\\Seen"],
+        message,
+      );
+  }
+
   async sendDraft(
     draft: DraftInput & { readonly id: DraftId },
     signal?: AbortSignal,

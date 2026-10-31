@@ -55,7 +55,7 @@ An IMAP account is a folder account, like Outlook:
 - **Conversations** are built from Message-ID / In-Reply-To / References (or the server's thread ids); opening one also finds your replies in Sent and messages in Archive.
 - **Sending** builds the mail with `buildMessage`, sends it over SMTP without the Bcc header, and keeps a copy with it in Sent (Gmail's SMTP keeps its own). Drafts live in Drafts, replaced on every save.
 - **Signatures** are kept in the app; From is the account's address with the name given when adding it; address suggestions come from recent mail.
-- **Invitations** show without answer buttons until CalDAV arrives.
+- **Invitations** carry their iCalendar part; once the account's calendar server is set up they're answered there ([caldav.md](caldav.md#invitations-and-guests)).
 
 ## New mail
 
@@ -75,4 +75,4 @@ The app checks every account every 60 s in front and every 5 minutes in the back
 - On servers without UIDPLUS, moved or deleted messages stay marked `\Deleted` (and hidden in action0) when another program has marked other messages in that folder, until it's expunged.
 - One trusted certificate per account.
 - Yahoo/AOL OAuth needs a registration Yahoo approved.
-- CalDAV (calendars, answering invitations) is a separate feature.
+- Calendars come from the account's calendar server (CalDAV), set up separately: [caldav.md](caldav.md).

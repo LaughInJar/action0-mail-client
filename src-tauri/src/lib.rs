@@ -3,6 +3,7 @@
 
 mod ai;
 mod background;
+pub mod caldav;
 mod files;
 pub mod imap;
 #[cfg(target_os = "android")]
@@ -39,8 +40,8 @@ pub fn run() {
         });
         #[cfg(target_os = "android")]
         let keys = Box::new(mobile::KeystoreKey(app.handle().clone()));
-        // The accounts, IMAP accounts and the AI assistant's keys: three
-        // files, one key.
+        // The accounts, IMAP accounts, calendar servers and the AI
+        // assistant's keys: four files, one key.
         let keys: std::sync::Arc<dyn vault::KeyStore> =
             std::sync::Arc::new(vault::SharedKey::new(keys));
         app.manage(oauth::Auth::new(
@@ -51,6 +52,10 @@ pub fn run() {
             http.clone(),
             vault::LazyVault::new(data.join("imap.vault"), keys.clone()),
         ));
+        app.manage(caldav::Caldav::new(vault::LazyVault::new(
+            data.join("caldav.vault"),
+            keys.clone(),
+        )));
         app.manage(ai::Ai::new(
             http.clone(),
             vault::LazyVault::new(data.join("ai.vault"), keys),
@@ -93,6 +98,13 @@ pub fn run() {
             imap::imap_call,
             imap::imap_bytes,
             imap::imap_append,
+            caldav::caldav_discover,
+            caldav::caldav_connect,
+            caldav::caldav_servers,
+            caldav::caldav_remove,
+            caldav::caldav_forget_certificate,
+            caldav::caldav_request,
+            caldav::caldav_abort,
             shell::shell_configure,
             shell::shell_set_unread,
             shell::shell_take_compose,
@@ -129,6 +141,13 @@ pub fn run() {
         imap::imap_call,
         imap::imap_bytes,
         imap::imap_append,
+        caldav::caldav_discover,
+        caldav::caldav_connect,
+        caldav::caldav_servers,
+        caldav::caldav_remove,
+        caldav::caldav_forget_certificate,
+        caldav::caldav_request,
+        caldav::caldav_abort,
         mobile::mobile_info,
         mobile::mobile_open_file,
         mobile::mobile_share_file,

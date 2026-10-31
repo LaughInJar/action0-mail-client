@@ -1,6 +1,13 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { IcsSubscription } from "../../core/calendar";
-import { choiceKey, isShown, type SourceStatus } from "../../data/calendar";
+import {
+  choiceKey,
+  isShown,
+  type CalendarSource,
+  type SourceStatus,
+} from "../../data/calendar";
+import { useCalendarServers } from "../../data/calendarServers";
 import { useT } from "../../i18n/context";
 import { useRouter, useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
@@ -9,6 +16,7 @@ import { IconButton } from "../common/IconButton";
 import { AppSwitch } from "../layout/AppSwitch";
 import { ThemeSwitch } from "../layout/ThemeSwitch";
 import { APP_TITLE } from "../sync/useDocumentTitle";
+import { CalendarServerDialog } from "./CalendarServerDialog";
 import { IcsDialog } from "./IcsDialog";
 import { MiniMonth } from "./MiniMonth";
 
@@ -36,8 +44,12 @@ export function CalendarSidebar({
   const t = useT();
   const router = useRouter();
   const [dialog, setDialog] = useState<
-    { mode: "add" } | { mode: "edit"; subscription: IcsSubscription } | null
+    | { mode: "add" }
+    | { mode: "edit"; subscription: IcsSubscription }
+    | { mode: "server"; source?: CalendarSource }
+    | null
   >(null);
+  const calendarServers = useCalendarServers();
 
   return (
     <nav
@@ -95,6 +107,9 @@ export function CalendarSidebar({
             onEdit={(subscription) => {
               setDialog({ mode: "edit", subscription });
             }}
+            onServer={(source) => {
+              setDialog({ mode: "server", source });
+            }}
           />
         ))}
         <div className="px-2 pt-1 pb-3">
@@ -108,16 +123,46 @@ export function CalendarSidebar({
             <Icon name="plus" className="size-3.5" />
             {t.calendar.addByUrl}
           </button>
+          <button
+            type="button"
+            disabled={!calendarServers}
+            onClick={() => {
+              setDialog({ mode: "server" });
+            }}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200/60 hover:text-zinc-900 disabled:opacity-50 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 pointer-coarse:min-h-11"
+          >
+            <Icon name="plus" className="size-3.5" />
+            {t.calendar.addServer}
+          </button>
+          {!calendarServers && (
+            <p className="px-2 text-[0.7rem] text-zinc-500">
+              {t.calendar.addServerAppsOnly}
+            </p>
+          )}
         </div>
       </div>
-      {dialog && (
-        <IcsDialog
-          {...(dialog.mode === "edit" ? { editing: dialog.subscription } : {})}
-          onClose={() => {
-            setDialog(null);
-          }}
-        />
-      )}
+      {/* On the page itself: in the phones' drawer, a dialog would only be as wide as the drawer. */}
+      {dialog &&
+        createPortal(
+          dialog.mode === "server" ? (
+            <CalendarServerDialog
+              {...(dialog.source ? { source: dialog.source } : {})}
+              onClose={() => {
+                setDialog(null);
+              }}
+            />
+          ) : (
+            <IcsDialog
+              {...(dialog.mode === "edit"
+                ? { editing: dialog.subscription }
+                : {})}
+              onClose={() => {
+                setDialog(null);
+              }}
+            />
+          ),
+          document.body,
+        )}
     </nav>
   );
 }
@@ -125,9 +170,12 @@ export function CalendarSidebar({
 function SourceSection({
   status,
   onEdit,
+  onServer,
 }: {
   status: SourceStatus;
   onEdit: (subscription: IcsSubscription) => void;
+  /** Opens the calendar server's setup (set up, change, remove). */
+  onServer: (source: CalendarSource) => void;
 }) {
   const t = useT();
   const c = t.calendar;
@@ -159,6 +207,29 @@ function SourceSection({
         <h3 className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-500">
           {source.label}
         </h3>
+        {source.server && (
+          <>
+            {source.kind === "caldav" && (
+              <>
+                <span className="sr-only">{c.serverMarker}</span>
+                <span
+                  aria-hidden="true"
+                  title={c.serverMarker}
+                  className="text-[0.6rem] font-semibold text-zinc-400 uppercase"
+                >
+                  {c.serverBadge}
+                </span>
+              </>
+            )}
+            <IconButton
+              label={c.serverSettingsOf(source.label)}
+              icon="pencil"
+              onClick={() => {
+                onServer(source);
+              }}
+            />
+          </>
+        )}
         {subscription && (
           <>
             <span className="sr-only">{c.icsMarker}</span>
@@ -200,14 +271,21 @@ function SourceSection({
       )}
       {signedIn && access === "missing" && (
         <div className="space-y-1 px-2 py-1">
-          <p className="text-xs text-zinc-500">{c.allowHint}</p>
+          <p className="text-xs text-zinc-500">
+            {source.provider.setup === "server" ? c.setUpHint : c.allowHint}
+          </p>
           <button
             type="button"
             disabled={allowing}
-            onClick={allow}
+            onClick={() => {
+              if (source.provider.setup === "server") onServer(source);
+              else allow();
+            }}
             className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60 pointer-coarse:min-h-11"
           >
-            {c.allowCalendar}
+            {source.provider.setup === "server"
+              ? c.setUpCalendar
+              : c.allowCalendar}
           </button>
         </div>
       )}

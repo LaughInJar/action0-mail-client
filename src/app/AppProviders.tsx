@@ -9,6 +9,7 @@ import {
 import { AiServicesContext } from "../ai/context";
 import { installRefreshOnInteraction } from "../auth/refreshOnInteraction";
 import { IcsFactoryContext } from "../data/calendar";
+import { CalendarServersContext } from "../data/calendarServers";
 import { I18nProvider } from "../i18n/I18nProvider";
 import { PlatformContext } from "../platform/context";
 import { CommandRegistryContext } from "../keyboard/context";
@@ -61,7 +62,11 @@ export function AppProviders({
                 <PlatformContext value={services.platform}>
                   <AiServicesContext value={services.ai}>
                     <MailServerAccountsContext value={services.mailServers}>
-                      <I18nProvider>{children}</I18nProvider>
+                      <CalendarServersContext
+                        value={services.calendarServers ?? null}
+                      >
+                        <I18nProvider>{children}</I18nProvider>
+                      </CalendarServersContext>
                     </MailServerAccountsContext>
                   </AiServicesContext>
                 </PlatformContext>

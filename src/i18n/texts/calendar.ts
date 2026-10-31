@@ -49,6 +49,64 @@ const en = {
 
   // Adding an iCal calendar.
   addByUrl: "Add calendar by address…",
+  // Calendar servers (CalDAV).
+  addServer: "Add calendar server…",
+  addServerAppsOnly:
+    "Calendar servers (CalDAV) work in the desktop and Android apps.",
+  setUpCalendar: "Set up calendar",
+  setUpHint: "Show this account’s calendars from its calendar server.",
+  serverBadge: "CalDAV",
+  serverMarker: "Calendar server (CalDAV)",
+  serverSettingsOf: (name: string) => `Calendar server of ${name}`,
+  guestsNotNotified:
+    "Guests won’t be notified: no account in action0 sends mail from your address on this calendar.",
+  answeringAdds: (calendar: string) =>
+    `Not in your calendar yet: answering adds it to “${calendar}”.`,
+  replyApplied: "The guest’s answer is now in your event.",
+  server: {
+    titleAccount: (address: string) => `Calendars of ${address}`,
+    titleNew: "Add calendar server",
+    titleEdit: (name: string) => `Calendar server: ${name}`,
+    looking: "Looking for the calendar server…",
+    found: (where: string) => `Found: ${where}.`,
+    notFound:
+      "No calendar server was found for this address. Enter its address if you know it.",
+    url: "Server address",
+    urlHint:
+      "The server’s web address, e.g. https://cloud.example.com (Nextcloud: …/remote.php/dav).",
+    name: "Name",
+    sameLogin: "Same login as the mail",
+    otherLogin: "Another login",
+    username: "User name",
+    password: "Password",
+    passwordAgain: "Enter the password again to save changes.",
+    appPassword: "Create an app password",
+    connect: "Connect",
+    connecting: "Connecting…",
+    connected: (name: string) => `Calendars of ${name} are shown`,
+    disconnect: "Stop showing these calendars",
+    forgetCertificate: "Forget the trusted certificate",
+    certificateForgotten: "The certificate is no longer trusted.",
+    removeTitle: (name: string) => `Remove ${name}?`,
+    removeMessage:
+      "Its calendars disappear from action0. They stay on the server.",
+    disconnectTitle: (name: string) => `Stop showing the calendars of ${name}?`,
+    removed: (name: string) => `Removed ${name}`,
+    errors: {
+      auth: "The server refused the login. Check the user name and password; many providers need an app password.",
+      notFound: "No calendar server answered at this address.",
+      unreachable: (host: string) => `${host} couldn’t be reached.`,
+      tls: (host: string) => `No secure connection to ${host}.`,
+      server: (message: string) => `The server said: ${message}`,
+    },
+  },
+  calendarStep: {
+    looking: "Looking for the account’s calendars…",
+    found: (host: string) =>
+      `This account’s calendars are on ${host}. Show them in action0’s calendar too?`,
+    show: "Show them",
+    notNow: "Not now",
+  },
   addTitle: "Add calendar by address",
   editTitle: (name: string) => `Edit “${name}”`,
   url: "Address (iCal)",
@@ -116,6 +174,17 @@ const en = {
   noClash: "Nothing else at that time.",
   invitationCancelled: "This event was cancelled.",
   invitationReply: "An answer to an invitation.",
+  // Mails action0 sends for calendar servers that don't (iMIP).
+  itip: {
+    request: (title: string) => `Invitation: ${title}`,
+    update: (title: string) => `Updated invitation: ${title}`,
+    cancel: (title: string) => `Cancelled: ${title}`,
+    reply: (name: string, answer: Rsvp, title: string) =>
+      `${name} ${answer === "accepted" ? "accepted" : answer === "tentative" ? "might come" : "declined"}: ${title}`,
+    when: "When",
+    where: "Where",
+    organizer: "Organizer",
+  },
   lookingUp: "Looking up the event…",
   allowToAnswer: "Allow calendar access to answer here.",
 
@@ -275,6 +344,64 @@ const de: typeof en = {
   removed: (name) => `„${name}“ entfernt`,
 
   addByUrl: "Kalender über Adresse hinzufügen …",
+  addServer: "Kalenderserver hinzufügen …",
+  addServerAppsOnly:
+    "Kalenderserver (CalDAV) gibt es in der Desktop- und der Android-App.",
+  setUpCalendar: "Kalender einrichten",
+  setUpHint: "Zeigt die Kalender dieses Kontos von seinem Kalenderserver.",
+  serverBadge: "CalDAV",
+  serverMarker: "Kalenderserver (CalDAV)",
+  serverSettingsOf: (name) => `Kalenderserver von ${name}`,
+  guestsNotNotified:
+    "Die Gäste werden nicht informiert: Kein Konto in action0 sendet Mails von deiner Adresse in diesem Kalender.",
+  answeringAdds: (calendar) =>
+    `Noch nicht in deinem Kalender: Deine Antwort trägt ihn in „${calendar}“ ein.`,
+  replyApplied: "Die Antwort des Gastes steht jetzt in deinem Termin.",
+  server: {
+    titleAccount: (address) => `Kalender von ${address}`,
+    titleNew: "Kalenderserver hinzufügen",
+    titleEdit: (name) => `Kalenderserver: ${name}`,
+    looking: "Kalenderserver wird gesucht …",
+    found: (where) => `Gefunden: ${where}.`,
+    notFound:
+      "Für diese Adresse wurde kein Kalenderserver gefunden. Gib seine Adresse ein, wenn du sie kennst.",
+    url: "Serveradresse",
+    urlHint:
+      "Die Webadresse des Servers, z. B. https://cloud.example.com (Nextcloud: …/remote.php/dav).",
+    name: "Name",
+    sameLogin: "Dieselbe Anmeldung wie für die Mails",
+    otherLogin: "Eine andere Anmeldung",
+    username: "Benutzername",
+    password: "Passwort",
+    passwordAgain:
+      "Gib das Passwort noch einmal ein, um Änderungen zu speichern.",
+    appPassword: "App-Passwort erstellen",
+    connect: "Verbinden",
+    connecting: "Wird verbunden …",
+    connected: (name) => `Die Kalender von ${name} werden angezeigt`,
+    disconnect: "Diese Kalender nicht mehr anzeigen",
+    forgetCertificate: "Vertrauenswürdiges Zertifikat vergessen",
+    certificateForgotten: "Dem Zertifikat wird nicht mehr vertraut.",
+    removeTitle: (name) => `${name} entfernen?`,
+    removeMessage:
+      "Seine Kalender verschwinden aus action0. Auf dem Server bleiben sie.",
+    disconnectTitle: (name) => `Die Kalender von ${name} nicht mehr anzeigen?`,
+    removed: (name) => `${name} entfernt`,
+    errors: {
+      auth: "Der Server hat die Anmeldung abgelehnt. Prüf Benutzername und Passwort; viele Anbieter brauchen ein App-Passwort.",
+      notFound: "Unter dieser Adresse hat kein Kalenderserver geantwortet.",
+      unreachable: (host) => `${host} war nicht erreichbar.`,
+      tls: (host) => `Keine sichere Verbindung zu ${host}.`,
+      server: (message) => `Der Server meldet: ${message}`,
+    },
+  },
+  calendarStep: {
+    looking: "Die Kalender des Kontos werden gesucht …",
+    found: (host) =>
+      `Die Kalender dieses Kontos liegen auf ${host}. Auch im Kalender von action0 anzeigen?`,
+    show: "Anzeigen",
+    notNow: "Jetzt nicht",
+  },
   addTitle: "Kalender über Adresse hinzufügen",
   editTitle: (name) => `„${name}“ bearbeiten`,
   url: "Adresse (iCal)",
@@ -338,6 +465,16 @@ const de: typeof en = {
   noClash: "Zu dieser Zeit ist sonst nichts.",
   invitationCancelled: "Dieser Termin wurde abgesagt.",
   invitationReply: "Eine Antwort auf eine Einladung.",
+  itip: {
+    request: (title) => `Einladung: ${title}`,
+    update: (title) => `Geänderte Einladung: ${title}`,
+    cancel: (title) => `Abgesagt: ${title}`,
+    reply: (name, answer, title) =>
+      `${name} ${answer === "accepted" ? "hat zugesagt" : answer === "tentative" ? "kommt vielleicht" : "hat abgesagt"}: ${title}`,
+    when: "Wann",
+    where: "Wo",
+    organizer: "Organisation",
+  },
   lookingUp: "Termin wird gesucht …",
   allowToAnswer: "Erlaube den Kalenderzugriff, um hier zu antworten.",
 

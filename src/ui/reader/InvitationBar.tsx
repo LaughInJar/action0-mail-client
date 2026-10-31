@@ -1,14 +1,19 @@
 import { useState, type ReactNode } from "react";
 import type { AccountId } from "../../core/ids";
 import type { Message } from "../../core/model";
+import type { Calendar, CalendarEvent } from "../../core/calendar";
 import {
+  useAppliedReply,
   useCalendarData,
+  useCalendarList,
   useCalendarSources,
   useInvitation,
   useSourceState,
+  type CalendarSource,
 } from "../../data/calendar";
 import { useT } from "../../i18n/context";
-import { useUiStore } from "../../state/context";
+import { useUi, useUiStore } from "../../state/context";
+import { CalendarServerDialog } from "../calendar/CalendarServerDialog";
 import { addDays, dayKey, parseDay, spanOf } from "../calendar/dates";
 import { titleOf, whenText } from "../calendar/format";
 import { RsvpButtons } from "../calendar/RsvpButtons";
@@ -34,6 +39,7 @@ export function InvitationBar({
       accountId={accountId}
       uid={invitation.uid}
       method={invitation.method}
+      {...(invitation.ics ? { ics: invitation.ics } : {})}
     />
   );
 }
@@ -42,10 +48,13 @@ function InvitationContent({
   accountId,
   uid,
   method,
+  ics,
 }: {
   accountId: AccountId;
   uid: string;
   method: "request" | "cancel" | "reply";
+  /** The mail's iCalendar part, for providers that answer from it. */
+  ics?: string;
 }) {
   const t = useT();
   const c = t.calendar;
@@ -57,21 +66,40 @@ function InvitationContent({
   const { data: event, isPending } = useInvitation(
     method === "request" ? source : undefined,
     uid,
+    ics,
+  );
+  const { data: applied } = useAppliedReply(
+    method === "reply" ? source : undefined,
+    uid,
+    ics,
   );
   const [allowing, setAllowing] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
+  const target = useAnswerTarget(source, event ?? undefined);
+  const serverSetup = source?.provider.setup === "server";
 
   let body: ReactNode;
   if (method === "cancel") body = <p>{c.invitationCancelled}</p>;
-  else if (method === "reply") body = <p>{c.invitationReply}</p>;
+  else if (method === "reply")
+    body = (
+      <p>
+        {c.invitationReply}
+        {applied ? ` ${c.replyApplied}` : ""}
+      </p>
+    );
   else if (!source) return null;
   else if (access === "missing")
     body = (
       <div className="flex flex-wrap items-center gap-2">
-        <p className="flex-1">{c.allowToAnswer}</p>
+        <p className="flex-1">{serverSetup ? c.setUpHint : c.allowToAnswer}</p>
         <button
           type="button"
           disabled={allowing}
           onClick={() => {
+            if (serverSetup) {
+              setSettingUp(true);
+              return;
+            }
             setAllowing(true);
             source.provider.requestAccess().then(
               () => {
@@ -88,8 +116,16 @@ function InvitationContent({
           }}
           className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60 pointer-coarse:min-h-11"
         >
-          {c.allowCalendar}
+          {serverSetup ? c.setUpCalendar : c.allowCalendar}
         </button>
+        {settingUp && (
+          <CalendarServerDialog
+            source={source}
+            onClose={() => {
+              setSettingUp(false);
+            }}
+          />
+        )}
       </div>
     );
   else if (isPending) body = <p className="text-zinc-500">{c.lookingUp}</p>;
@@ -108,8 +144,20 @@ function InvitationContent({
           start={spanOf(event).start}
           end={spanOf(event).end}
         />
+        {event.inCalendar === false && target && (
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+            {c.answeringAdds(target.name)}
+          </p>
+        )}
         {source.provider.canRespond && event.myResponse !== undefined && (
-          <RsvpButtons source={source} event={event} />
+          <RsvpButtons
+            source={source}
+            event={
+              event.inCalendar === false && target
+                ? { ...event, calendarId: target.id }
+                : event
+            }
+          />
         )}
       </div>
     );
@@ -125,6 +173,27 @@ function InvitationContent({
       />
       <div className="min-w-0 flex-1">{body}</div>
     </section>
+  );
+}
+
+/**
+ * Where an invitation that isn't in a calendar yet goes when answered: the
+ * calendar used last for new events, if it's this account's, else its
+ * primary (or first writable) one.
+ */
+function useAnswerTarget(
+  source: CalendarSource | undefined,
+  event: CalendarEvent | undefined,
+): Calendar | undefined {
+  const last = useUi((state) => state.settings.lastEventCalendar);
+  const wanted = source !== undefined && event?.inCalendar === false;
+  const { data: calendars } = useCalendarList(wanted ? source : undefined);
+  if (!wanted) return undefined;
+  const writable = (calendars ?? []).filter((calendar) => !calendar.readOnly);
+  return (
+    writable.find((calendar) => `${source.key}|${calendar.id}` === last) ??
+    writable.find((calendar) => calendar.primary) ??
+    writable[0]
   );
 }
 

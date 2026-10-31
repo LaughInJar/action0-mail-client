@@ -38,6 +38,7 @@ import type {
   NewMailbox,
   ProviderCapabilities,
   SenderSettings,
+  CalendarMail,
 } from "../../core/provider";
 import { sleep } from "../../lib/sleep";
 import { foldText } from "../../lib/text";
@@ -120,6 +121,7 @@ export class FakeMailProvider implements MailProvider {
     senders: true,
     editSenders: false,
     rawSource: true,
+    calendarMail: true,
     signatureStore: "provider",
   };
   /** Set to make writes fail with a provider error. */
@@ -128,6 +130,8 @@ export class FakeMailProvider implements MailProvider {
   contactsUnavailable: boolean;
   /** One-click unsubscribe URLs "sent" (the demo never goes online). */
   readonly oneClickRequests: string[] = [];
+  /** Calendar mails "sent" (invitations and answers). */
+  readonly calendarMails: CalendarMail[] = [];
   /** Set to refuse signature changes as `unavailable` (a declined permission). */
   signaturesReadOnly = false;
   #senders: readonly Sender[];
@@ -934,6 +938,14 @@ export class FakeMailProvider implements MailProvider {
     return this.#senders.some(
       (sender) => sender.address.toLowerCase() === address.toLowerCase(),
     );
+  }
+
+  async sendCalendarMail(
+    mail: CalendarMail,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    this.calendarMails.push(mail);
   }
 
   async oneClickUnsubscribe(url: string, signal?: AbortSignal): Promise<void> {
