@@ -1,7 +1,16 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  displayNameOf,
   EMPTY_FIELDS,
   fieldsOf,
+  nameOf,
   normalized,
   sameFields,
   type Contact,
@@ -28,7 +37,10 @@ import {
 import { IconButton } from "../common/IconButton";
 import { Sheet } from "../common/Sheet";
 import { useSaveShortcut } from "../common/useSaveShortcut";
+import { Icon } from "../common/Icon";
+import { ContactAvatar } from "./ContactAvatar";
 import { bookLabel } from "./format";
+import { PhotoCropper } from "./PhotoCropper";
 import { useContactActions } from "./useContactActions";
 
 /** What the editor edits: a contact, or a new one (maybe started from mail). */
@@ -119,6 +131,19 @@ export function ContactEditor({
   const [initial] = useState(() => initialForm(target));
   const [form, setForm] = useState(initial);
   const [groupName, setGroupName] = useState("");
+  /** The picture: as it is, a new one (cropped), or none any more. */
+  const [photo, setPhoto] = useState<
+    { readonly blob: Blob; readonly url: string } | "keep" | "remove"
+  >("keep");
+  /** A picked file being cropped. */
+  const [cropping, setCropping] = useState<Blob | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
+  useEffect(
+    () => () => {
+      if (typeof photo === "object") URL.revokeObjectURL(photo.url);
+    },
+    [photo],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,7 +162,8 @@ export function ContactEditor({
   const dirty =
     !sameFields(form.fields, initial.fields) ||
     form.newGroups.length > 0 ||
-    form.book !== initial.book;
+    form.book !== initial.book ||
+    photo !== "keep";
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);
@@ -190,6 +216,9 @@ export function ContactEditor({
         book,
         fields: normalized(fields),
         newGroups: form.newGroups,
+        ...(photo === "keep"
+          ? {}
+          : { photo: photo === "remove" ? null : photo.blob }),
       });
       onDirty(false);
       onSaved(source, saved);
@@ -223,6 +252,57 @@ export function ContactEditor({
           <IconButton label={c.cancel} icon="x" onClick={onCancel} />
         </div>
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          {capabilities.photos.change && (
+            <PhotoRow
+              current={
+                typeof photo === "object" ? (
+                  <img
+                    src={photo.url}
+                    alt=""
+                    className="size-16 shrink-0 rounded-full object-cover"
+                  />
+                ) : target.kind === "edit" && photo === "keep" ? (
+                  <ContactAvatar
+                    source={target.source}
+                    contact={target.contact}
+                    name={nameOf(target.contact) || displayNameOf(fields)}
+                    large
+                    fetch
+                  />
+                ) : (
+                  <span className="grid size-16 shrink-0 place-items-center rounded-full bg-zinc-200 text-zinc-500 dark:bg-zinc-800">
+                    <Icon name="user" className="size-7" />
+                  </span>
+                )
+              }
+              canRemove={
+                capabilities.photos.remove &&
+                (typeof photo === "object" ||
+                  (photo === "keep" &&
+                    target.kind === "edit" &&
+                    target.contact.photo !== undefined))
+              }
+              onPick={() => photoInput.current?.click()}
+              onFile={(file) => {
+                if (file.type.startsWith("image/")) setCropping(file);
+                else setError(c.notAPicture);
+              }}
+              onRemove={() => {
+                setPhoto("remove");
+              }}
+            />
+          )}
+          <input
+            ref={photoInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) setCropping(file);
+            }}
+          />
           {target.kind === "new" && target.books.length > 1 && (
             <div className="space-y-1">
               <label
@@ -498,6 +578,18 @@ export function ContactEditor({
           </button>
         </div>
       </form>
+      {cropping && (
+        <PhotoCropper
+          file={cropping}
+          onCancel={() => {
+            setCropping(null);
+          }}
+          onUse={(blob) => {
+            setCropping(null);
+            setPhoto({ blob, url: URL.createObjectURL(blob) });
+          }}
+        />
+      )}
     </Sheet>
   );
 
@@ -521,6 +613,66 @@ export function ContactEditor({
       }));
     setGroupName("");
   }
+}
+
+/** The picture at the top of the editor: Change (or drop one on it) and Remove. */
+function PhotoRow({
+  current,
+  canRemove,
+  onPick,
+  onFile,
+  onRemove,
+}: {
+  current: ReactNode;
+  canRemove: boolean;
+  onPick: () => void;
+  onFile: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const c = useT().contacts;
+  const [over, setOver] = useState(false);
+  return (
+    <div className="flex items-center gap-4">
+      {/* The button below does the same for the keyboard. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={c.changePhoto}
+        onClick={onPick}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setOver(true);
+        }}
+        onDragLeave={() => {
+          setOver(false);
+        }}
+        onDrop={(event) => {
+          const file = event.dataTransfer.files[0];
+          if (!file) return;
+          // Not an import of contacts, nor a new mail: the picture.
+          event.preventDefault();
+          event.stopPropagation();
+          setOver(false);
+          onFile(file);
+        }}
+        className={`rounded-full ${over ? "ring-4 ring-blue-500" : ""}`}
+      >
+        {current}
+      </button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={onPick} className={BUTTON}>
+          {c.changePhoto}
+        </button>
+        {canRemove && (
+          <button type="button" onClick={onRemove} className={LINK}>
+            {c.removePhoto}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function TextField({

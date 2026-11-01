@@ -324,7 +324,7 @@ export function createDemoContacts(): FakeContactsData {
       },
     ],
     groups: [
-      { id: asContactGroupId(STARRED), name: "Starred" },
+      { id: asContactGroupId(STARRED), name: "Starred", fixed: true },
       { id: asContactGroupId(FAMILY), name: "Family" },
       { id: asContactGroupId(HIKING), name: "Hiking club" },
       { id: asContactGroupId(WORK), name: "Work" },
@@ -339,7 +339,7 @@ const category = (name: string, preset: number) => {
   return {
     id: asContactGroupId(name),
     name,
-    ...(color ? { color } : {}),
+    ...(color ? { color, colorId: `preset${String(preset)}` } : {}),
   };
 };
 

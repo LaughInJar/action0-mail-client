@@ -99,7 +99,7 @@ export function createMicrosoftModule({
       new GraphFilterProvider(new GraphHttp({ auth, ...net }), {
         personal: isPersonal(account),
       }),
-    createContacts: (_account: Account, auth: AuthSession) => {
+    createContacts: (account: Account, auth: AuthSession) => {
       const session = auth as ScopedTokenSession;
       return new GraphContactsProvider(
         new GraphHttp({
@@ -109,6 +109,7 @@ export function createMicrosoftModule({
           ...net,
         }),
         session,
+        { personal: isPersonal(account) },
       );
     },
   };

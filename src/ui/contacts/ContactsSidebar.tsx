@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
+import type { ContactGroup } from "../../core/contacts";
 import { useCalendarSources } from "../../data/calendar";
 import { useCalendarServers } from "../../data/calendarServers";
 import {
@@ -17,7 +18,15 @@ import { ContextMenu } from "../common/ContextMenu";
 import { errorMessage } from "../common/errorMessage";
 import { Icon, type IconName } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
-import { belowElement } from "../common/menuPosition";
+import {
+  atPointer,
+  belowElement,
+  isMenuKey,
+  wantsAppMenu,
+} from "../common/menuPosition";
+import { useLongPress } from "../messages/useLongPress";
+import { GroupDialog } from "./GroupDialog";
+import { useContactActions } from "./useContactActions";
 import { AppSwitch } from "../layout/AppSwitch";
 import { ThemeSwitch } from "../layout/ThemeSwitch";
 import { APP_TITLE } from "../sync/useDocumentTitle";
@@ -58,6 +67,16 @@ export function ContactsSidebar({
     source: ContactSource;
     at: MenuPosition;
   } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{
+    source: ContactSource;
+    group: ContactGroup;
+    at: MenuPosition;
+  } | null>(null);
+  const [groupDialog, setGroupDialog] = useState<{
+    source: ContactSource;
+    group?: ContactGroup;
+  } | null>(null);
+  const actions = useContactActions();
   const current = listToken(list);
   const go = (target: ContactList) => {
     onNavigate?.();
@@ -133,6 +152,12 @@ export function ContactsSidebar({
             onMenu={(at) => {
               setMenu({ source: state.source, at });
             }}
+            onGroupMenu={(group, at) => {
+              setGroupMenu({ source: state.source, group, at });
+            }}
+            onNewGroup={() => {
+              setGroupDialog({ source: state.source });
+            }}
           />
         ))}
         {!calendarServers && (
@@ -176,7 +201,83 @@ export function ContactsSidebar({
           }}
         />
       )}
+      {groupMenu && (
+        <ContextMenu
+          label={c.groupMenuFor(groupMenu.group.name)}
+          title={groupMenu.group.name}
+          at={groupMenu.at}
+          entries={[
+            {
+              id: "rename",
+              label: c.renameGroup,
+              icon: "pencil",
+              disabled: !groupMenu.source.provider.capabilities.renameGroups,
+              run: () => {
+                setGroupDialog({
+                  source: groupMenu.source,
+                  group: groupMenu.group,
+                });
+              },
+            },
+            ...(groupMenu.source.provider.capabilities.groupColors
+              ? [
+                  {
+                    id: "colour",
+                    label: c.groupColour,
+                    icon: "tag" as const,
+                    run: () => {
+                      setGroupDialog({
+                        source: groupMenu.source,
+                        group: groupMenu.group,
+                      });
+                    },
+                  },
+                ]
+              : []),
+            {
+              id: "delete",
+              label: c.deleteGroup,
+              icon: "trash",
+              danger: true,
+              divider: true,
+              run: () => {
+                const { source, group } = groupMenu;
+                void (async () => {
+                  if (!(await actions.ensureWritable(source))) return;
+                  if (
+                    current ===
+                    listToken({
+                      kind: "group",
+                      source: source.key,
+                      group: group.id,
+                    })
+                  )
+                    go({ kind: "source", source: source.key });
+                  await actions.deleteGroup(source, group);
+                })();
+              },
+            },
+          ]}
+          {...(groupMenu.source.provider.capabilities.renameGroups
+            ? {}
+            : { note: c.cantRename })}
+          onClose={() => {
+            setGroupMenu(null);
+          }}
+        />
+      )}
       {/* On the page itself: in the phones' drawer, a dialog would only be as wide as the drawer. */}
+      {groupDialog &&
+        createPortal(
+          <GroupDialog
+            source={groupDialog.source}
+            {...(groupDialog.group ? { group: groupDialog.group } : {})}
+            onClose={() => {
+              setGroupDialog(null);
+            }}
+          />,
+          document.body,
+        )}
       {serverSource &&
         createPortal(
           <CalendarServerDialog
@@ -197,12 +298,16 @@ function SourceSection({
   onGo,
   onSetUp,
   onMenu,
+  onGroupMenu,
+  onNewGroup,
 }: {
   state: ContactSourceState;
   current: string;
   onGo: (list: ContactList) => void;
   onSetUp: () => void;
   onMenu: (at: MenuPosition) => void;
+  onGroupMenu: (group: ContactGroup, at: MenuPosition) => void;
+  onNewGroup: () => void;
 }) {
   const t = useT();
   const c = t.contacts;
@@ -214,6 +319,12 @@ function SourceSection({
   const color = source.accountId ? colors.get(source.accountId) : undefined;
   const books = snapshot?.addressBooks ?? [];
   const groups = snapshot?.groups ?? [];
+  const capabilities = source.provider.capabilities;
+  // Groups can be changed where contacts can (Google asks on the first change).
+  const editable =
+    capabilities.groups &&
+    (access === "readOnly" ||
+      (access === "granted" && books.some((book) => !book.readOnly)));
   const contacts = snapshot?.contacts ?? [];
 
   const allow = () => {
@@ -362,10 +473,32 @@ function SourceSection({
                   onClick={() => {
                     onGo(list);
                   }}
+                  {...(editable && !group.fixed
+                    ? {
+                        menu: {
+                          label: c.moreFor(group.name),
+                          open: (at: MenuPosition) => {
+                            onGroupMenu(group, at);
+                          },
+                        },
+                      }
+                    : {})}
                 />
               </li>
             );
           })}
+          {editable && capabilities.emptyGroups && (
+            <li>
+              <button
+                type="button"
+                onClick={onNewGroup}
+                className="flex w-full items-center gap-2 rounded-md py-1 pr-2 pl-2 text-left text-xs text-zinc-600 hover:bg-zinc-200/60 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 pointer-coarse:min-h-11"
+              >
+                <Icon name="plus" className="size-4 shrink-0" />
+                {c.newGroup}
+              </button>
+            </li>
+          )}
           {source.provider.capabilities.otherContacts && (
             <li>
               <Entry
@@ -401,6 +534,7 @@ function Entry({
   indent = false,
   color,
   note,
+  menu,
 }: {
   icon: IconName;
   label: string;
@@ -410,24 +544,64 @@ function Entry({
   indent?: boolean;
   color?: string;
   note?: string | undefined;
+  /** A menu: a ⋯ button while it's the current entry, right-click, long press. */
+  menu?: { label: string; open: (at: MenuPosition) => void };
 }) {
+  const moreRef = useRef<HTMLDivElement>(null);
+  const longPress = useLongPress((_target, at) => {
+    menu?.open(atPointer(at));
+  });
   return (
-    <button
-      type="button"
-      aria-current={current ? "page" : undefined}
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left text-sm hover:bg-zinc-200/60 aria-[current=page]:bg-blue-100 aria-[current=page]:font-medium aria-[current=page]:text-blue-900 dark:hover:bg-zinc-800 dark:aria-[current=page]:bg-blue-500/20 dark:aria-[current=page]:text-blue-100 pointer-coarse:min-h-11 ${indent ? "pl-6" : "pl-2"}`}
-    >
-      <Icon
-        name={icon}
-        className="size-4 shrink-0 text-zinc-500 dark:text-zinc-400"
-        {...(color ? { style: { color } } : {})}
-      />
-      <span className="min-w-0 flex-1 truncate">
-        {label}
-        {note && <span className="ml-1 text-xs text-zinc-500">({note})</span>}
-      </span>
-      <span className="text-xs text-zinc-500 tabular-nums">{count}</span>
-    </button>
+    <div className="flex items-center gap-0.5">
+      <button
+        type="button"
+        aria-current={current ? "page" : undefined}
+        onClick={() => {
+          if (longPress.consumeClick()) return;
+          onClick();
+        }}
+        {...(menu
+          ? {
+              onPointerDown: longPress.onPointerDown,
+              onPointerMove: longPress.onPointerMove,
+              onPointerUp: longPress.onPointerUp,
+              onPointerCancel: longPress.onPointerCancel,
+              onContextMenu: (event: MouseEvent) => {
+                if (!wantsAppMenu(event)) return;
+                event.preventDefault();
+                menu.open(atPointer(event));
+              },
+              onKeyDown: (event: KeyboardEvent) => {
+                if (!isMenuKey(event)) return;
+                event.preventDefault();
+                menu.open(belowElement(event.currentTarget));
+              },
+            }
+          : {})}
+        className={`flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-2 text-left text-sm hover:bg-zinc-200/60 aria-[current=page]:bg-blue-100 aria-[current=page]:font-medium aria-[current=page]:text-blue-900 dark:hover:bg-zinc-800 dark:aria-[current=page]:bg-blue-500/20 dark:aria-[current=page]:text-blue-100 pointer-coarse:min-h-11 ${indent ? "pl-6" : "pl-2"}`}
+      >
+        <Icon
+          name={icon}
+          className="size-4 shrink-0 text-zinc-500 dark:text-zinc-400"
+          {...(color ? { style: { color } } : {})}
+        />
+        <span className="min-w-0 flex-1 truncate">
+          {label}
+          {note && <span className="ml-1 text-xs text-zinc-500">({note})</span>}
+        </span>
+        <span className="text-xs text-zinc-500 tabular-nums">{count}</span>
+      </button>
+      {menu && current && (
+        <div ref={moreRef}>
+          <IconButton
+            label={menu.label}
+            icon="more"
+            onClick={() => {
+              if (moreRef.current) menu.open(belowElement(moreRef.current));
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }

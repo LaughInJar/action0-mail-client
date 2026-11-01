@@ -26,7 +26,10 @@ import {
   type ContactSnapshot,
   type ContactsProvider,
   type ContactWrite,
+  type GroupRemoval,
+  type GroupWrite,
   type NewContact,
+  type ProgressOptions,
   type PhoneKind,
   type PostalAddress,
   type Typed,
@@ -74,6 +77,10 @@ const STARRED = "contactGroups/starred";
 const CREATE_BATCH = 200;
 const DELETE_BATCH = 500;
 const GET_BATCH = 200;
+/** Most members added to a label per request. */
+const MODIFY_BATCH = 1000;
+/** Most members read of a label (to put them back after deleting it). */
+const MAX_MEMBERS = 100_000;
 
 const CAPABILITIES: ContactCapabilities = {
   emailKinds: true,
@@ -83,6 +90,9 @@ const CAPABILITIES: ContactCapabilities = {
   websiteKinds: true,
   birthdayYear: false,
   groups: true,
+  renameGroups: true,
+  emptyGroups: true,
+  photos: { change: true, remove: true },
   otherContacts: true,
 };
 
@@ -387,6 +397,100 @@ export class GoogleContactsProvider implements ContactsProvider {
     });
   }
 
+  renameGroup(
+    group: ContactGroup,
+    name: string,
+    options: ProgressOptions = {},
+  ): Promise<GroupWrite> {
+    return this.#mutate(async () => {
+      this.#requireWrite();
+      requireOwnGroup(group);
+      const before = await this.#readGroup(group.id, options.signal);
+      const renamed = await this.#renameGroup(
+        group.id,
+        name.trim(),
+        options.signal,
+      );
+      return {
+        group: renamed,
+        undo: (signal) =>
+          this.#mutate(() =>
+            this.#renameGroup(group.id, before.name ?? group.name, signal),
+          ),
+      };
+    });
+  }
+
+  deleteGroup(
+    group: ContactGroup,
+    options: ProgressOptions = {},
+  ): Promise<GroupRemoval> {
+    return this.#mutate(async () => {
+      this.#requireWrite();
+      requireOwnGroup(group);
+      // Its members, so undo can put them into the label made again.
+      const before = await this.#readGroup(group.id, options.signal, true);
+      const members = before.memberResourceNames ?? [];
+      try {
+        await this.#http.delete(
+          `${group.id}?deleteContacts=false`,
+          options.signal,
+        );
+      } catch (error) {
+        throw writeError(error);
+      }
+      return {
+        undo: (signal) =>
+          this.#mutate(async () => {
+            try {
+              const made = await this.#http.post<PeopleContactGroup>(
+                "contactGroups",
+                { contactGroup: { name: before.name ?? group.name } },
+                signal,
+                { retry: false },
+              );
+              const id = made.resourceName ?? "";
+              for (const chunk of chunks(members, MODIFY_BATCH))
+                await this.#http.post(
+                  `./${id}/members:modify`,
+                  { resourceNamesToAdd: chunk },
+                  signal,
+                );
+              return {
+                id: asContactGroupId(id),
+                name: made.formattedName ?? made.name ?? group.name,
+              };
+            } catch (error) {
+              throw writeError(error);
+            }
+          }),
+      };
+    });
+  }
+
+  setPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal?: AbortSignal,
+  ): Promise<ContactWrite> {
+    return this.#mutate(async () => {
+      this.#requireWrite();
+      if (contact.other)
+        throw new MailError("unavailable", "Other contacts can't be changed.", {
+          reason: "addressBookReadOnly",
+        });
+      const previous = await this.photo(contact, signal);
+      const after = await this.#putPhoto(contact, photo, signal);
+      return {
+        contact: after,
+        undo: (undoSignal) =>
+          this.#mutate(() =>
+            this.#putPhoto(after, previous ?? null, undoSignal),
+          ),
+      };
+    });
+  }
+
   addOther(contact: Contact, signal?: AbortSignal): Promise<ContactWrite> {
     return this.#mutate(async () => {
       this.#requireWrite();
@@ -564,6 +668,97 @@ export class GoogleContactsProvider implements ContactsProvider {
     return answer.person ?? person;
   }
 
+  /** Sets or deletes a contact's photo; the contact as it is afterwards. */
+  async #putPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal: AbortSignal | undefined,
+  ): Promise<Contact> {
+    try {
+      let person: PeoplePerson;
+      if (photo) {
+        person = await this.#setPhoto(
+          { resourceName: contact.id },
+          photo,
+          signal,
+        );
+      } else {
+        await this.#http
+          .delete(`./${contact.id}:deleteContactPhoto`, signal)
+          .catch((error: unknown) => {
+            // No photo to delete: nothing to do.
+            if (!isMailError(error, "not-found")) throw error;
+          });
+        person = await this.#http.get<PeoplePerson>(
+          contact.id,
+          { personFields: PERSON_FIELDS },
+          signal,
+        );
+      }
+      // The photo answer may carry only some fields: read the rest.
+      if (!person.names && !person.emailAddresses && !person.metadata)
+        person = await this.#http.get<PeoplePerson>(
+          contact.id,
+          { personFields: PERSON_FIELDS },
+          signal,
+        );
+      const after = contactOf(person);
+      if (!after) throw changed();
+      return after;
+    } catch (error) {
+      throw writeError(error);
+    }
+  }
+
+  /** A label as Google has it now (with its members, if asked for). */
+  async #readGroup(
+    id: string,
+    signal: AbortSignal | undefined,
+    members = false,
+  ): Promise<PeopleContactGroup> {
+    try {
+      return await this.#http.get<PeopleContactGroup>(
+        id,
+        {
+          groupFields: "name,groupType,memberCount",
+          ...(members ? { maxMembers: MAX_MEMBERS } : {}),
+        },
+        signal,
+      );
+    } catch (error) {
+      throw writeError(error);
+    }
+  }
+
+  /** Renames a label (with its current etag). */
+  async #renameGroup(
+    id: string,
+    name: string,
+    signal: AbortSignal | undefined,
+  ): Promise<ContactGroup> {
+    const current = await this.#readGroup(id, signal);
+    try {
+      const group = await this.#http.put<PeopleContactGroup>(
+        id,
+        {
+          contactGroup: {
+            ...(current.etag === undefined ? {} : { etag: current.etag }),
+            name,
+          },
+          updateGroupFields: "name",
+          readGroupFields: "name,groupType",
+        },
+        signal,
+      );
+      return {
+        id: asContactGroupId(group.resourceName ?? id),
+        name: group.formattedName ?? group.name ?? name,
+      };
+    } catch (error) {
+      throw writeError(error);
+    }
+  }
+
   /** The whole people behind these contacts, by resource name. */
   async #batchGet(
     contacts: readonly Contact[],
@@ -670,6 +865,8 @@ export class GoogleContactsProvider implements ContactsProvider {
             group.formattedName ??
             group.name ??
             (id === STARRED ? "Starred" : id),
+          // Google's own: it can't be renamed or deleted.
+          ...(id === STARRED ? { fixed: true as const } : {}),
         });
       }
       pageToken = page.nextPageToken;
@@ -692,6 +889,18 @@ export class GoogleContactsProvider implements ContactsProvider {
     this.#mutations = result.catch(() => undefined);
     return result;
   }
+}
+
+/** Starred and Google's other system groups can't be renamed or deleted. */
+function requireOwnGroup(group: ContactGroup) {
+  if (group.id === STARRED || !shownGroup(group.id))
+    throw new MailError(
+      "unavailable",
+      "Google's own groups can't be changed.",
+      {
+        reason: "addressBookReadOnly",
+      },
+    );
 }
 
 /** The sync tokens of the last load. */

@@ -48,6 +48,9 @@ const OUTLOOK: ContactCapabilities = {
   maxWebsites: 1,
   birthdayYear: true,
   groups: true,
+  renameGroups: false,
+  emptyGroups: true,
+  photos: { change: true, remove: false },
   otherContacts: false,
 };
 

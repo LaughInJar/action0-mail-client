@@ -57,6 +57,35 @@ export interface ContactWrites {
     source: ContactSource,
     name: string,
   ) => Promise<ContactGroup>;
+  /** Creates a group on its own ("New group"), undoably. */
+  readonly addGroup: (
+    source: ContactSource,
+    name: string,
+    colorId?: string,
+  ) => Promise<AppliedContactChange<ContactGroup>>;
+  readonly renameGroup: (
+    source: ContactSource,
+    group: ContactGroup,
+    name: string,
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<AppliedContactChange<ContactGroup>>;
+  readonly setGroupColor: (
+    source: ContactSource,
+    group: ContactGroup,
+    colorId: string,
+  ) => Promise<AppliedContactChange<ContactGroup>>;
+  /** Deletes a group; its contacts stay. */
+  readonly deleteGroup: (
+    source: ContactSource,
+    group: ContactGroup,
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<AppliedContactChange<undefined>>;
+  /** Sets a contact's picture, or removes it (`null`). */
+  readonly setPhoto: (
+    source: ContactSource,
+    contact: Contact,
+    photo: Blob | null,
+  ) => Promise<AppliedContactChange<Contact>>;
 }
 
 /** The writes, bound to the query client. */
@@ -139,6 +168,58 @@ export function createContactWrites(queryClient: QueryClient): ContactWrites {
       ...fields,
       displayName: displayNameOf(fields),
     };
+  };
+
+  /** The groups with `group` in place of the one with `id` (also in the contacts). */
+  const regrouping =
+    (id: string, group: ContactGroup) =>
+    (snapshot: ContactSnapshot): ContactSnapshot => ({
+      ...snapshot,
+      groups: snapshot.groups.map((candidate) =>
+        candidate.id === id ? group : candidate,
+      ),
+      contacts:
+        id === group.id
+          ? snapshot.contacts
+          : snapshot.contacts.map((contact) =>
+              contact.groupIds.includes(group.id) ||
+              !contact.groupIds.some((other) => other === id)
+                ? contact
+                : {
+                    ...contact,
+                    groupIds: contact.groupIds.map((other) =>
+                      other === id ? group.id : other,
+                    ),
+                  },
+            ),
+    });
+  const ungrouping =
+    (id: string) =>
+    (snapshot: ContactSnapshot): ContactSnapshot => ({
+      ...snapshot,
+      groups: snapshot.groups.filter((group) => group.id !== id),
+    });
+  const grouping =
+    (group: ContactGroup) =>
+    (snapshot: ContactSnapshot): ContactSnapshot => ({
+      ...snapshot,
+      groups: [
+        ...snapshot.groups.filter((candidate) => candidate.id !== group.id),
+        group,
+      ],
+    });
+  /**
+   * Group changes touch contacts on the server (memberships, vCards):
+   * load the changes once done, so their new versions are known.
+   */
+  const refresh = (source: ContactSource) => {
+    void queryClient.invalidateQueries({ queryKey: keyOf(source) });
+  };
+  const withPhoto = (contact: Contact, photo: Blob | null): Contact => {
+    const { photo: _photo, ...rest } = contact;
+    return photo && typeof URL.createObjectURL === "function"
+      ? { ...rest, photo: { kind: "url", url: URL.createObjectURL(photo) } }
+      : rest;
   };
 
   /** Brings removed contacts back (as the provider returns them). */
@@ -260,6 +341,128 @@ export function createContactWrites(queryClient: QueryClient): ContactWrites {
         undo: async () => {
           await removed.undo();
           await updated.undo();
+        },
+      };
+    },
+    addGroup: async (source, name, colorId) => {
+      let group = await run(
+        source,
+        (snapshot) => snapshot,
+        () => source.provider.createGroup(name),
+        (created) => grouping(created),
+      );
+      const setColor = source.provider.setGroupColor?.bind(source.provider);
+      if (colorId !== undefined && colorId !== group.colorId && setColor) {
+        const created = group;
+        group = await run(
+          source,
+          (snapshot) => snapshot,
+          async () => (await setColor(created, colorId)).group,
+          (colored) => regrouping(created.id, colored),
+        );
+      }
+      const added = group;
+      return {
+        result: added,
+        undo: async () => {
+          await run(
+            source,
+            ungrouping(added.id),
+            () => source.provider.deleteGroup(added),
+            () => ungrouping(added.id),
+          );
+        },
+      };
+    },
+    renameGroup: async (source, group, name, onProgress) => {
+      const rename = source.provider.renameGroup?.bind(source.provider);
+      if (!rename) throw new Error("This source can't rename groups.");
+      const write = await run(
+        source,
+        regrouping(group.id, { ...group, name }),
+        () => rename(group, name, onProgress ? { onProgress } : {}),
+        (done) => regrouping(group.id, done.group),
+      );
+      refresh(source);
+      return {
+        result: write.group,
+        undo: async () => {
+          await run(
+            source,
+            regrouping(write.group.id, group),
+            () => write.undo(),
+            (restored) => regrouping(write.group.id, restored ?? group),
+          );
+          refresh(source);
+        },
+      };
+    },
+    setGroupColor: async (source, group, colorId) => {
+      const setColor = source.provider.setGroupColor?.bind(source.provider);
+      if (!setColor) throw new Error("This source has no group colours.");
+      const color = source.provider.capabilities.groupColors?.find(
+        (candidate) => candidate.id === colorId,
+      );
+      const write = await run(
+        source,
+        regrouping(group.id, {
+          ...group,
+          colorId,
+          ...(color ? { color: color.color } : {}),
+        }),
+        () => setColor(group, colorId),
+        (done) => regrouping(group.id, done.group),
+      );
+      return {
+        result: write.group,
+        undo: async () => {
+          await run(
+            source,
+            regrouping(group.id, group),
+            () => write.undo(),
+            (restored) => regrouping(group.id, restored ?? group),
+          );
+        },
+      };
+    },
+    deleteGroup: async (source, group, onProgress) => {
+      const removal = await run(
+        source,
+        ungrouping(group.id),
+        () =>
+          source.provider.deleteGroup(group, onProgress ? { onProgress } : {}),
+        () => ungrouping(group.id),
+      );
+      refresh(source);
+      return {
+        result: undefined,
+        undo: async () => {
+          await run(
+            source,
+            (snapshot) => snapshot,
+            () => removal.undo(),
+            (restored) => grouping(restored),
+          );
+          refresh(source);
+        },
+      };
+    },
+    setPhoto: async (source, contact, photo) => {
+      const write = await run(
+        source,
+        replacing(withPhoto(contact, photo)),
+        () => source.provider.setPhoto(contact, photo),
+        (done) => replacing(done.contact),
+      );
+      return {
+        result: write.contact,
+        undo: async () => {
+          await run(
+            source,
+            replacing(contact),
+            () => write.undo(),
+            (restored) => (restored ? replacing(restored) : (s) => s),
+          );
         },
       };
     },

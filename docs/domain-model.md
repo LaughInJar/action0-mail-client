@@ -425,6 +425,11 @@ The two ways of sorting contacts mirror folders and labels. An `AddressBook` (`i
 | `websiteKinds`, `maxWebsites`       | kinds, any number          | no kinds, 1 (the business page) | kinds, any number          |
 | `birthdayYear`                      | optional                   | required                        | optional                   |
 | `groups`, `otherContacts`           | yes, yes                   | yes, no                         | yes, no                    |
+| `renameGroups`, `emptyGroups`       | yes, yes                   | no, yes                         | yes, no                    |
+| `groupColors`                       | none                       | Outlook's 25 presets            | none                       |
+| `photos` (change, remove)           | yes, yes                   | work accounts only, no          | yes, yes                   |
+
+A group (`ContactGroup`) may carry a `colorId` (one of `groupColors`) and be `fixed` (Google's Starred: no rename, no delete). Deleting a group never deletes its contacts.
 
 `fitTo(capabilities, fields)` puts fields into what a source can hold: a value of a kind the source lacks gets one it has where there's room (an "other" phone number becomes a mobile, home or work one on Outlook), what doesn't fit is left out, and `dropped` says so. Outlook's provider fits every write; imports and merges fit what they write, and their previews say when something is left out.
 

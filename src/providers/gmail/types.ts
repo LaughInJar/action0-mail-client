@@ -242,7 +242,11 @@ export interface OtherContactsResponse {
 /** A contact group (label) of the People API. */
 export interface PeopleContactGroup {
   resourceName?: string;
+  etag?: string;
   name?: string;
+  memberCount?: number;
+  /** With `maxMembers`: who's in it. */
+  memberResourceNames?: string[];
   /** The name in the user's language (system groups: "Starred"). */
   formattedName?: string;
   /** `USER_CONTACT_GROUP` or `SYSTEM_CONTACT_GROUP`. */
