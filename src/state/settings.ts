@@ -68,6 +68,8 @@ export interface AppSettings {
   readonly aiNoticed: readonly string[];
   /** The AI services and models used last, newest first (the picker's top). */
   readonly aiRecent: readonly AiChoice[];
+  /** Ids of the command palette's places and actions chosen last, newest first. */
+  readonly paletteRecent: readonly string[];
 }
 
 /** Where the AI is asked: about mail in the reader, or to write in the composer. */
@@ -100,10 +102,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiChoices: {},
   aiNoticed: [],
   aiRecent: [],
+  paletteRecent: [],
 };
 
 /** How many recent AI choices the picker offers. */
 export const MAX_AI_RECENT = 5;
+
+/** How many recent choices the command palette remembers. */
+export const MAX_PALETTE_RECENT = 10;
 
 /** Most trusted senders kept (the oldest are dropped first). */
 export const MAX_TRUSTED_SENDERS = 500;
@@ -305,6 +311,11 @@ export function parseSettings(value: unknown): AppSettings {
           .flatMap((entry) => parseAiChoice(entry) ?? [])
           .slice(0, MAX_AI_RECENT)
       : d.aiRecent,
+    paletteRecent: Array.isArray(raw.paletteRecent)
+      ? raw.paletteRecent
+          .filter((id): id is string => typeof id === "string")
+          .slice(0, MAX_PALETTE_RECENT)
+      : d.paletteRecent,
   };
 }
 

@@ -7,40 +7,25 @@ import {
 } from "../../accounts/context";
 import { useRoute, useRouter, useUi } from "../../state/context";
 import { Icon } from "../common/Icon";
-import { IconButton } from "../common/IconButton";
 import { useComposeActions } from "../composer/useComposeActions";
 import { AppSwitch } from "../layout/AppSwitch";
-import { ThemeSwitch } from "../layout/ThemeSwitch";
+import { SidebarHeader } from "../layout/SidebarHeader";
 import { FolderFilter } from "./FolderFilter";
 import { MailboxTree, type MailboxTreeProps } from "./MailboxTree";
 import { useT } from "../../i18n/context";
-import { APP_TITLE } from "../sync/useDocumentTitle";
 import { mailboxTexts } from "../labels/mailboxTexts";
 import { useAsk } from "../common/useAsk";
 
 /** Column (a): app title, account/mailbox tree and account management. */
 export function Sidebar({ onNavigate }: MailboxTreeProps) {
   const compose = useComposeActions();
-  const router = useRouter();
   const t = useT();
   return (
     <nav
       aria-label={t.accounts.mailboxes}
       className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-900"
     >
-      <div className="flex items-center gap-2 pt-2 pr-2 pb-1 pl-4 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-        <Icon name="mail" className="size-5 text-blue-600 dark:text-blue-400" />
-        <span className="flex-1">{APP_TITLE}</span>
-        <ThemeSwitch />
-        <IconButton
-          label={t.layout.settings}
-          icon="settings"
-          onClick={() => {
-            onNavigate?.();
-            router.openSettings();
-          }}
-        />
-      </div>
+      <SidebarHeader {...(onNavigate ? { onNavigate } : {})} />
       <AppSwitch {...(onNavigate ? { onNavigate } : {})} />
       {compose.canCompose && (
         <div className="px-2 pt-1 pb-2">

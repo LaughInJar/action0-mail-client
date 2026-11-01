@@ -133,4 +133,15 @@ describe("templates in the settings", () => {
     expect(settings.templates[1]?.accountId).toBe("demo:demo@work.example");
     expect(parseSettings({ templates: "x" }).templates).toEqual([]);
   });
+
+  it("keeps the command palette's recent ids, at most ten", () => {
+    const ids = Array.from(
+      { length: 12 },
+      (_, index) => `place:${String(index)}`,
+    );
+    expect(parseSettings({ paletteRecent: [...ids, 7] }).paletteRecent).toEqual(
+      ids.slice(0, 10),
+    );
+    expect(parseSettings({ paletteRecent: "x" }).paletteRecent).toEqual([]);
+  });
 });
