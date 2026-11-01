@@ -184,6 +184,10 @@ Attachments are never rendered as pages in the app's origin (`attachmentKind()` 
 
 A message's source is untrusted text. The view (`src/ui/original/`) only ever renders it as text nodes (React escapes it), never as HTML. The summary's SPF, DKIM and DMARC badges come only from the topmost `Authentication-Results` header, which the account's own provider added on arrival; lower ones may have been written by anyone, sender included (`authResults` in `src/core/rawMessage.ts`). None of it changes what the app trusts (remote images, links): it's information for the user.
 
+### Printing
+
+Printing (`src/ui/print/`) can't use the sandboxed frame: the macOS and Android print dialogs print the page itself, and frames don't split across pages. So the print layout is built in the page, shown only by `@media print`, each mail's HTML in its own shadow root (its styles stay inside). It's the same sanitized HTML as in the reader, but the page's CSP allows remote images where the frame's doesn't, so `buildPrintableMail` (`src/security/printableMail.ts`) removes what the frame's CSP would block: remote images (`src`, `srcset`, `background`, CSS `url()`) unless they're allowed for that message on screen, and remote style sheets (`@import`) and fonts (`@font-face`) always. Scripts never reach it (the sanitizer removed them, and shadow roots don't run inserted scripts). The layout exists only while printing and is removed afterwards.
+
 ## The installable web app
 
 The web app's service worker (`src/sw/serviceWorker.ts`, built as `/sw.js`; production web builds only, never in the Tauri apps) keeps only the app's own files, listed at build time: `index.html`, the hashed `assets/`, `theme.js`, the icons and the manifest, in a cache named after their version (older ones are deleted). Every other request goes to the network untouched: the provider and AI APIs, sign-in, `redirect.html`, other sites. Mail and API answers are never stored, so installing the app changes nothing about what's kept ([what is stored where](#what-is-stored-where)).

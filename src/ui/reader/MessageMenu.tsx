@@ -1,4 +1,5 @@
 import { useContactLink } from "../contacts/contactLink";
+import { printItems, printJob, usePrint } from "../print/printing";
 import { messageKey, type AccountId, type MessageId } from "../../core/ids";
 import { useMessage } from "../../data/hooks";
 import { useT } from "../../i18n/context";
@@ -45,6 +46,7 @@ export function MessageMenu({
   const store = useUiStore();
   const router = useRouter();
   const original = useOriginalActions();
+  const print = usePrint();
   const filterLink = useFilterLinkActions();
   const contactLink = useContactLink();
   const ai = useAiReaderActions();
@@ -140,6 +142,11 @@ export function MessageMenu({
         sender,
         entriesOf([
           ...originalItems(original, ref, t),
+          ...printItems(
+            print,
+            printJob(accountId, [message.id], message.subject),
+            t,
+          ),
           ...filterItems(
             filterLink,
             { accountId, ...(from ? { from } : {}) },

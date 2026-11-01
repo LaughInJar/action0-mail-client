@@ -115,6 +115,7 @@ pub fn run() {
             shell::shell_set_unread,
             shell::shell_take_compose,
             shell::shell_info,
+            shell::shell_print,
             shell::shell_quit,
             shell::shell_default_mail_app,
             shell::shell_open_file,
@@ -169,6 +170,7 @@ pub fn run() {
         mobile::mobile_notification_permission,
         mobile::mobile_configure_background,
         mobile::mobile_set_theme,
+        mobile::mobile_print,
     ]);
 
     let app = app

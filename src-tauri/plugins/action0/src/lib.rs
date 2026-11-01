@@ -1,6 +1,6 @@
 //! action0's Android side, in Kotlin (`android/`): Google sign-in through
 //! Play services, the browser tab for other sign-ins, the vault's key in
-//! the Android Keystore, opening, sharing and saving files, notifications,
+//! the Android Keystore, opening, sharing and saving files, printing, notifications,
 //! incoming links and shares, and the background mail check. This crate is
 //! the Rust API the app calls it through; on other platforms it's empty.
 
@@ -186,6 +186,12 @@ impl<R: Runtime> Action0<R> {
             "setTheme",
             serde_json::json!({ "dark": dark, "background": background }),
         )
+    }
+
+    /// Prints the page through Android's print service (which can also
+    /// save it as a PDF); `title` names the job and the PDF.
+    pub fn print(&self, title: &str) -> Result<()> {
+        self.call("print", serde_json::json!({ "title": title }))
     }
 
     /// Starts or stops the periodic background check.

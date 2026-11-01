@@ -36,6 +36,12 @@ import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { usePersonMenu } from "../contacts/usePersonMenu";
+import {
+  printItems,
+  printJob,
+  usePrint,
+  usePrintCommand,
+} from "../print/printing";
 import { useUnsubscribe } from "./useUnsubscribe";
 import { AccountLine } from "./AccountLine";
 import { useMessageMenu } from "./useMessageMenu";
@@ -79,6 +85,7 @@ export function ConversationView({
   const actions = useMailActions();
   const compose = useComposeActions();
   const original = useOriginalActions();
+  const print = usePrint();
   const filterLink = useFilterLinkActions();
   const messages = useMemo(() => {
     if (!thread) return undefined;
@@ -90,6 +97,19 @@ export function ConversationView({
     );
     return shown.length > 0 ? shown : thread.messages;
   }, [thread, mailbox, mailboxes]);
+
+  const printTarget = useMemo(
+    () =>
+      messages && messages.length > 0
+        ? printJob(
+            accountId,
+            messages.map((message) => message.id),
+            messages[0]?.subject ?? "",
+          )
+        : undefined,
+    [accountId, messages],
+  );
+  usePrintCommand(printTarget);
 
   const inbox = mailboxes?.find((m) => m.role === "inbox");
   const store = useUiStore();
@@ -211,6 +231,8 @@ export function ConversationView({
                   t,
                 ),
                 ...originalItems(original, answering, t),
+                // The whole conversation (one message: its own menu).
+                ...(printTarget ? printItems(print, printTarget, t) : []),
                 ...filterItems(
                   filterLink,
                   () => {
