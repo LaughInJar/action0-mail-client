@@ -41,6 +41,13 @@ const en = {
   starred: ", starred",
   inAccount: (email: string) => `, in ${email}`,
   allInboxes: "All inboxes",
+  /** The combined views, as a list's name. */
+  combined: {
+    inbox: "All inboxes",
+    flagged: "Starred in all accounts",
+    sent: "Sent in all accounts",
+    drafts: "Drafts in all accounts",
+  },
   needsReconnect: (email: string) =>
     `${email} needs reconnecting, so its messages aren’t shown.`,
   couldntLoad: (email: string) => `Couldn’t load the messages of ${email}.`,
@@ -89,6 +96,12 @@ const de: typeof en = {
   starred: ", mit Stern",
   inAccount: (email) => `, in ${email}`,
   allInboxes: "Alle Posteingänge",
+  combined: {
+    inbox: "Alle Posteingänge",
+    flagged: "Markiert in allen Konten",
+    sent: "Gesendet in allen Konten",
+    drafts: "Entwürfe in allen Konten",
+  },
   needsReconnect: (email) =>
     `${email} muss neu verbunden werden, deshalb fehlen seine Nachrichten.`,
   couldntLoad: (email) =>

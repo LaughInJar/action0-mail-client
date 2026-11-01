@@ -20,15 +20,20 @@ import type { Mailbox, MailboxRole } from "../../core/model";
 import type { ProviderCapabilities } from "../../core/provider";
 import { usePlatform } from "../../platform/context";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
-import { sameList } from "../../state/router";
+import { sameList, type Route } from "../../state/router";
+import {
+  UNIFIED_ROLES,
+  unifiedRoleOf,
+  type UnifiedRole,
+} from "../../data/unified";
 import { findFolded } from "../../lib/text";
 import { useMailActions } from "../actions/useMailActions";
 import { useAccountColors } from "../accounts/accountColors";
 import { useCurrentList } from "../messages/useCurrentList";
 import {
   ALL_INBOXES_FROM,
-  useInboxUnread,
-  useOpenAllInboxes,
+  useCombinedCount,
+  useOpenCombined,
 } from "./allInboxes";
 import { Icon, type IconName } from "../common/Icon";
 import { wantsAppMenu } from "../common/menuPosition";
@@ -104,7 +109,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const store = useUiStore();
   const actions = useMailActions();
   const { sources } = useCurrentList();
-  const openAllInboxes = useOpenAllInboxes();
+  const openCombined = useOpenCombined();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
   const a = useT().accounts;
@@ -250,8 +255,11 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       openMenu(item, menuButton);
       return;
     }
-    if (item.dataset.unified === "true") {
-      if (openAllInboxes()) {
+    const combined = UNIFIED_ROLES.find(
+      (role) => role === item.dataset.unified,
+    );
+    if (combined) {
+      if (openCombined(combined)) {
         store.getState().setFolderFilter("");
         onNavigate?.();
       }
@@ -384,7 +392,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       <FilterContext value={filter}>
         <DropContext value={drop}>
           {accounts.length >= ALL_INBOXES_FROM && (
-            <AllInboxesItem selected={route?.unified === true} />
+            <CombinedBranch route={route} />
           )}
           {accounts.map((handle, index) => (
             <AccountBranch
@@ -482,39 +490,93 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   );
 }
 
-/** "All inboxes": every account's Inbox in one list. */
-function AllInboxesItem({ selected }: { readonly selected: boolean }) {
+/**
+ * "All accounts": the combined views (All inboxes, Starred, Sent,
+ * Drafts), each every account's mailbox of that kind in one list.
+ */
+function CombinedBranch({ route }: { readonly route: Route }) {
   const filter = useContext(FilterContext);
-  const unread = useInboxUnread();
+  const toggledNodes = useUi((state) => state.toggledNodes);
   const a = useT().accounts;
-  const name = a.allInboxes;
-  const match = filter === "" || findFolded(name, filter) !== undefined;
-  if (!match) return null;
+  const key = "combined";
+  const expanded = filter !== "" || !toggledNodes.has(key);
+  const shown = UNIFIED_ROLES.filter(
+    (role) =>
+      filter === "" || findFolded(a.combined[role], filter) !== undefined,
+  );
+  if (filter !== "" && shown.length === 0) return null;
+  return (
+    <>
+      <div
+        role="treeitem"
+        aria-level={1}
+        aria-expanded={expanded}
+        aria-selected={false}
+        tabIndex={-1}
+        data-key={key}
+        data-has-children="true"
+        data-selectable="false"
+        className={`${rowClass(false)} pl-2`}
+      >
+        <Chevron expanded={expanded} />
+        <Icon name="users" className="size-4 shrink-0 text-zinc-500" />
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-zinc-600 dark:text-zinc-300">
+          {a.allAccounts}
+        </span>
+      </div>
+      {expanded &&
+        shown.map((role) => (
+          <CombinedItem
+            key={role}
+            role={role}
+            selected={route?.unified === true && unifiedRoleOf(route) === role}
+          />
+        ))}
+    </>
+  );
+}
+
+/** One combined view in the tree, with its unread or draft count. */
+function CombinedItem({
+  role,
+  selected,
+}: {
+  readonly role: UnifiedRole;
+  readonly selected: boolean;
+}) {
+  const filter = useContext(FilterContext);
+  const count = useCombinedCount(role);
+  const a = useT().accounts;
+  const name = a.combined[role];
+  const bold = role === "inbox" && count > 0;
   return (
     <div
       role="treeitem"
-      aria-level={1}
+      aria-level={2}
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
-      data-key="all-inboxes"
-      data-unified="true"
+      data-key={`combined/${role}`}
+      data-parent-key="combined"
+      data-unified={role}
       data-selectable="true"
       data-has-children="false"
       data-match={filter === "" ? undefined : true}
-      className={`${rowClass(selected)} pl-2`}
+      className={`${rowClass(selected)} pl-6`}
     >
       <span className="size-4 shrink-0" />
-      <Icon name="inbox" className="size-4 shrink-0" />
+      <Icon name={ROLE_ICONS[role]} className="size-4 shrink-0" />
       <span
-        className={`min-w-0 flex-1 truncate ${unread > 0 ? "font-semibold" : ""}`}
+        className={`min-w-0 flex-1 truncate ${bold ? "font-semibold" : ""}`}
       >
         <Highlighted text={name} query={filter} />
       </span>
-      {unread > 0 && (
+      {count > 0 && (
         <span className="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
           <span className="sr-only">, </span>
-          {unread}
-          <span className="sr-only">{a.unread}</span>
+          {count}
+          <span className="sr-only">
+            {role === "drafts" ? a.drafts(count) : a.unread}
+          </span>
         </span>
       )}
     </div>

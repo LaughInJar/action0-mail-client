@@ -14,6 +14,7 @@ import { useInfiniteLists } from "./infiniteLists";
 import type { ListSpec } from "./keys";
 import { messageRows, threadRows, type ListRow } from "./listRows";
 import { isolatingMailboxes } from "./optimistic";
+import type { CombinedView, Route } from "../state/router";
 
 /** What the UI needs of the query behind a list (one account's, or merged). */
 export interface ListQuery {
@@ -112,18 +113,37 @@ export function mergeByDate(
   return { rows, behind };
 }
 
-/** Which All inboxes list: a search in it, and the order. */
+/**
+ * The kinds of combined views: every account's Inbox (All inboxes),
+ * starred (flagged), sent mail or drafts; each is that mailbox role.
+ */
+export type UnifiedRole = "inbox" | CombinedView;
+
+/** The combined views, in the order the folder tree lists them. */
+export const UNIFIED_ROLES: readonly UnifiedRole[] = [
+  "inbox",
+  "flagged",
+  "sent",
+  "drafts",
+];
+
+/** The combined view a route shows (All inboxes unless it names another). */
+export const unifiedRoleOf = (route: Route): UnifiedRole =>
+  route?.combined ?? "inbox";
+
+/** Which combined list: its kind, a search in it, and the order. */
 export interface UnifiedSpec {
-  /** Provider search syntax; omitted for the whole Inbox. */
+  readonly role: UnifiedRole;
+  /** Provider search syntax; omitted for the whole mailbox. */
   readonly search?: string;
-  /** Searches each whole account instead of its Inbox. */
+  /** Searches each whole account instead of its mailbox of that kind. */
   readonly everywhere: boolean;
   readonly order: MessageOrder;
   /** Conversations where the account has them. */
   readonly conversations: boolean;
 }
 
-/** The merged list of All inboxes. */
+/** The merged list of a combined view. */
 export interface UnifiedList {
   readonly list: ListQuery;
   /** The rows, once every available account has its first page. */
@@ -139,14 +159,17 @@ interface Planned {
   readonly spec: ListSpec | undefined;
   /** The account can make requests. */
   readonly ready: boolean;
+  /** Its mailboxes are known (it may have none of the kind listed). */
+  readonly loaded: boolean;
   /** Its mailboxes failed to load. */
   readonly failed: boolean;
 }
 
 /**
- * Every account's Inbox (or a search in it), merged by date. Each account's
- * list is its own cached list, so optimistic changes, live updates and the
- * short-lived cache work as for a single mailbox.
+ * Every account's mailbox of a kind (or a search in it), merged by date.
+ * Accounts without such a mailbox are left out. Each account's list is its
+ * own cached list, so optimistic changes, live updates and the short-lived
+ * cache work as for a single mailbox.
  */
 export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
   const handles = useAccounts();
@@ -160,22 +183,28 @@ export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
       handles.map((handle): Planned => {
         const accountId = handle.account.id;
         const boxes = mailboxes.get(accountId);
-        const inbox = boxes?.data?.find((mailbox) => mailbox.role === "inbox");
-        const scope = spec?.everywhere
-          ? (boxes?.data?.find((mailbox) => mailbox.role === "all") ?? inbox)
-          : inbox;
+        const own = boxes?.data?.find(
+          (mailbox) => mailbox.role === (spec?.role ?? "inbox"),
+        );
+        const scope =
+          spec?.everywhere && own
+            ? (boxes?.data?.find((mailbox) => mailbox.role === "all") ?? own)
+            : own;
         const ready = signedIn.has(accountId);
         return {
           handle,
           ready,
+          loaded: boxes?.data !== undefined,
           failed: (boxes?.error ?? null) !== null && !boxes?.data,
           source: {
             accountId,
             mailboxes: boxes?.data,
             scope,
             isolating: isolatingMailboxes(boxes?.data ?? []),
+            // Drafts open one by one in the composer, so they stay single messages.
             conversations:
               (spec?.conversations ?? false) &&
+              spec?.role !== "drafts" &&
               handle.provider.capabilities.threads,
           },
           spec:
@@ -250,13 +279,8 @@ export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
   });
   // Waiting for an account's mailboxes or first page.
   const pending =
-    planned.some(
-      (plan) =>
-        plan.ready &&
-        !plan.failed &&
-        !plan.spec &&
-        plan.source.scope === undefined,
-    ) || results.some((entry) => !entry.rows && entry.result?.isError !== true);
+    planned.some((plan) => plan.ready && !plan.failed && !plan.loaded) ||
+    results.some((entry) => !entry.rows && entry.result?.isError !== true);
 
   const merged = pending
     ? undefined

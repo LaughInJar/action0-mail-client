@@ -4,7 +4,8 @@ import { useAccounts } from "../../accounts/context";
 import { useAppPart, useRoute, useRouter } from "../../state/context";
 import type { Breakpoint } from "./useBreakpoint";
 import { useMailboxList } from "../common/mailboxNames";
-import { ALL_INBOXES_FROM, allInboxesRoute } from "../mailboxes/allInboxes";
+import { ALL_INBOXES_FROM, combinedRoute } from "../mailboxes/allInboxes";
+import { unifiedRoleOf } from "../../data/unified";
 
 /**
  * Picks a sensible place when the URL doesn't name one:
@@ -36,15 +37,16 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
       if (!accounts.some((handle) => handle.account.id === route.accountId)) {
         const elsewhere =
           route.unified && several
-            ? allInboxesRoute(
+            ? combinedRoute(
                 queryClient,
                 accounts.map((handle) => handle.account.id),
                 null,
+                unifiedRoleOf(route),
               )
             : undefined;
         router.navigate(elsewhere ?? null, { replace: true });
       } else if (route.unified && !several) {
-        // One account left: its own Inbox.
+        // One account left: its own mailbox of that kind.
         router.navigate(
           { accountId: route.accountId, mailboxId: route.mailboxId },
           { replace: true },

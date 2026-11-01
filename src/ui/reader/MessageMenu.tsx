@@ -109,6 +109,7 @@ export function MessageMenu({
                   accountId: route.accountId,
                   mailboxId: route.mailboxId,
                   unified: true,
+                  ...(route.combined ? { combined: route.combined } : {}),
                   search,
                 });
               else if (searchIn !== undefined)

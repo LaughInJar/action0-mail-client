@@ -13,6 +13,7 @@ import { messageRows, threadRows } from "../../data/listRows";
 import { isolatingMailboxes } from "../../data/optimistic";
 import type { ListSpec } from "../../data/keys";
 import {
+  unifiedRoleOf,
   useUnifiedList,
   type ListQuery,
   type ListSource,
@@ -32,8 +33,10 @@ export const listKeyOf = (
 ): string | null =>
   route
     ? JSON.stringify([
-        // All inboxes is one list, whichever account is in context.
-        ...(route.unified ? ["all"] : [route.accountId, route.mailboxId]),
+        // A combined view is one list, whichever account is in context.
+        ...(route.unified
+          ? ["all", unifiedRoleOf(route)]
+          : [route.accountId, route.mailboxId]),
         route.search?.text.trim() ?? "",
         route.search?.everywhere ?? false,
         order,
@@ -48,8 +51,8 @@ export const keyOfRoute = (route: Route): MessageKey | null =>
     : messageKey(route.accountId, route.messageId);
 
 /**
- * The route that opens a row of the list `route` shows. In All inboxes the
- * row's account becomes the account in context.
+ * The route that opens a row of the list `route` shows. In a combined view
+ * the row's account (and its mailbox of that kind) becomes the context.
  */
 export function routeOfRow(
   route: NonNullable<Route>,
@@ -58,13 +61,14 @@ export function routeOfRow(
 ): NonNullable<Route> {
   const { accountId, messageId } = messageRef(key);
   if (!route.unified) return { ...route, messageId };
-  const inbox = sources
+  const role = unifiedRoleOf(route);
+  const own = sources
     .get(accountId)
-    ?.mailboxes?.find((mailbox) => mailbox.role === "inbox");
+    ?.mailboxes?.find((mailbox) => mailbox.role === role);
   return {
     ...route,
     accountId,
-    mailboxId: inbox?.id ?? route.mailboxId,
+    mailboxId: own?.id ?? route.mailboxId,
     messageId,
   };
 }
@@ -126,17 +130,19 @@ export function useCurrentList() {
   );
   const searchText = route?.search?.text.trim();
   const everywhere = route?.search?.everywhere ?? false;
+  const role = unifiedRoleOf(route);
   const unifiedSpec = useMemo(
     () =>
       unified
         ? {
+            role,
             order,
             everywhere,
             conversations: wantsConversations,
             ...(searchText ? { search: searchText } : {}),
           }
         : undefined,
-    [unified, order, everywhere, wantsConversations, searchText],
+    [unified, role, order, everywhere, wantsConversations, searchText],
   );
   const merged = useUnifiedList(unifiedSpec);
   const isolating = useMemo(
@@ -177,8 +183,10 @@ export function useCurrentList() {
     route,
     order,
     spec,
-    /** All inboxes: every account's Inbox, merged. */
+    /** A combined view: every account's mailbox of a kind, merged. */
     unified,
+    /** The combined view's kind (only meaningful with `unified`). */
+    unifiedRole: role,
     /** The query behind the rows (loading state, paging). */
     list,
     /** The rows, once loaded. */

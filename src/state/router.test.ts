@@ -384,3 +384,32 @@ describe("contacts routes", () => {
     router.dispose();
   });
 });
+
+describe("combined views", () => {
+  it("round-trip with their kind after /all/, and All inboxes without one", () => {
+    const sent = {
+      accountId: route.accountId,
+      mailboxId: asMailboxId("SENT"),
+      messageId: route.messageId,
+      unified: true as const,
+      combined: "sent" as const,
+      search: { text: "plan", everywhere: false },
+    };
+    const hash = formatRoute(sent);
+    expect(hash.startsWith("#/all/sent/")).toBe(true);
+    expect(parseHash(hash)).toEqual(sent);
+    const inbox = {
+      accountId: route.accountId,
+      mailboxId: asMailboxId("INBOX"),
+      unified: true as const,
+    };
+    expect(formatRoute(inbox)).toBe(
+      `#/all/${encodeURIComponent(route.accountId)}/INBOX`,
+    );
+    expect(parseHash(formatRoute(inbox))).toEqual(inbox);
+    expect(sameList(sent, { ...sent, combined: "drafts" })).toBe(false);
+    expect(
+      sameList({ ...sent, accountId: asAccountId("demo:x@example.com") }, sent),
+    ).toBe(true);
+  });
+});

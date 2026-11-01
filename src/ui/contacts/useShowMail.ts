@@ -4,7 +4,7 @@ import { useAccounts } from "../../accounts/context";
 import type { AccountId } from "../../core/ids";
 import { useFetchMailboxes } from "../../data/hooks";
 import { useRouter } from "../../state/context";
-import { ALL_INBOXES_FROM, allInboxesRoute } from "../mailboxes/allInboxes";
+import { ALL_INBOXES_FROM, combinedRoute } from "../mailboxes/allInboxes";
 
 /**
  * "Show mail": searches mail for an address, everywhere. With several
@@ -26,7 +26,7 @@ export function useShowMail(): (
       const search = { text: address, everywhere: true };
       if (ids.length >= ALL_INBOXES_FROM) {
         for (const id of ids) await fetchMailboxes(id).catch(() => []);
-        const target = allInboxesRoute(
+        const target = combinedRoute(
           queryClient,
           ids,
           router.getLastMailRoute(),

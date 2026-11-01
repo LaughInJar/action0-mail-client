@@ -17,11 +17,21 @@ export interface RouteSearch {
   readonly everywhere: boolean;
 }
 
+/** A combined view other than All inboxes: every account's starred mail, sent mail or drafts. */
+export type CombinedView = "flagged" | "sent" | "drafts";
+
+/** The combined views besides All inboxes, as they appear in the URL. */
+export const COMBINED_VIEWS: readonly CombinedView[] = [
+  "flagged",
+  "sent",
+  "drafts",
+];
+
 /**
  * Navigation state kept in the URL hash:
  * `#/<accountId>/<mailboxId>[/<messageId>][?q=<search>[&in=all]][&compose=…]`,
- * or `#/all/…` for All inboxes, or `null` for `#/` (on phones: the folder
- * tree). With a search, `mailboxId` is the mailbox it was started from.
+ * or `#/all/…` for All inboxes (`#/all/<view>/…` for the other combined
+ * views), or `null` for `#/` (on phones: the folder tree). With a search, `mailboxId` is the mailbox it was started from.
  * Something open over the route (Settings, a message's original) is an
  * {@link Overlay}, added after it (see {@link formatLocation}).
  */
@@ -39,6 +49,11 @@ export type Route = {
    * `accountId`/`mailboxId` only say whose message is open.
    */
   readonly unified?: true;
+  /**
+   * With `unified`: the combined view other than All inboxes, and
+   * `accountId`/`mailboxId` name the context account's mailbox of that kind.
+   */
+  readonly combined?: CombinedView;
   readonly search?: RouteSearch;
   /**
    * A full-screen composer is open (tablets and phones), so Back closes it:
@@ -219,7 +234,11 @@ export function parseHash(hash: string): Route {
   if (!path) return null;
   const all = path.split("/").map(safeDecode);
   const unified = all[0] === UNIFIED;
-  const segments = unified ? all.slice(1) : all;
+  // Account ids always contain ":", so a view's name can't be one.
+  const view = unified
+    ? COMBINED_VIEWS.find((name) => name === all[1])
+    : undefined;
+  const segments = unified ? all.slice(view ? 2 : 1) : all;
   const [account, mailbox, message] = segments;
   if (!account || !mailbox || segments.length > 3) return null;
   const params = new URLSearchParams(query);
@@ -231,6 +250,7 @@ export function parseHash(hash: string): Route {
     mailboxId: asMailboxId(mailbox),
     ...(message ? { messageId: asMessageId(message) } : {}),
     ...(unified ? { unified: true } : {}),
+    ...(view ? { combined: view } : {}),
     ...(text.trim()
       ? { search: { text, everywhere: params.get("in") === "all" } }
       : {}),
@@ -248,7 +268,9 @@ export function formatRoute(route: Route): string {
     (segment): segment is NonNullable<typeof segment> => segment !== undefined,
   );
   const path = [
-    ...(route.unified ? [UNIFIED] : []),
+    ...(route.unified
+      ? [UNIFIED, ...(route.combined ? [route.combined] : [])]
+      : []),
     ...segments.map((segment) => encodeURIComponent(segment)),
   ];
   const { search, compose, composeAccount } = route;
@@ -267,12 +289,13 @@ export function formatRoute(route: Route): string {
 
 /**
  * True if both routes show the same list: mailbox and search (ignoring the
- * message). All inboxes is one list, whichever account is in context.
+ * message). A combined view is one list, whichever account is in context.
  */
 export function sameList(a: Route, b: Route): boolean {
   const unified = a?.unified === true;
   return (
     unified === (b?.unified === true) &&
+    a?.combined === b?.combined &&
     (unified ||
       (a?.accountId === b?.accountId && a?.mailboxId === b?.mailboxId)) &&
     a?.search?.text.trim() === b?.search?.text.trim() &&
