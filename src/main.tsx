@@ -6,6 +6,7 @@ import { createCaldavServices } from "./app/caldav";
 import { createMailServerAccounts } from "./app/mailServers";
 import { IcsCalendarProvider } from "./providers/ical/IcsCalendarProvider";
 import { DEMO_ACCOUNT, DEMO_WORK_ACCOUNT } from "./providers/fake/module";
+import { DEMO_TEMPLATES } from "./providers/fake/demoTemplates";
 import {
   createAppServices,
   createDefaultModules,
@@ -95,6 +96,9 @@ if (url.searchParams.has("demo")) {
   const { settings, updateSettings } = services.uiStore.getState();
   if (settings.aiServices.length === 0)
     updateSettings({ aiServices: [{ id: "demo-ai", kind: "demo" }] });
+  // Sample templates, so the composer's picker can be tried.
+  if (settings.templates.length === 0)
+    updateSettings({ templates: DEMO_TEMPLATES });
 }
 
 const root = document.getElementById("root");

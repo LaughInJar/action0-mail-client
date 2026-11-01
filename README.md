@@ -13,6 +13,7 @@ A fast, keyboard-first mail client that runs entirely in the browser. It is a st
 - Permanent deletion ("Delete forever", "Empty Trash/Spam") inside Trash and Spam, always with a confirmation.
 - Drag messages onto a label in the folder tree to move them there; hold <kbd>Ctrl</kbd> (or <kbd>Alt</kbd>/<kbd>Option</kbd> on a Mac) to only add the label. On touch screens, use **Move to…** and **Labels…** in the selection bar instead.
 - Write, reply, reply all and forward in a composer docked at the bottom right (full screen on phones). Basic formatting, address suggestions from your Google contacts, drafts that save themselves, and 30 seconds to take a sent mail back.
+- Templates (canned replies): saved texts inserted at the cursor from the composer's **Templates** button or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> (search, Enter), with `{first name}` and `{name}` filled in from the first recipient (German `{Vorname}`, `{Name}`), and their subject filling an empty one. **Save as template…** in the picker keeps what you wrote; Settings → Writing → Templates adds, edits, orders and deletes them, for every account or one. Kept in this browser (in the apps, the app's own storage).
 - Attachments: pictures open in a viewer (<kbd>←</kbd>/<kbd>→</kbd>, <kbd>Esc</kbd>), PDFs in the browser's PDF viewer, everything else downloads. HTML and other files that could run code are never opened inside the app. Attach files with the paperclip, by dragging them onto the composer (or anywhere, to start a new mail) or by pasting; pictures dropped or pasted into the text appear inline. Up to 25 MB per mail.
 - Search as you type, in the current folder or everywhere. Gmail's search operators work (`from:`, `has:attachment`, `before:2026/01/01`, …). The search is part of the URL, so Back and reloading keep it.
 - Sort the list by date, newest or oldest first.
@@ -312,51 +313,52 @@ The AI assistant works with an AI service you bring; action0 has no server in be
 
 ## Keyboard shortcuts
 
-| Keys                                                                        | Action                                                               |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                    | Next / previous message                                              |
-| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                              | Extend the selection                                                 |
-| <kbd>x</kbd>                                                                | Select or unselect the current message                               |
-| <kbd>Esc</kbd>                                                              | Clear the selection (phones: back)                                   |
-| <kbd>Home</kbd> / <kbd>End</kbd>                                            | First / last loaded message                                          |
-| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                      | Scroll the message                                                   |
-| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd> | Go to Inbox / Sent / Drafts / All Mail (combined in a combined view) |
-| <kbd>g</kbd> then <kbd>u</kbd>                                              | Go to All inboxes (with two or more accounts)                        |
-| <kbd>/</kbd>                                                                | Search mail (Enter or ↓: to the results, Esc: end search)            |
-| <kbd>g</kbd> then <kbd>f</kbd>                                              | Filter folders (Enter opens the first match)                         |
-| <kbd>c</kbd>                                                                | Write a new mail                                                     |
-| <kbd>r</kbd> / <kbd>Shift</kbd> + <kbd>r</kbd> / <kbd>f</kbd>               | Reply / reply all / forward                                          |
-| <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (Mac: <kbd>⌘</kbd> + <kbd>Enter</kbd>)   | Send (in the composer; <kbd>z</kbd> takes it back)                   |
-| <kbd>Ctrl</kbd> + <kbd>U</kbd> (Mac: <kbd>⌘</kbd> + <kbd>U</kbd>)           | Show the original (headers and source)                               |
-| <kbd>Ctrl</kbd> + <kbd>P</kbd> (Mac: <kbd>⌘</kbd> + <kbd>P</kbd>)           | Print the message or conversation                                    |
-| <kbd>b</kbd> / <kbd>q</kbd>                                                 | AI: summarize / ask about the mail (once set up)                     |
-| <kbd>Ctrl</kbd> + <kbd>J</kbd> (Mac: <kbd>⌘</kbd> + <kbd>J</kbd>)           | AI: write or rewrite (in the composer)                               |
-| <kbd>Esc</kbd> in the composer                                              | Close it; the draft is kept                                          |
-| <kbd>a</kbd>                                                                | Archive the message or selection                                     |
-| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                              | Mark as read / unread                                                |
-| <kbd>z</kbd>                                                                | Undo the last action                                                 |
-| <kbd>v</kbd>                                                                | Move to… (pick a mailbox, Enter moves)                               |
-| <kbd>l</kbd>                                                                | Labels… (toggle labels, Enter applies, Esc cancels)                  |
-| <kbd>s</kbd>                                                                | Star / unstar                                                        |
-| <kbd>Delete</kbd> (Mac: <kbd>⌫</kbd>)                                       | Move to Trash; inside Trash: restore                                 |
-| <kbd>Shift</kbd> + <kbd>s</kbd>                                             | Report spam; inside Spam: not spam                                   |
-| <kbd>Shift</kbd> + <kbd>Delete</kbd>                                        | Delete forever (inside Trash and Spam, with confirmation)            |
-| <kbd>Enter</kbd> or <kbd>o</kbd>                                            | Open the message (phones)                                            |
-| <kbd>n</kbd> / <kbd>p</kbd>                                                 | Next / previous message in a conversation                            |
-| <kbd>Enter</kbd> or <kbd>o</kbd> in a conversation                          | Open or close the message at the cursor                              |
-| <kbd>g</kbd> then <kbd>c</kbd>                                              | Go to the calendar                                                   |
-| <kbd>g</kbd> then <kbd>p</kbd>                                              | Go to the contacts                                                   |
-| In the calendar: <kbd>t</kbd>                                               | Today                                                                |
-| In the calendar: <kbd>←</kbd> / <kbd>→</kbd>, <kbd>k</kbd> / <kbd>j</kbd>   | Previous / next day, week or month                                   |
-| In the calendar: <kbd>d</kbd> / <kbd>w</kbd> / <kbd>m</kbd> / <kbd>a</kbd>  | Day / week / month / agenda                                          |
-| In the calendar: <kbd>c</kbd>                                               | New event                                                            |
-| In the calendar: <kbd>e</kbd> / <kbd>Delete</kbd>                           | Edit / delete the open event                                         |
-| In the event editor: <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>        | Save                                                                 |
-| In the contacts: <kbd>j</kbd> / <kbd>k</kbd>, <kbd>x</kbd>, <kbd>/</kbd>    | Next / previous contact, select, search                              |
-| In the contacts: <kbd>c</kbd>                                               | New contact                                                          |
-| In the contacts: <kbd>e</kbd> / <kbd>Delete</kbd>                           | Edit / delete the contact (or the selection)                         |
-| In the contact editor: <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>      | Save                                                                 |
-| <kbd>?</kbd>                                                                | Show all shortcuts                                                   |
+| Keys                                                                                                    | Action                                                               |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd>                                                | Next / previous message                                              |
+| <kbd>Shift</kbd> + <kbd>j</kbd> / <kbd>k</kbd>                                                          | Extend the selection                                                 |
+| <kbd>x</kbd>                                                                                            | Select or unselect the current message                               |
+| <kbd>Esc</kbd>                                                                                          | Clear the selection (phones: back)                                   |
+| <kbd>Home</kbd> / <kbd>End</kbd>                                                                        | First / last loaded message                                          |
+| <kbd>Space</kbd> / <kbd>Shift</kbd> + <kbd>Space</kbd>                                                  | Scroll the message                                                   |
+| <kbd>g</kbd> then <kbd>i</kbd> / <kbd>s</kbd> / <kbd>d</kbd> / <kbd>a</kbd>                             | Go to Inbox / Sent / Drafts / All Mail (combined in a combined view) |
+| <kbd>g</kbd> then <kbd>u</kbd>                                                                          | Go to All inboxes (with two or more accounts)                        |
+| <kbd>/</kbd>                                                                                            | Search mail (Enter or ↓: to the results, Esc: end search)            |
+| <kbd>g</kbd> then <kbd>f</kbd>                                                                          | Filter folders (Enter opens the first match)                         |
+| <kbd>c</kbd>                                                                                            | Write a new mail                                                     |
+| <kbd>r</kbd> / <kbd>Shift</kbd> + <kbd>r</kbd> / <kbd>f</kbd>                                           | Reply / reply all / forward                                          |
+| <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (Mac: <kbd>⌘</kbd> + <kbd>Enter</kbd>)                               | Send (in the composer; <kbd>z</kbd> takes it back)                   |
+| <kbd>Ctrl</kbd> + <kbd>U</kbd> (Mac: <kbd>⌘</kbd> + <kbd>U</kbd>)                                       | Show the original (headers and source)                               |
+| <kbd>Ctrl</kbd> + <kbd>P</kbd> (Mac: <kbd>⌘</kbd> + <kbd>P</kbd>)                                       | Print the message or conversation                                    |
+| <kbd>b</kbd> / <kbd>q</kbd>                                                                             | AI: summarize / ask about the mail (once set up)                     |
+| <kbd>Ctrl</kbd> + <kbd>J</kbd> (Mac: <kbd>⌘</kbd> + <kbd>J</kbd>)                                       | AI: write or rewrite (in the composer)                               |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> (Mac: <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>) | Insert a template (in the composer)                                  |
+| <kbd>Esc</kbd> in the composer                                                                          | Close it; the draft is kept                                          |
+| <kbd>a</kbd>                                                                                            | Archive the message or selection                                     |
+| <kbd>Shift</kbd> + <kbd>i</kbd> / <kbd>u</kbd>                                                          | Mark as read / unread                                                |
+| <kbd>z</kbd>                                                                                            | Undo the last action                                                 |
+| <kbd>v</kbd>                                                                                            | Move to… (pick a mailbox, Enter moves)                               |
+| <kbd>l</kbd>                                                                                            | Labels… (toggle labels, Enter applies, Esc cancels)                  |
+| <kbd>s</kbd>                                                                                            | Star / unstar                                                        |
+| <kbd>Delete</kbd> (Mac: <kbd>⌫</kbd>)                                                                   | Move to Trash; inside Trash: restore                                 |
+| <kbd>Shift</kbd> + <kbd>s</kbd>                                                                         | Report spam; inside Spam: not spam                                   |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd>                                                                    | Delete forever (inside Trash and Spam, with confirmation)            |
+| <kbd>Enter</kbd> or <kbd>o</kbd>                                                                        | Open the message (phones)                                            |
+| <kbd>n</kbd> / <kbd>p</kbd>                                                                             | Next / previous message in a conversation                            |
+| <kbd>Enter</kbd> or <kbd>o</kbd> in a conversation                                                      | Open or close the message at the cursor                              |
+| <kbd>g</kbd> then <kbd>c</kbd>                                                                          | Go to the calendar                                                   |
+| <kbd>g</kbd> then <kbd>p</kbd>                                                                          | Go to the contacts                                                   |
+| In the calendar: <kbd>t</kbd>                                                                           | Today                                                                |
+| In the calendar: <kbd>←</kbd> / <kbd>→</kbd>, <kbd>k</kbd> / <kbd>j</kbd>                               | Previous / next day, week or month                                   |
+| In the calendar: <kbd>d</kbd> / <kbd>w</kbd> / <kbd>m</kbd> / <kbd>a</kbd>                              | Day / week / month / agenda                                          |
+| In the calendar: <kbd>c</kbd>                                                                           | New event                                                            |
+| In the calendar: <kbd>e</kbd> / <kbd>Delete</kbd>                                                       | Edit / delete the open event                                         |
+| In the event editor: <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>                                    | Save                                                                 |
+| In the contacts: <kbd>j</kbd> / <kbd>k</kbd>, <kbd>x</kbd>, <kbd>/</kbd>                                | Next / previous contact, select, search                              |
+| In the contacts: <kbd>c</kbd>                                                                           | New contact                                                          |
+| In the contacts: <kbd>e</kbd> / <kbd>Delete</kbd>                                                       | Edit / delete the contact (or the selection)                         |
+| In the contact editor: <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>                                  | Save                                                                 |
+| <kbd>?</kbd>                                                                                            | Show all shortcuts                                                   |
 
 With the mouse: click shows a message, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click toggles, <kbd>Shift</kbd>-click selects a range. On touch screens, a long press opens the message's menu, and **Select** there starts selecting (then taps toggle).
 

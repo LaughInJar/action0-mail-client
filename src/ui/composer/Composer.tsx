@@ -24,6 +24,7 @@ import { megabytes } from "../common/files";
 import { COMPOSER_IDS } from "./ids";
 import { useComposerFiles } from "./useComposerFiles";
 import { RichTextEditor } from "./RichTextEditor";
+import { TemplatePicker } from "../templates/TemplatePicker";
 import type { Editor } from "@tiptap/react";
 import { ComposerAi } from "./ComposerAi";
 import { useAiSetUp } from "../ai/useAi";
@@ -74,6 +75,7 @@ function ComposerWindow({
     setAiOpen(true);
     setAiFocus((count) => count + 1);
   };
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const c = t.composer;
 
   useFocusTrap(rootRef, fullScreen);
@@ -248,6 +250,9 @@ function ComposerWindow({
     } else if (mod && event.key.toLowerCase() === "j" && aiReady) {
       event.preventDefault();
       openAi();
+    } else if (mod && event.shiftKey && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      setTemplatesOpen(true);
     } else if (event.key === "Escape") {
       event.preventDefault();
       if (confirmNoSubject) setConfirmNoSubject(false);
@@ -592,6 +597,18 @@ function ComposerWindow({
             }}
             className="shrink-0 border-b border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-800 pointer-coarse:min-h-11"
           />
+          {templatesOpen && (
+            <TemplatePicker
+              editor={editor}
+              session={session}
+              onSubject={(subject) => {
+                update({ subject }, true);
+              }}
+              onClose={() => {
+                setTemplatesOpen(false);
+              }}
+            />
+          )}
           {aiReady && aiOpen && (
             <ComposerAi
               editor={editor}
@@ -607,6 +624,9 @@ function ComposerWindow({
           <RichTextEditor
             onEditor={setEditor}
             {...(aiReady ? { onAi: openAi } : {})}
+            onTemplates={() => {
+              setTemplatesOpen(true);
+            }}
             initialHtml={session.body}
             // Reply with AI starts in the AI field instead.
             focusOnOpen={initialFocus === "body" && !session.ai}

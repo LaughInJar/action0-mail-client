@@ -111,6 +111,7 @@ All navigation lives in the URL hash (`src/state/router.ts`), so Back works ever
 | `#/contacts/<list>[/<contact>[/edit]\|/new\|/duplicates]`       | The contacts: a list (`all`, or a source's address book or group), a contact, the editor  |
 | `…?q=<text>`, `…&import`, `…/new?name=…&address=…`              | A contact search; the vCard import preview; a new contact started from mail               |
 | `…&settings` / `…?settings`                                     | Settings open over the current place                                                      |
+| `…settings=filter\|auto-reply\|template`                        | An editor open over Settings (a filter, the automatic reply, a template)                  |
 | `…&original=<message>&oa=<account>`                             | A message's original (headers and source) open over the current place                     |
 
 `Route` is `null` for `#/`, and while the calendar or the contacts are open; `router.part()` says which of the three parts (`mail`, `calendar`, `contacts`) the URL names, and `getCalendarRoute()` / `getContactsRoute()` give their routes. The contacts' list and contact tokens are JSON made by the data layer (`listToken`, `contactKeyOf` in `src/data/contacts.ts`); the router treats them as opaque, like IDs. IDs are URI-encoded but never parsed. The router keeps a history depth counter in `history.state`, so the app knows whether Back stays inside the app.
@@ -143,7 +144,7 @@ Persistence (sessionStorage, ≤ 10 minutes) makes a reload show the last lists 
 
 `src/state/uiStore.ts` holds what's on screen: the current list's key, focus, selection and anchor (by `MessageKey`), the composer session and pending sends, the AI panel and its answers, open pickers, menus and dialogs, toasts with their undo steps, drag state, column widths, tree expansion, list order, settings, reminder marks and account colours.
 
-Only settings-like state is persisted to localStorage (`partialize`): column widths, tree expansion, list order, settings, reminder marks and account colours. Never mail content. Settings are parsed defensively on load (`src/state/settings.ts`), so an old or edited value can't break the app.
+Only settings-like state is persisted to localStorage (`partialize`): column widths, tree expansion, list order, settings (including the user's templates, `MailTemplate` in `src/compose/templates.ts`, which the composer's picker fills with the recipient's names), reminder marks and account colours. Never mail content. Settings are parsed defensively on load (`src/state/settings.ts`), so an old or edited value can't break the app.
 
 ## Flows
 
