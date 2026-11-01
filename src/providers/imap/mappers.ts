@@ -1,4 +1,5 @@
 /** The bridge's JSON as domain values, and its errors as `MailError`s. */
+import { parseSendAtMarker } from "../../core/schedule";
 import {
   isMailServerError,
   type MailServerError,
@@ -47,6 +48,7 @@ export function toMailbox(mailbox: ImapMailbox): Mailbox {
 }
 
 export function toSummary(summary: ImapSummary): MessageSummary {
+  const marker = parseSendAtMarker(summary.sendAt);
   return {
     id: asMessageId(summary.id),
     threadId: asThreadId(summary.threadId),
@@ -58,6 +60,12 @@ export function toSummary(summary: ImapSummary): MessageSummary {
     receivedAt: summary.receivedAt,
     flags: summary.flags,
     hasAttachments: summary.hasAttachments,
+    ...(marker
+      ? {
+          sendAt: marker.sendAt,
+          ...(marker.by ? { scheduledBy: marker.by } : {}),
+        }
+      : {}),
   };
 }
 

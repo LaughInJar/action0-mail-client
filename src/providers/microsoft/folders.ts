@@ -5,6 +5,9 @@ import type { GraphCategory, GraphMailFolder } from "./types";
 /** The Flagged view: flagged messages of every folder (the star is Outlook's flag). */
 export const FLAGGED_VIEW_ID = asMailboxId("view:flagged");
 
+/** Scheduled mail: held in the Outbox, or drafts marked with a time. */
+export const SCHEDULED_VIEW_ID = asMailboxId("view:scheduled");
+
 /** All mail except Deleted Items and Junk: used to search everywhere. */
 export const ALL_VIEW_ID = asMailboxId("view:all");
 
@@ -203,6 +206,15 @@ const VIEWS: readonly Mailbox[] = [
     name: "Flagged",
     kind: "view",
     role: "flagged",
+    selectable: true,
+    hidden: false,
+    assignable: false,
+  },
+  {
+    id: SCHEDULED_VIEW_ID,
+    name: "Scheduled",
+    kind: "view",
+    role: "scheduled",
     selectable: true,
     hidden: false,
     assignable: false,

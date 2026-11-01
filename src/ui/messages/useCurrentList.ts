@@ -117,9 +117,13 @@ export function useCurrentList() {
   const { data: mailboxes } = useMailboxList(route?.accountId);
   const spec = unified ? undefined : listSpecOf(route, order, mailboxes);
   const scope = findMailbox(mailboxes, spec?.mailboxId);
-  // Drafts open one by one in the composer, so they stay single messages.
+  // Drafts open one by one in the composer, so they stay single messages;
+  // scheduled mail too (each has its own time).
   const conversations =
-    wantsConversations && supportsThreads && scope?.role !== "drafts";
+    wantsConversations &&
+    supportsThreads &&
+    scope?.role !== "drafts" &&
+    scope?.role !== "scheduled";
   const messageList = useMessageList(
     route?.accountId,
     conversations ? undefined : spec,

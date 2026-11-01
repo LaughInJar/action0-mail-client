@@ -1,4 +1,9 @@
 import { useContactLink } from "../contacts/contactLink";
+import { useAccounts } from "../../accounts/context";
+import {
+  scheduleItems,
+  useScheduleActions,
+} from "../schedule/useScheduleActions";
 import { printItems, printJob, usePrint } from "../print/printing";
 import type { MessageKey } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
@@ -66,6 +71,8 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const filterLink = useFilterLinkActions();
   const contactLink = useContactLink();
   const ai = useAiReaderActions();
+  const scheduleActions = useScheduleActions();
+  const accounts = useAccounts();
   const chosen = (rows ?? []).filter((row) => keys.includes(row.key));
   if (!route || chosen.length === 0) return null;
   const [single] = chosen.length === 1 ? chosen : [];
@@ -151,7 +158,27 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
           );
         },
       });
-    if (!isDraft && compose.canWriteFrom(single.accountId))
+    // A scheduled mail: its own actions instead of answering it.
+    const scheduling = accounts.find(
+      (handle) => handle.account.id === single.accountId,
+    )?.provider.capabilities.scheduling;
+    const { sendAt } = single.summary;
+    if (sendAt !== undefined && scheduling && !single.thread)
+      answering.push(
+        ...entriesOf(
+          scheduleItems(
+            scheduleActions,
+            {
+              accountId: single.accountId,
+              mailboxId: source?.scope?.id ?? route.mailboxId,
+              scheduling,
+              message: { ...single.summary, sendAt },
+            },
+            t,
+          ),
+        ),
+      );
+    else if (!isDraft && compose.canWriteFrom(single.accountId))
       answering.push(
         ...entriesOf(
           answerItems(compose, ref, { isDraft: false, phone: false }, t),

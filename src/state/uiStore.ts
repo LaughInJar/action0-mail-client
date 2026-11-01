@@ -1,4 +1,5 @@
 import type { ParsedCard } from "../core/contacts";
+import type { ScheduledEntry } from "../core/schedule";
 import {
   createJSONStorage,
   persist,
@@ -289,6 +290,8 @@ export interface UiState extends selection.SelectionState {
   readonly helpOpen: boolean;
   /** The command palette is open. */
   readonly paletteOpen: boolean;
+  /** A scheduled mail whose time is being picked anew (Change time from a menu). */
+  readonly sendLaterFor: ScheduledEntry | null;
   /** The current toast. Session only. */
   readonly toast: Toast | null;
   readonly dragging: DragState | null;
@@ -372,6 +375,7 @@ export interface UiActions {
   readonly setDrawerOpen: (open: boolean) => void;
   readonly setHelpOpen: (open: boolean) => void;
   readonly setPaletteOpen: (open: boolean) => void;
+  readonly setSendLaterFor: (entry: ScheduledEntry | null) => void;
   /** Shows a toast, replacing the current one. */
   readonly showToast: (toast: Omit<Toast, "id" | "createdAt">) => void;
   /** Hides the toast with this id (if it is still the current one). */
@@ -407,6 +411,11 @@ export interface UiActions {
   readonly closeComposer: (key: number) => void;
   /** Moves the composer into the send queue. */
   readonly queueSend: (key: number, delayMs: number) => PendingSend | undefined;
+  /**
+   * Queues a saved mail that isn't in the composer (a scheduled mail's
+   * Send now) like {@link queueSend}: Undo opens it in the composer.
+   */
+  readonly queueDraft: (init: ComposerInit, delayMs: number) => PendingSend;
   /** Removes a pending send (sent, failed or undone) and returns it. */
   readonly takePendingSend: (id: number) => PendingSend | undefined;
   readonly markUnsubscribed: (id: MessageId) => void;
@@ -518,6 +527,27 @@ export function createUiStore(storage: Storage | undefined): UiStore {
     persist(
       (set, get) => {
         let sequence = 0;
+        /** A session with defaults for what `init` leaves out (a new key unless given). */
+        const newSession = ({
+          dirty = false,
+          key,
+          ...init
+        }: ComposerInit): ComposerSession => ({
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "",
+          body: "",
+          attachments: [],
+          showCcBcc: false,
+          window: "docked",
+          focus: "to",
+          ...init,
+          key: key ?? ++sequence,
+          revision: dirty ? 1 : 0,
+          savedRevision: 0,
+          saving: false,
+        });
         const update = (
           fn: (state: selection.SelectionState) => selection.SelectionState,
         ) => {
@@ -537,6 +567,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           drawerOpen: false,
           helpOpen: false,
           paletteOpen: false,
+          sendLaterFor: null,
           toast: null,
           dragging: null,
           picker: null,
@@ -657,6 +688,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setPaletteOpen: (paletteOpen) => {
             set({ paletteOpen });
           },
+          setSendLaterFor: (sendLaterFor) => {
+            set({ sendLaterFor });
+          },
           showToast: (toast) => {
             set((s) => ({
               toast: {
@@ -681,23 +715,8 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           setAddAccountOpen: (addAccountOpen) => {
             set({ addAccountOpen });
           },
-          openComposer: ({ dirty = false, key, ...init }) => {
-            const session: ComposerSession = {
-              to: [],
-              cc: [],
-              bcc: [],
-              subject: "",
-              body: "",
-              attachments: [],
-              showCcBcc: false,
-              window: "docked",
-              focus: "to",
-              ...init,
-              key: key ?? ++sequence,
-              revision: dirty ? 1 : 0,
-              savedRevision: 0,
-              saving: false,
-            };
+          openComposer: (init) => {
+            const session = newSession(init);
             set({ composer: session });
             return session;
           },
@@ -756,6 +775,17 @@ export function createUiStore(storage: Storage | undefined): UiStore {
               sendAt: now + delayMs,
             };
             set({ composer: null, pendingSends: [...pendingSends, pending] });
+            return pending;
+          },
+          queueDraft: (init, delayMs) => {
+            const now = Date.now();
+            const pending: PendingSend = {
+              id: ++sequence,
+              session: newSession(init),
+              queuedAt: now,
+              sendAt: now + delayMs,
+            };
+            set((s) => ({ pendingSends: [...s.pendingSends, pending] }));
             return pending;
           },
           takePendingSend: (id) => {

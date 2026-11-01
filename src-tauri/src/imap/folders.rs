@@ -451,7 +451,7 @@ impl FolderTree {
             assignable: folder.selectable
                 && !matches!(
                     folder.role,
-                    Some(Role::Sent | Role::Drafts | Role::All | Role::Flagged)
+                    Some(Role::Sent | Role::Drafts | Role::Scheduled | Role::All | Role::Flagged)
                 ),
             counts: folder.status.and_then(|status| {
                 Some(Counts {
@@ -482,6 +482,19 @@ impl FolderTree {
                 .position(|m| m.role.is_none_or(|role| role.rank() > Role::Flagged.rank()))
                 .unwrap_or(mailboxes.len());
             mailboxes.insert(at, view(ids::FLAGGED, "Flagged", Role::Flagged, false));
+        }
+        if self.role(Role::Drafts).is_some() {
+            let at = mailboxes
+                .iter()
+                .position(|m| {
+                    m.role
+                        .is_none_or(|role| role.rank() > Role::Scheduled.rank())
+                })
+                .unwrap_or(mailboxes.len());
+            mailboxes.insert(
+                at,
+                view(ids::SCHEDULED, "Scheduled", Role::Scheduled, false),
+            );
         }
         if self.role(Role::All).is_none() {
             let at = mailboxes

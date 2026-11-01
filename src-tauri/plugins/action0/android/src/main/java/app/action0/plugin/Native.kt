@@ -20,4 +20,7 @@ object Native {
    * returns JSON `[{tag, title, body, url}]`, the notifications to show.
    */
   @JvmStatic external fun check(dataDir: String, vaultKey: String, googleTokens: String): String
+
+  /** When the next job should send scheduled mail (epoch ms), or -1 for none. */
+  @JvmStatic external fun nextSend(dataDir: String): Long
 }

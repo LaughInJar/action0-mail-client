@@ -1,11 +1,14 @@
 //! The background check for new mail (Android). The Kotlin side's
 //! WorkManager job runs it about every 15 minutes, as the system allows,
 //! while the app isn't open: it asks each account for unread Inbox mail
-//! that arrived since the last check and returns what to notify. Kept in
-//! `background.json` between runs: whether it's on, the notifications'
-//! texts (in the UI's language), and per account when it last checked,
-//! which messages it notified (ids only, no content) and, for IMAP
-//! accounts, the Inbox's highest UID it saw.
+//! that arrived since the last check and returns what to notify. When
+//! scheduled mail (Send later) is due, a job set for that time also sends
+//! it (see `crate::scheduled`). Kept in `background.json` between runs:
+//! whether new mail is notified, the notifications' texts (in the UI's
+//! language), this app's device id and the times scheduled mail is due
+//! (no content), and per account when it last checked, which messages it
+//! notified (ids only) and, for IMAP accounts, the Inbox's highest UID it
+//! saw.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
 use std::collections::{BTreeMap, HashMap};
@@ -15,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::imap::{self, ImapAccount, ImapAuth, InboxMark, Login, Secret};
 use crate::oauth::providers::{Provider, TokenResponse};
+use crate::scheduled::{self, iso_utc, parse_iso_utc};
 use crate::vault::{Accounts, StoredAccount, Vault};
 
 const FILE: &str = "background.json";
@@ -36,15 +40,25 @@ pub struct Texts {
     pub new_messages: String,
     /// For a message without a subject.
     pub no_subject: String,
+    /// For a scheduled mail sent; `{subject}` is replaced.
+    #[serde(default)]
+    pub scheduled_sent: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct State {
+    /// New mail is notified.
     enabled: bool,
     texts: Texts,
     #[serde(default)]
     accounts: BTreeMap<String, Seen>,
+    /// This app's id for Send later (see `src/state/device.ts`).
+    #[serde(default)]
+    device: String,
+    /// When scheduled mail is due (epoch ms), as the app last knew.
+    #[serde(default)]
+    sends: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -72,12 +86,38 @@ fn save(dir: &Path, state: &State) -> Result<(), String> {
     std::fs::write(dir.join(FILE), bytes).map_err(|e| e.to_string())
 }
 
-/// Turns the check on or off (from the UI's settings).
-pub fn configure(dir: &Path, enabled: bool, texts: Texts) -> Result<(), String> {
+/// Turns notifying new mail on or off (from the UI's settings).
+pub fn configure(dir: &Path, enabled: bool, texts: Texts, device: String) -> Result<(), String> {
     let mut state = load(dir);
     state.enabled = enabled;
     state.texts = texts;
+    state.device = device;
     save(dir, &state)
+}
+
+/// When scheduled mail is due (from the app); the next time to check.
+pub fn set_sends(dir: &Path, mut sends: Vec<u64>, now: u64) -> Result<Option<u64>, String> {
+    sends.sort_unstable();
+    let mut state = load(dir);
+    state.sends = sends;
+    save(dir, &state)?;
+    Ok(next_send_of(&state.sends, now))
+}
+
+/// The next time a job should send scheduled mail, if any.
+pub fn next_send(dir: &Path, now: u64) -> Option<u64> {
+    next_send_of(&load(dir).sends, now)
+}
+
+/// A time that's past still waits for others' grace period (another
+/// action0 scheduled it): then once more.
+fn next_send_of(sends: &[u64], now: u64) -> Option<u64> {
+    let first = *sends.first()?;
+    Some(if first <= now {
+        now + crate::scheduled::OTHERS_WAIT_MS
+    } else {
+        first
+    })
 }
 
 /// A notification to show; tapping it opens `url`.
@@ -132,12 +172,39 @@ pub async fn check(
     apis: &Apis,
 ) -> Vec<Notice> {
     let mut state = load(dir);
-    if !state.enabled {
+    let texts = state.texts.clone();
+    let device = state.device.clone();
+    // Scheduled mail is due: drafts are looked through for it.
+    let sending = state.sends.iter().any(|at| *at <= now);
+    if !state.enabled && !sending {
         return Vec::new();
     }
-    let texts = state.texts.clone();
     let mut notices = Vec::new();
     for (key, account) in accounts {
+        let token = match account.provider {
+            Provider::Google => google_tokens.get(key).cloned(),
+            Provider::Microsoft => microsoft_token(http, apis, account).await.ok(),
+        };
+        let Some(token) = token else { continue };
+        if sending {
+            let sent = match account.provider {
+                Provider::Google => {
+                    scheduled::gmail_send_due(http, &apis.gmail, &token, &device, now).await
+                }
+                Provider::Microsoft => {
+                    scheduled::graph_send_due(http, &apis.graph, &token, &device, now).await
+                }
+            };
+            notices.extend(sent_notices(
+                key,
+                &account.email,
+                &sent.unwrap_or_default(),
+                &texts,
+            ));
+        }
+        if !state.enabled {
+            continue;
+        }
         let seen = state.accounts.entry(key.clone()).or_default();
         if seen.checked == 0 {
             seen.checked = now;
@@ -145,14 +212,8 @@ pub async fn check(
         }
         let since = seen.checked.saturating_sub(MARGIN_MS);
         let found = match account.provider {
-            Provider::Google => match google_tokens.get(key) {
-                Some(token) => gmail_new(http, apis, token, since).await,
-                None => continue,
-            },
-            Provider::Microsoft => match microsoft_token(http, apis, account).await {
-                Ok(token) => graph_new(http, apis, &token, since).await,
-                Err(_) => continue,
-            },
+            Provider::Google => gmail_new(http, apis, &token, since).await,
+            Provider::Microsoft => graph_new(http, apis, &token, since).await,
         };
         let Ok(found) = found else { continue };
         let fresh: Vec<NewMail> = found
@@ -165,9 +226,23 @@ pub async fn check(
     let imap_accounts = imap.map(Vault::all).unwrap_or_default();
     for (key, account) in &imap_accounts {
         let seen = state.accounts.entry(key.clone()).or_default();
-        let Ok((found, mark)) = imap_new(http, imap, key, account, seen.inbox).await else {
+        let checked = imap_check(
+            http,
+            imap,
+            key,
+            account,
+            seen.inbox,
+            ImapWork {
+                notify: state.enabled,
+                send: sending.then_some((device.as_str(), now)),
+            },
+        )
+        .await;
+        let Ok((found, mark, sent)) = checked else {
             continue;
         };
+        notices.extend(sent_notices(key, &account.address, &sent, &texts));
+        let Some(mark) = mark else { continue };
         let first = seen
             .inbox
             .is_none_or(|before| before.validity != mark.validity);
@@ -186,8 +261,39 @@ pub async fn check(
     state
         .accounts
         .retain(|key, _| accounts.contains_key(key) || imap_accounts.contains_key(key));
+    // Done with what's due (another action0's mail after its grace period).
+    state
+        .sends
+        .retain(|at| now < at + scheduled::OTHERS_WAIT_MS);
     let _ = save(dir, &state);
     notices
+}
+
+/// Notifications for scheduled mail that went out.
+fn sent_notices(key: &str, email: &str, subjects: &[String], texts: &Texts) -> Vec<Notice> {
+    if texts.scheduled_sent.is_empty() {
+        return Vec::new();
+    }
+    subjects
+        .iter()
+        .enumerate()
+        .map(|(index, subject)| Notice {
+            tag: format!("{key}/sent/{index}"),
+            title: email.to_string(),
+            body: texts.scheduled_sent.replace(
+                "{subject}",
+                if subject.trim().is_empty() {
+                    &texts.no_subject
+                } else {
+                    subject
+                },
+            ),
+            url: format!(
+                "action0://open?account={}",
+                percent_encoding::utf8_percent_encode(key, percent_encoding::NON_ALPHANUMERIC)
+            ),
+        })
+        .collect()
 }
 
 /// Notes `fresh` as notified and makes its notifications.
@@ -205,16 +311,26 @@ fn notify(
     notices_for(key, email, &fresh, texts)
 }
 
-/// An IMAP account: unread Inbox mail with UIDs after `mark` (the newest
-/// [`MAX_PER_CHECK`]), and where the check got to. Yahoo/AOL get an access
-/// token first; a refresh token that rotated is kept in the vault.
-async fn imap_new(
+/// What an IMAP account's check does.
+struct ImapWork<'a> {
+    /// Look for new mail.
+    notify: bool,
+    /// Send scheduled mail that's due: this app's device id and the time.
+    send: Option<(&'a str, u64)>,
+}
+
+/// An IMAP account: due scheduled mail sent (their subjects), and unread
+/// Inbox mail with UIDs after `mark` (the newest [`MAX_PER_CHECK`]) and
+/// where the check got to (`None` if it didn't look). Yahoo/AOL get an
+/// access token first; a refresh token that rotated is kept in the vault.
+async fn imap_check(
     http: &reqwest::Client,
     vault: Option<&Vault<ImapAccount>>,
     key: &str,
     account: &ImapAccount,
     mark: Option<InboxMark>,
-) -> Result<(Vec<NewMail>, InboxMark), imap::MailServerError> {
+    work: ImapWork<'_>,
+) -> Result<(Vec<NewMail>, Option<InboxMark>, Vec<String>), imap::MailServerError> {
     let (secret, bearer) = match &account.auth {
         ImapAuth::Password { password } => (password.clone(), false),
         ImapAuth::OAuth { .. } => {
@@ -229,18 +345,45 @@ async fn imap_new(
             (tokens.access_token, true)
         }
     };
+    let secret = if bearer {
+        Secret::Bearer(&secret)
+    } else {
+        Secret::Password(&secret)
+    };
     let login = Login {
         server: &account.settings.imap,
         username: &account.settings.username,
-        secret: if bearer {
-            Secret::Bearer(&secret)
-        } else {
-            Secret::Password(&secret)
-        },
+        secret,
     };
     let tls = imap::tls::Connector::new(account.pinned.as_deref())?;
     let mut session = imap::session::connect(&login, &tls).await?;
-    let result = imap::new_unread(&mut session, mark, MAX_PER_CHECK).await;
+    let sent = match work.send {
+        Some((device, now)) => {
+            let smtp = Login {
+                server: &account.settings.smtp,
+                username: &account.settings.username,
+                secret,
+            };
+            imap::send_due(
+                &mut session,
+                &smtp,
+                &tls,
+                saves_sent(&account.settings.smtp.host),
+                device,
+                now,
+            )
+            .await
+            .unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    let result = if work.notify {
+        imap::new_unread(&mut session, mark, MAX_PER_CHECK)
+            .await
+            .map(|(found, mark)| (found, Some(mark)))
+    } else {
+        Ok((Vec::new(), None))
+    };
     session.logout().await;
     let (found, mark) = result?;
     let mail = found
@@ -252,7 +395,16 @@ async fn imap_new(
             received: u64::try_from(unread.received).unwrap_or_default(),
         })
         .collect();
-    Ok((mail, mark))
+    Ok((mail, mark, sent))
+}
+
+/// The SMTP server keeps a copy of sent mail itself (Gmail), like
+/// `SAVES_SENT` in `src/providers/imap/module.ts`.
+fn saves_sent(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    ["gmail.com", "googlemail.com"]
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
 }
 
 fn notices_for(key: &str, email: &str, mail: &[NewMail], texts: &Texts) -> Vec<Notice> {
@@ -474,45 +626,6 @@ async fn graph_new(
         .collect())
 }
 
-/// Epoch ms as `YYYY-MM-DDTHH:MM:SSZ`.
-fn iso_utc(ms: u64) -> String {
-    let seconds = ms / 1000;
-    let (days, rest) = (seconds / 86_400, seconds % 86_400);
-    // Howard Hinnant's civil-from-days.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        rest / 3600,
-        rest % 3600 / 60,
-        rest % 60
-    )
-}
-
-/// `YYYY-MM-DDTHH:MM:SS[.fff]Z` as epoch ms.
-fn parse_iso_utc(text: &str) -> Option<u64> {
-    let number = |range: std::ops::Range<usize>| text.get(range)?.parse::<i64>().ok();
-    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
-    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
-    // Howard Hinnant's days-from-civil.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let mp = (month + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let seconds = days * 86_400 + hour * 3600 + minute * 60 + second;
-    u64::try_from(seconds).ok().map(|seconds| seconds * 1000)
-}
-
 /// The JNI entry points the Kotlin side's background job calls.
 #[cfg(target_os = "android")]
 mod jni_entry {
@@ -586,6 +699,23 @@ mod jni_entry {
         answer(&mut env, json)
     }
 
+    /// When the next job should send scheduled mail (epoch ms), or -1.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_app_action0_plugin_Native_nextSend<'local>(
+        mut env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        dir: JString<'local>,
+    ) -> jni::sys::jlong {
+        let dir = text(&mut env, &dir);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default();
+        super::next_send(&PathBuf::from(&dir), now)
+            .and_then(|at| i64::try_from(at).ok())
+            .unwrap_or(-1)
+    }
+
     /// One check: the notifications to show, `[{tag, title, body, url}]`.
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_app_action0_plugin_Native_check<'local>(
@@ -651,6 +781,7 @@ mod tests {
         Texts {
             new_messages: "{count} new messages".into(),
             no_subject: "(no subject)".into(),
+            scheduled_sent: "Sent “{subject}”".into(),
         }
     }
 
@@ -706,7 +837,7 @@ mod tests {
     #[tokio::test]
     async fn notifies_new_gmail_once_and_starts_counting_for_new_accounts() {
         let dir = temp_dir("gmail");
-        configure(&dir, true, texts()).unwrap();
+        configure(&dir, true, texts(), "phone".into()).unwrap();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/gmail/messages"))
@@ -770,9 +901,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sends_due_scheduled_mail_with_notifications_off() {
+        let dir = temp_dir("send-later");
+        configure(&dir, false, texts(), "phone".into()).unwrap();
+        // Nothing due: no job, and nothing asked.
+        assert_eq!(set_sends(&dir, vec![], NOW).unwrap(), None);
+        let server = MockServer::start().await;
+        let http = http();
+        let accounts: Accounts = [(
+            "gmail:me@example.com".to_string(),
+            account(Provider::Google, "me@example.com"),
+        )]
+        .into();
+        let tokens: HashMap<String, String> =
+            [("gmail:me@example.com".to_string(), "t".to_string())].into();
+        let due = NOW + 60 * 60 * 1000;
+        assert_eq!(set_sends(&dir, vec![due], NOW).unwrap(), Some(due));
+        assert!(
+            check(&http, &dir, &accounts, None, &tokens, NOW, &apis(&server))
+                .await
+                .is_empty()
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+
+        let marker = format!("{}; by=phone", scheduled::iso_utc(due));
+        Mock::given(method("GET"))
+            .and(path("/gmail/drafts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "drafts": [{ "id": "d1", "message": { "id": "m1" } }],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/gmail/messages/m1"))
+            .and(query_param("format", "metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "payload": { "headers": [
+                    { "name": "X-Action0-Send-At", "value": marker },
+                    { "name": "Subject", "value": "Report" },
+                ] },
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/gmail/messages/m1"))
+            .and(query_param("format", "raw"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "raw": "U3ViamVjdDogUmVwb3J0DQoNCkhp" })),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/gmail/drafts/send"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "s1" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let notices = check(&http, &dir, &accounts, None, &tokens, due, &apis(&server)).await;
+        assert_eq!(
+            notices
+                .iter()
+                .map(|notice| notice.body.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Sent “Report”"]
+        );
+        // Once others' grace period is over, nothing's left to do.
+        assert_eq!(next_send(&dir, due), Some(due + scheduled::OTHERS_WAIT_MS));
+        server.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/gmail/drafts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        check(
+            &http,
+            &dir,
+            &accounts,
+            None,
+            &tokens,
+            due + scheduled::OTHERS_WAIT_MS,
+            &apis(&server),
+        )
+        .await;
+        assert_eq!(next_send(&dir, due + scheduled::OTHERS_WAIT_MS), None);
+    }
+
+    #[tokio::test]
     async fn groups_many_messages_and_reads_graph() {
         let dir = temp_dir("graph");
-        configure(&dir, true, texts()).unwrap();
+        configure(&dir, true, texts(), "phone".into()).unwrap();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
@@ -852,7 +1072,7 @@ mod tests {
             .await
             .is_empty()
         );
-        configure(&dir, true, texts()).unwrap();
+        configure(&dir, true, texts(), "phone".into()).unwrap();
         check(
             &http,
             &dir,
@@ -887,7 +1107,7 @@ mod tests {
         use crate::vault::FixedKey;
 
         let dir = temp_dir("imap");
-        configure(&dir, true, texts()).unwrap();
+        configure(&dir, true, texts(), "phone".into()).unwrap();
         let certificate = self_signed(&["localhost"]);
         let pin = crate::imap::tls::fingerprint(&certificate.0);
         let tls = acceptor(certificate);

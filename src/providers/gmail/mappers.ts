@@ -2,6 +2,7 @@ import { asMailboxId, asMessageId, asThreadId } from "../../core/ids";
 import type { Message, MessageSummary } from "../../core/model";
 import { parseInvitation } from "../../core/calendar";
 import { parseListUnsubscribe } from "../../core/unsubscribe";
+import { parseSendAtMarker, SEND_AT_HEADER } from "../../core/schedule";
 import { parseAddressList } from "./addresses";
 import { isMembershipLabel } from "./labels";
 import {
@@ -20,6 +21,7 @@ export const SUMMARY_HEADERS = [
   "Subject",
   "Date",
   "Content-Type",
+  SEND_AT_HEADER,
 ] as const;
 
 /** Maps a Gmail message (`format=metadata` or `full`) to a list row. */
@@ -27,6 +29,10 @@ export function toMessageSummary(message: GmailMessage): MessageSummary {
   const labelIds = message.labelIds ?? [];
   const headers = message.payload?.headers;
   const from = parseAddressList(getHeader(headers, "From"))[0];
+  // Only drafts keep the marker (it's never sent).
+  const marker = labelIds.includes("DRAFT")
+    ? parseSendAtMarker(getHeader(headers, SEND_AT_HEADER))
+    : undefined;
   const contentType = (
     getHeader(headers, "Content-Type") ??
     message.payload?.mimeType ??
@@ -49,6 +55,12 @@ export function toMessageSummary(message: GmailMessage): MessageSummary {
     // Gmail's metadata format has no part list; a top-level multipart/mixed
     // almost always means "has attachments".
     hasAttachments: contentType.startsWith("multipart/mixed"),
+    ...(marker
+      ? {
+          sendAt: marker.sendAt,
+          ...(marker.by ? { scheduledBy: marker.by } : {}),
+        }
+      : {}),
   };
 }
 

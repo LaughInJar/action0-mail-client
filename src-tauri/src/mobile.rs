@@ -192,10 +192,26 @@ pub async fn mobile_configure_background(
     app: AppHandle,
     enabled: bool,
     texts: background::Texts,
+    device: String,
 ) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    background::configure(&dir, enabled, texts)?;
+    background::configure(&dir, enabled, texts, device)?;
     kotlin(&app, move |side| side.schedule_checks(enabled))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// When scheduled mail (Send later) is due, epoch ms: a background job
+/// sends it then if the app isn't open.
+#[tauri::command]
+pub async fn mobile_schedule_sends(app: AppHandle, sends: Vec<u64>) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default();
+    let next = background::set_sends(&dir, sends, now)?;
+    kotlin(&app, move |side| side.schedule_send(next))
         .await
         .map_err(|e| e.to_string())
 }

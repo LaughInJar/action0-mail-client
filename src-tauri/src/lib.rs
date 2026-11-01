@@ -10,6 +10,7 @@ pub mod imap;
 mod mobile;
 mod net;
 pub mod oauth;
+mod scheduled;
 #[cfg(desktop)]
 mod shell;
 #[cfg(desktop)]
@@ -169,6 +170,7 @@ pub fn run() {
         mobile::mobile_notify,
         mobile::mobile_notification_permission,
         mobile::mobile_configure_background,
+        mobile::mobile_schedule_sends,
         mobile::mobile_set_theme,
         mobile::mobile_print,
     ]);

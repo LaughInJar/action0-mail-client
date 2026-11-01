@@ -1,4 +1,5 @@
 import type { Draft, DraftInput } from "./compose";
+import type { Schedule } from "./schedule";
 import type {
   AttachmentId,
   Cursor,
@@ -98,6 +99,12 @@ export interface ProviderCapabilities {
    * folder accounts, else Gmail's.
    */
   readonly roleNames?: "gmail" | "outlook" | "client";
+  /**
+   * Send later: the server holds the mail and sends it itself (`held`), or
+   * it waits in the drafts mailbox, marked with its time, until the app
+   * sends it (`drafts`). Unset: no scheduling.
+   */
+  readonly scheduling?: "held" | "drafts";
 }
 
 /** Date order of a message list. */
@@ -389,6 +396,29 @@ export interface MailProvider {
     draft: DraftInput & { readonly id: DraftId },
     signal?: AbortSignal,
   ): Promise<{ readonly messageId: MessageId }>;
+
+  /**
+   * Schedules a draft to go out at `schedule.sendAt` (only with
+   * {@link ProviderCapabilities.scheduling}): the server holds it, or it's
+   * saved in the drafts mailbox marked with the time (as {@link saveDraft}
+   * does for a draft with a `schedule`). Either way it's then listed in the
+   * `scheduled` view, with its `sendAt`. Returns the id of the scheduled
+   * message.
+   */
+  scheduleDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    schedule: Schedule,
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }>;
+
+  /**
+   * Takes a scheduled mail back: it's an ordinary draft again (a held mail
+   * is copied into the drafts mailbox and taken off the server's queue).
+   */
+  unscheduleDraft(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }>;
 
   /** Sends a calendar mail (only if {@link ProviderCapabilities.calendarMail}). */
   sendCalendarMail(mail: CalendarMail, signal?: AbortSignal): Promise<void>;

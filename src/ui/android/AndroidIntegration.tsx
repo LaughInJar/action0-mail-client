@@ -4,7 +4,9 @@ import { useFetchMailboxes } from "../../data/hooks";
 import { useT } from "../../i18n/context";
 import { usePlatform } from "../../platform/context";
 import type { AvailableRelease, MobileControls } from "../../platform/types";
-import { useRouter, useUi } from "../../state/context";
+import { useRouter, useUi, useUiStore } from "../../state/context";
+import { deviceIdOf } from "../../state/device";
+import { useScheduledMail } from "../../data/scheduled";
 import type { ComposeActions } from "../composer/useComposeActions";
 import { hexColor, shareMailto } from "./helpers";
 
@@ -22,6 +24,7 @@ export function AndroidIntegration({ compose }: { compose: ComposeActions }) {
   const platform = usePlatform();
   const { mobile } = platform;
   const notifications = useUi((state) => state.settings.notifications);
+  const store = useUiStore();
   const t = useT();
   const router = useRouter();
   const fetchMailboxes = useFetchMailboxes();
@@ -34,10 +37,25 @@ export function AndroidIntegration({ compose }: { compose: ComposeActions }) {
         texts: {
           newMessages: t.android.newMessages,
           noSubject: t.common.noSubject,
+          scheduledSent: t.schedule.sent("{subject}"),
         },
+        device: deviceIdOf(store),
       })
       .catch(() => undefined);
-  }, [mobile, notifications, t]);
+  }, [mobile, notifications, t, store]);
+
+  // Scheduled mail in Drafts goes out from a background job when it's due.
+  const { entries } = useScheduledMail();
+  const sends = JSON.stringify(
+    entries
+      .filter((entry) => entry.scheduling === "drafts")
+      .map((entry) => Date.parse(entry.message.sendAt)),
+  );
+  useEffect(() => {
+    if (!mobile) return;
+    const times = JSON.parse(sends) as number[];
+    void mobile.scheduleSends(times).catch(() => undefined);
+  }, [mobile, sends]);
 
   // The status and navigation bars follow the theme (light, dark, system).
   useEffect(() => {

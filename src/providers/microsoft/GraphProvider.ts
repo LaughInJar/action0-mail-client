@@ -46,7 +46,13 @@ import type {
   SenderSettings,
   CalendarMail,
 } from "../../core/provider";
+import {
+  formatSendAtMarker,
+  parseSendAtMarker,
+  type Schedule,
+} from "../../core/schedule";
 import { encodeBase64 } from "../../lib/base64url";
+import { foldText } from "../../lib/text";
 import { buildMessage } from "../mime/buildMessage";
 import { sendOneClickUnsubscribe } from "../oneClickUnsubscribe";
 import { SenderStore, type OwnAddress } from "../senderStore";
@@ -54,6 +60,7 @@ import {
   CATEGORIES_GROUP,
   categoryName,
   FLAGGED_VIEW_ID,
+  SCHEDULED_VIEW_ID,
   FOLDER_SELECT,
   folderIdsOf,
   internalIds,
@@ -118,6 +125,9 @@ const MAX_SORTED_RESULTS = 1000;
 
 /** Pages fetched at most to fill one page of a view (filtered client-side). */
 const MAX_VIEW_PAGES = 5;
+
+/** Scheduled mails listed at most. */
+const MAX_SCHEDULED = 1000;
 
 /** Messages of one conversation fetched at most. */
 const MAX_THREAD_MESSAGES = 100;
@@ -188,9 +198,42 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * MAPI's deferred send time (PidTagDeferredSendTime): Exchange holds a mail
+ * sent with it in the Outbox until then.
+ */
+const DEFERRED_SEND = "SystemTime 0x3FEF";
+
+/**
+ * Where a personal account's scheduled draft keeps its time: a property of
+ * action0's own, which never becomes a header.
+ */
+const SEND_AT_PROPERTY =
+  "String {8a3b7c2e-5d41-4f0a-9b6e-a0c1d2e3f405} Name action0SendAt";
+
+/** The value of an expanded extended property, if set. */
+function propertyOf(message: GraphMessage, id: string): string | undefined {
+  return (
+    message.singleValueExtendedProperties?.find(
+      (property) => property.id.toLowerCase() === id.toLowerCase(),
+    )?.value || undefined
+  );
+}
+
 /** The fields of a draft that a create or update sets. */
-function draftFields(draft: DraftInput) {
+function draftFields(draft: DraftInput, marked: boolean) {
   return {
+    // Drafts of personal accounts keep their Send later time (empty: none).
+    ...(marked
+      ? {
+          singleValueExtendedProperties: [
+            {
+              id: SEND_AT_PROPERTY,
+              value: draft.schedule ? formatSendAtMarker(draft.schedule) : "",
+            },
+          ],
+        }
+      : {}),
     ...(draft.from ? { from: toRecipient(draft.from) } : {}),
     replyTo: (draft.replyTo ?? []).map(toRecipient),
     subject: draft.subject,
@@ -255,6 +298,9 @@ export class GraphProvider implements MailProvider {
       rawSource: true,
       calendarMail: true,
       signatureStore: "browser",
+      // Exchange holds scheduled mail for work and school accounts; whether
+      // it does for Outlook.com isn't known, so those wait in Drafts.
+      scheduling: options.personal ? "drafts" : "held",
     };
   }
 
@@ -338,6 +384,13 @@ export class GraphProvider implements MailProvider {
     { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
+    if (mailboxId === SCHEDULED_VIEW_ID)
+      return this.#snapshotPage(
+        cursor,
+        limit,
+        () => this.#scheduled(search, signal),
+        (items) => Promise.resolve(items),
+      );
     const text = search?.trim();
     const keep = await this.#viewFilter(mailboxId);
     if (text && order === "oldest")
@@ -392,6 +445,20 @@ export class GraphProvider implements MailProvider {
     { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<ThreadSummary>> {
+    if (mailboxId === SCHEDULED_VIEW_ID)
+      // One row per scheduled mail, like Drafts.
+      return this.#snapshotPage(
+        cursor,
+        limit,
+        async () =>
+          (await this.#scheduled(search, signal)).map(
+            (message): ThreadSummary => ({
+              id: message.threadId ?? asThreadId(message.id),
+              messages: [message],
+            }),
+          ),
+        (items) => Promise.resolve(items),
+      );
     const text = search?.trim();
     const keep = await this.#viewFilter(mailboxId);
     if (text || order === "oldest")
@@ -747,7 +814,7 @@ export class GraphProvider implements MailProvider {
     } else {
       await this.#http.patch(
         `me/messages/${enc(id)}`,
-        draftFields(draft),
+        draftFields(draft, this.#marks),
         signal,
       );
     }
@@ -786,9 +853,15 @@ export class GraphProvider implements MailProvider {
       (message.body.text === undefined
         ? ""
         : `<div>${escapeHtml(message.body.text).replace(/\n/g, "<br>")}</div>`);
+    const marker = parseSendAtMarker(propertyOf(raw, SEND_AT_PROPERTY));
     return {
       id,
       messageId: message.id,
+      ...(marker
+        ? {
+            schedule: { sendAt: new Date(marker.sendAt), by: marker.by ?? "" },
+          }
+        : {}),
       ...(message.from ? { from: message.from } : {}),
       ...(message.replyTo.length ? { replyTo: message.replyTo } : {}),
       to: message.to,
@@ -820,7 +893,17 @@ export class GraphProvider implements MailProvider {
     draft: DraftInput & { readonly id: DraftId },
     signal?: AbortSignal,
   ): Promise<{ readonly messageId: MessageId }> {
-    await this.saveDraft(draft, signal);
+    // Without its Send later time, if it had one.
+    const { schedule: _schedule, ...content } = draft;
+    await this.saveDraft(content, signal);
+    return this.#send(content, signal);
+  }
+
+  /** Sends a saved draft. */
+  async #send(
+    draft: DraftInput & { readonly id: DraftId },
+    signal: AbortSignal | undefined,
+  ): Promise<{ readonly messageId: MessageId }> {
     try {
       await this.#http.post(`me/messages/${enc(draft.id)}/send`, undefined, {
         retry: false,
@@ -841,6 +924,113 @@ export class GraphProvider implements MailProvider {
     }
     this.#uploaded.delete(draft.id);
     return { messageId: asMessageId(draft.id) };
+  }
+
+  /**
+   * Work and school accounts: sends the draft with a deferred send time,
+   * so Exchange holds it in the Outbox until then (with action0 closed
+   * too). Personal accounts: saves the draft with its time; action0 sends
+   * it.
+   */
+  async scheduleDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    schedule: Schedule,
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    if (this.#marks) {
+      const { messageId } = await this.saveDraft(
+        { ...draft, schedule },
+        signal,
+      );
+      return { messageId };
+    }
+    const { schedule: _schedule, ...content } = draft;
+    await this.saveDraft(content, signal);
+    await this.#http.patch(
+      `me/messages/${enc(draft.id)}`,
+      {
+        singleValueExtendedProperties: [
+          { id: DEFERRED_SEND, value: schedule.sendAt.toISOString() },
+        ],
+      },
+      signal,
+    );
+    return this.#send(content, signal);
+  }
+
+  /**
+   * A personal account's draft is saved without its time. A held mail
+   * can't be changed while Exchange holds it: its content goes into a new
+   * draft, and the held one is deleted (which takes it off the queue).
+   */
+  async unscheduleDraft(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    const {
+      id: _id,
+      messageId: _message,
+      schedule: _schedule,
+      ...content
+    } = await this.getDraft(asDraftId(messageId), signal);
+    if (this.#marks)
+      return this.saveDraft({ ...content, id: asDraftId(messageId) }, signal);
+    // A reply stays a reply (Outlook's createReply on the original).
+    const draft = await this.saveDraft(content, signal);
+    await this.#http.delete(`me/messages/${enc(messageId)}`, signal);
+    return draft;
+  }
+
+  /** Scheduled drafts keep their time in a property (personal accounts). */
+  get #marks(): boolean {
+    return this.capabilities.scheduling === "drafts";
+  }
+
+  /**
+   * Scheduled mail, soonest first: the Outbox's held mail (with its
+   * deferred time), or the drafts marked with a time.
+   */
+  async #scheduled(
+    search: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<MessageSummary[]> {
+    const property = this.#marks ? SEND_AT_PROPERTY : DEFERRED_SEND;
+    const messages = await this.#all<GraphMessage>(
+      `me/mailFolders/${this.#marks ? "drafts" : "outbox"}/messages`,
+      {
+        $select: SUMMARY_SELECT,
+        $expand: `singleValueExtendedProperties($filter=id eq '${property}')`,
+        $top: 250,
+      },
+      signal,
+      MAX_SCHEDULED,
+    );
+    const words = foldText(search ?? "")
+      .split(/\s+/)
+      .filter(Boolean);
+    return messages
+      .flatMap((message): MessageSummary[] => {
+        // A held mail's deferred time, or a draft's marker.
+        const marker = parseSendAtMarker(propertyOf(message, property));
+        if (!marker) return [];
+        const summary = toMessageSummary(message);
+        const text = foldText(
+          [
+            summary.subject,
+            summary.snippet,
+            ...summary.to.flatMap((to) => [to.name ?? "", to.address]),
+          ].join(" "),
+        );
+        if (!words.every((word) => text.includes(word))) return [];
+        return [
+          {
+            ...summary,
+            sendAt: marker.sendAt,
+            ...(marker.by ? { scheduledBy: marker.by } : {}),
+          },
+        ];
+      })
+      .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
   }
 
   /** Sent as MIME through `sendMail`, which keeps a copy in Sent Items. */
@@ -1472,7 +1662,14 @@ export class GraphProvider implements MailProvider {
     const [message, attachments] = await Promise.all([
       this.#http.get<GraphMessage>(
         `me/messages/${enc(id)}`,
-        { $select: MESSAGE_SELECT },
+        {
+          $select: MESSAGE_SELECT,
+          ...(this.#marks
+            ? {
+                $expand: `singleValueExtendedProperties($filter=id eq '${SEND_AT_PROPERTY}')`,
+              }
+            : {}),
+        },
         signal,
       ),
       this.#all<GraphAttachment>(
@@ -1531,7 +1728,7 @@ export class GraphProvider implements MailProvider {
     if (original === undefined) {
       const created = await this.#http.post<GraphMessage>(
         "me/messages",
-        draftFields(draft),
+        draftFields(draft, this.#marks),
         options,
       );
       return created.id;
@@ -1546,7 +1743,7 @@ export class GraphProvider implements MailProvider {
     );
     await this.#http.patch(
       `me/messages/${enc(created.id)}`,
-      draftFields(draft),
+      draftFields(draft, this.#marks),
       signal,
     );
     if (forward)

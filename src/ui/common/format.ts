@@ -65,6 +65,29 @@ export function formatFullDate(
   }).format(new Date(iso));
 }
 
+/**
+ * When a scheduled mail goes out: weekday, date and time ("Tue, 3 Nov,
+ * 08:00"), with the year when it isn't this year's.
+ */
+export function formatSendAt(
+  iso: string,
+  options: DateFormatOptions = {},
+): string {
+  const { now = new Date(), locale, timeZone } = options;
+  const date = new Date(iso);
+  const sameYear =
+    dayKey(date, timeZone).slice(0, 4) === dayKey(now, timeZone).slice(0, 4);
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(date);
+}
+
 /** Human-readable file size ("1.5 MB", in German "1,5 MB"). */
 export function formatBytes(bytes: number, locale?: string): string {
   if (bytes < 1024) return `${bytes} B`;

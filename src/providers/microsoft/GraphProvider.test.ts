@@ -87,6 +87,7 @@ describe("GraphProvider mailboxes", () => {
       ["Junk Email", "junk"],
       ["Archive", "archive"],
       ["Flagged", "flagged"],
+      ["Scheduled", "scheduled"],
       ["All mail", "all"],
       ["Projects", null],
       ["Clients", null],
@@ -754,6 +755,68 @@ describe("GraphProvider drafts", () => {
     const saved = await provider.saveDraft(base);
     await provider.deleteDraft(asDraftId(saved.id));
     expect(graph.messages).toEqual([]);
+  });
+});
+
+describe("GraphProvider Send later", () => {
+  const draft = {
+    to: [{ name: "Anna", address: "anna@example.com" }],
+    cc: [],
+    bcc: [],
+    subject: "Later",
+    html: "<p>Hi</p>",
+    text: "Hi",
+    attachments: [],
+  };
+  const schedule = { sendAt: new Date("2026-11-03T07:00:00Z"), by: "dev1" };
+  const scheduled = { mailboxId: box("view:scheduled"), limit: 50 };
+
+  it("lets Exchange hold a work account's mail, and takes it back into Drafts", async () => {
+    const { graph, provider } = setup();
+    expect(provider.capabilities.scheduling).toBe("held");
+    const { id } = await provider.saveDraft(draft);
+    const { messageId } = await provider.scheduleDraft(
+      { ...draft, id },
+      schedule,
+    );
+    const held = graph.messages.find((m) => m.id === messageId);
+    expect(held).toMatchObject({ parentFolderId: "outbox-id", isDraft: false });
+    expect(held?.singleValueExtendedProperties).toEqual([
+      { id: "SystemTime 0x3FEF", value: "2026-11-03T07:00:00.000Z" },
+    ]);
+    const { items } = await provider.listMessages(scheduled);
+    expect(items.map((m) => [m.id, m.subject, m.sendAt])).toEqual([
+      [messageId, "Later", "2026-11-03T07:00:00.000Z"],
+    ]);
+
+    // Exchange can't change a held mail: a copy goes into Drafts, the held one goes.
+    const back = await provider.unscheduleDraft(messageId);
+    expect(back.id).not.toBe(messageId);
+    expect(graph.messages.find((m) => m.id === messageId)).toBeUndefined();
+    expect(graph.messages.find((m) => m.id === back.id)).toMatchObject({
+      subject: "Later",
+      parentFolderId: "drafts-id",
+      isDraft: true,
+    });
+    expect((await provider.listMessages(scheduled)).items).toEqual([]);
+  });
+
+  it("keeps a personal account's time on the draft, and clears it when sending", async () => {
+    const { graph, provider } = setup({ personal: true });
+    expect(provider.capabilities.scheduling).toBe("drafts");
+    const { id } = await provider.saveDraft(draft);
+    await provider.scheduleDraft({ ...draft, id }, schedule);
+    const saved = graph.messages.find((m) => m.id === id);
+    expect(saved).toMatchObject({ parentFolderId: "drafts-id", isDraft: true });
+    const { items } = await provider.listMessages(scheduled);
+    expect(items.map((m) => [m.id, m.sendAt, m.scheduledBy])).toEqual([
+      [id, "2026-11-03T07:00:00.000Z", "dev1"],
+    ]);
+    expect((await provider.getDraft(id)).schedule).toEqual(schedule);
+
+    await provider.sendDraft({ ...draft, id, schedule });
+    expect(saved).toMatchObject({ parentFolderId: "sent-id", isDraft: false });
+    expect(saved?.singleValueExtendedProperties?.[0]?.value).toBe("");
   });
 });
 

@@ -357,6 +357,7 @@ export function usePaletteItems(query: string): PaletteItem[] {
     currentMailbox &&
     currentHandle?.provider.capabilities.settableFlags.includes("seen") &&
     currentMailbox.role !== "drafts" &&
+    currentMailbox.role !== "scheduled" &&
     currentMailbox.role !== "sent" &&
     (currentMailbox.counts?.unread ?? 1) > 0
   ) {

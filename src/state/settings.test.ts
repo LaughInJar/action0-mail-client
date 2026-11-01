@@ -144,4 +144,19 @@ describe("templates in the settings", () => {
     );
     expect(parseSettings({ paletteRecent: "x" }).paletteRecent).toEqual([]);
   });
+
+  it("keeps a valid device id and last Send later time", () => {
+    expect(
+      parseSettings({
+        deviceId: "a1b2c3",
+        lastSendLater: "2026-11-03T07:00:00.000Z",
+      }),
+    ).toMatchObject({
+      deviceId: "a1b2c3",
+      lastSendLater: "2026-11-03T07:00:00.000Z",
+    });
+    expect(
+      parseSettings({ deviceId: "no spaces!", lastSendLater: "soon" }),
+    ).toMatchObject({ deviceId: "", lastSendLater: "" });
+  });
 });

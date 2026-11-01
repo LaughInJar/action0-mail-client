@@ -29,7 +29,7 @@ use super::session::{Access, ImapSession, Transport};
 use super::state::Account;
 
 /// Sets or clears `flags` (`\Seen \Flagged`) on UIDs of the open folder.
-async fn store<S: Transport>(
+pub(super) async fn store<S: Transport>(
     session: &mut ImapSession<S>,
     uids: &[u32],
     sign: char,
@@ -44,7 +44,7 @@ async fn store<S: Transport>(
 
 /// Expunges `uids` (marked `\Deleted`) of the open folder (see the module
 /// docs); false if they had to stay.
-async fn expunge<S: Transport>(
+pub(super) async fn expunge<S: Transport>(
     session: &mut ImapSession<S>,
     uids: &[u32],
 ) -> Result<bool, MailServerError> {
@@ -289,6 +289,8 @@ pub async fn mark_all_read<S: Transport>(
         MailboxRef::Folder(_) => (vec![folder(&tree, mailbox_id)?], "UNSEEN UNDELETED"),
         MailboxRef::Flagged => (tree.searched(), "UNSEEN UNDELETED FLAGGED"),
         MailboxRef::All => (tree.searched(), "UNSEEN UNDELETED"),
+        // Drafts are read.
+        MailboxRef::Scheduled => return Ok(Vec::new()),
     };
     let mut changed = Vec::new();
     for folder in folders.into_iter().filter(|folder| folder.selectable) {

@@ -1,4 +1,9 @@
 import { useContactLink } from "../contacts/contactLink";
+import { useScheduledEntry } from "../../data/scheduled";
+import {
+  scheduleItems,
+  useScheduleActions,
+} from "../schedule/useScheduleActions";
 import { printItems, printJob, usePrint } from "../print/printing";
 import { messageKey, type AccountId, type MessageId } from "../../core/ids";
 import { useMessage } from "../../data/hooks";
@@ -51,6 +56,8 @@ export function MessageMenu({
   const contactLink = useContactLink();
   const ai = useAiReaderActions();
   const { sources } = useCurrentList();
+  const scheduled = useScheduledEntry(accountId, messageId);
+  const scheduleActions = useScheduleActions();
   const t = useT();
   const m = t.menus;
   if (!message) return null;
@@ -59,9 +66,12 @@ export function MessageMenu({
   const isDraft = drafts !== undefined && message.mailboxIds.includes(drafts);
   const ref = { accountId, messageId: message.id };
 
-  const answering = compose.canWriteFrom(accountId)
-    ? entriesOf(answerItems(compose, ref, { isDraft, phone: false }, t))
-    : [];
+  // A scheduled mail: its own actions instead of answering it.
+  const answering = scheduled
+    ? entriesOf(scheduleItems(scheduleActions, scheduled, t))
+    : compose.canWriteFrom(accountId)
+      ? entriesOf(answerItems(compose, ref, { isDraft, phone: false }, t))
+      : [];
   // In conversation view the panel covers the whole conversation.
   const target =
     sources.get(accountId)?.conversations && message.threadId !== undefined

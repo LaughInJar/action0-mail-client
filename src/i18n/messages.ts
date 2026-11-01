@@ -19,6 +19,7 @@ import { original } from "./texts/original";
 import { palette } from "./texts/palette";
 import { pwa } from "./texts/pwa";
 import { reader } from "./texts/reader";
+import { schedule } from "./texts/schedule";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
 import { templates } from "./texts/templates";
@@ -54,6 +55,7 @@ export const messages = {
     palette: palette.en,
     pwa: pwa.en,
     reader: reader.en,
+    schedule: schedule.en,
     settings: settings.en,
     shortcuts: shortcuts.en,
     templates: templates.en,
@@ -83,6 +85,7 @@ export const messages = {
     palette: palette.de,
     pwa: pwa.de,
     reader: reader.de,
+    schedule: schedule.de,
     settings: settings.de,
     shortcuts: shortcuts.de,
     templates: templates.de,

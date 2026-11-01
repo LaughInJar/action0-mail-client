@@ -7,6 +7,7 @@ import { MemoryStorage } from "../../test/memoryStorage";
 import { fakeImapBridge, imapMessage } from "../../test/imapBridge";
 import { SenderStore } from "../senderStore";
 import { ImapProvider } from "./ImapProvider";
+import { toSummary } from "./mappers";
 
 const me = "me@example.com";
 
@@ -126,6 +127,32 @@ describe("ImapProvider", () => {
     expect(copy?.raw).toContain(`Message-ID: ${messageId ?? "?"}`);
     expect(store.has(id)).toBe(false);
     expect(store.get(result.messageId)?.message.mailboxIds).toEqual(["f:Sent"]);
+  });
+
+  it("keeps a scheduled draft's time in its header, never in what's sent", async () => {
+    const { imap, sent, appended } = provider();
+    expect(imap.capabilities.scheduling).toBe("drafts");
+    const schedule = { sendAt: new Date("2026-11-03T07:00:00Z"), by: "dev1" };
+    const { id } = await imap.saveDraft(draft);
+    const { messageId } = await imap.scheduleDraft({ ...draft, id }, schedule);
+    expect(appended.at(-1)?.raw).toContain(
+      "X-Action0-Send-At: 2026-11-03T07:00:00.000Z; by=dev1",
+    );
+    await imap.sendDraft({ ...draft, id: asDraftId(messageId), schedule });
+    expect(sent[0]?.raw).not.toContain("X-Action0-Send-At");
+    expect(appended.at(-1)?.raw).not.toContain("X-Action0-Send-At");
+  });
+
+  it("reads the marker of a scheduled draft's row", () => {
+    expect(
+      toSummary({
+        ...imapMessage("m1", "f:Drafts"),
+        sendAt: "2026-11-03T07:00:00.000Z; by=dev1",
+      }),
+    ).toMatchObject({
+      sendAt: "2026-11-03T07:00:00.000Z",
+      scheduledBy: "dev1",
+    });
   });
 
   it("doesn't add a Sent copy when the server keeps one itself", async () => {

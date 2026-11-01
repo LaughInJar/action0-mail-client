@@ -49,6 +49,7 @@ export type MailboxRole =
   | "important"
   | "sent"
   | "drafts"
+  | "scheduled"
   | "all"
   | "archive"
   | "junk"
@@ -61,6 +62,7 @@ export const MAILBOX_ROLE_ORDER: readonly MailboxRole[] = [
   "important",
   "sent",
   "drafts",
+  "scheduled",
   "all",
   "archive",
   "junk",
@@ -147,6 +149,13 @@ export interface MessageSummary {
   readonly flags: MessageFlags;
   /** May be a heuristic in list views (Gmail's metadata format has no MIME parts). */
   readonly hasAttachments: boolean;
+  /** A scheduled mail: when it goes out, as an ISO 8601 string. */
+  readonly sendAt?: string;
+  /**
+   * A scheduled mail that waits in the drafts mailbox: the action0 (browser
+   * or app) that scheduled it, which sends it; others wait a moment. Opaque.
+   */
+  readonly scheduledBy?: string;
 }
 
 /** Metadata of an attachment or inline part. */

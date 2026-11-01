@@ -4,6 +4,7 @@
  * (Gmail, and IMAP/SMTP through the apps' native side).
  */
 import { formatAddress } from "../../core/addresses";
+import { SEND_AT_HEADER } from "../../core/schedule";
 import type { EmailAddress } from "../../core/model";
 import { encodeBase64 } from "../../lib/base64url";
 
@@ -35,6 +36,8 @@ export interface OutgoingMessage {
   readonly messageId?: string;
   /** Where replies should go. */
   readonly replyTo?: readonly EmailAddress[];
+  /** A scheduled draft's marker (see `core/schedule.ts`): kept in Drafts, never sent. */
+  readonly sendAtMarker?: string;
   /**
    * An iCalendar part next to the text (iMIP): what calendar programs read
    * as an invitation, update, cancellation or answer.
@@ -97,6 +100,8 @@ export function buildMessage(
     headers.push(foldHeader("In-Reply-To", message.inReplyTo));
   if (message.references?.length)
     headers.push(foldHeader("References", message.references.join(" ")));
+  if (message.sendAtMarker)
+    headers.push(`${SEND_AT_HEADER}: ${message.sendAtMarker}`);
   headers.push("MIME-Version: 1.0");
 
   const attachments = message.attachments ?? [];

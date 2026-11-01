@@ -738,9 +738,13 @@ export class FakeGraph {
             ],
           }),
         };
-      // send
+      // send; with a deferred send time Exchange holds it in the Outbox.
+      const deferred = message.singleValueExtendedProperties?.some(
+        (property) => property.id === "SystemTime 0x3FEF" && property.value,
+      );
       this.change(message.id, {
-        parentFolderId: this.wellKnown.sentitems ?? "",
+        parentFolderId:
+          (deferred ? this.wellKnown.outbox : this.wellKnown.sentitems) ?? "",
         isDraft: false,
       });
       return { status: 202 };
@@ -1149,12 +1153,20 @@ function selectContact(
   );
 }
 
-/** The `$select`ed fields of a message (all without `$select`). */
+/**
+ * The `$select`ed fields of a message (all without `$select`), with its
+ * extended properties (as if `$expand`ed).
+ */
 function select(message: FakeGraphMessage, fields: string | null): unknown {
   const { attachments: _attachments, ...rest } = message;
   if (fields === null) return rest;
   const wanted = new Set(fields.split(","));
   return Object.fromEntries(
-    Object.entries(rest).filter(([key]) => key === "id" || wanted.has(key)),
+    Object.entries(rest).filter(
+      ([key]) =>
+        key === "id" ||
+        key === "singleValueExtendedProperties" ||
+        wanted.has(key),
+    ),
   );
 }

@@ -35,6 +35,8 @@ import {
   useOpenCombined,
 } from "./allInboxes";
 import { Icon } from "../common/Icon";
+import { useScheduledMail } from "../../data/scheduled";
+import type { Mailbox } from "../../core/model";
 import { mailboxIcon, ROLE_ICONS } from "./mailboxIcon";
 import { wantsAppMenu } from "../common/menuPosition";
 import { useLongPress } from "../messages/useLongPress";
@@ -67,6 +69,11 @@ const DropContext = createContext<DropHighlight | null>(null);
 /** The folder filter's text (blank when not filtering). */
 const FilterContext = createContext("");
 
+/** How much scheduled mail each account has (Scheduled shows only while there's some). */
+const ScheduledContext = createContext<ReadonlyMap<AccountId, number>>(
+  new Map(),
+);
+
 /** Props of {@link MailboxTree}. */
 export interface MailboxTreeProps {
   /** Called after a mailbox was chosen (e.g. to close the drawer). */
@@ -95,6 +102,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
   const a = useT().accounts;
+  const scheduled = useScheduledMail();
 
   /**
    * Opens the context menu of a mailbox `item`: at a pointer position,
@@ -372,18 +380,20 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       className="space-y-px px-2 py-2 focus:outline-none"
     >
       <FilterContext value={filter}>
-        <DropContext value={drop}>
-          {accounts.length >= ALL_INBOXES_FROM && (
-            <CombinedBranch route={route} />
-          )}
-          {accounts.map((handle, index) => (
-            <AccountBranch
-              key={handle.account.id}
-              handle={handle}
-              isTabStop={!routeAccountKnown && index === 0}
-            />
-          ))}
-        </DropContext>
+        <ScheduledContext value={scheduled.counts}>
+          <DropContext value={drop}>
+            {accounts.length >= ALL_INBOXES_FROM && (
+              <CombinedBranch route={route} />
+            )}
+            {accounts.map((handle, index) => (
+              <AccountBranch
+                key={handle.account.id}
+                handle={handle}
+                isTabStop={!routeAccountKnown && index === 0}
+              />
+            ))}
+          </DropContext>
+        </ScheduledContext>
       </FilterContext>
     </div>
   );
@@ -399,10 +409,13 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const status = useAuthStatus(auth);
   const { data: mailboxes, isPending, isError } = useMailboxList(account.id);
   const filter = useContext(FilterContext);
+  const scheduled = useContext(ScheduledContext).get(account.id) ?? 0;
   const nodes = useMemo(() => {
-    const tree = buildMailboxTree(mailboxes ?? []);
+    const tree = buildMailboxTree(
+      withScheduledCount(mailboxes ?? [], scheduled),
+    );
     return filter ? filterMailboxTree(tree, filter) : tree;
-  }, [mailboxes, filter]);
+  }, [mailboxes, filter, scheduled]);
   const toggledNodes = useUi((state) => state.toggledNodes);
   const key = `account:${account.id}`;
   const expanded = filter !== "" || !toggledNodes.has(key);
@@ -482,9 +495,12 @@ function CombinedBranch({ route }: { readonly route: Route }) {
   const a = useT().accounts;
   const key = "combined";
   const expanded = filter !== "" || !toggledNodes.has(key);
+  const scheduled = useContext(ScheduledContext);
+  const anyScheduled = [...scheduled.values()].some((count) => count > 0);
   const shown = UNIFIED_ROLES.filter(
     (role) =>
-      filter === "" || findFolded(a.combined[role], filter) !== undefined,
+      (role !== "scheduled" || anyScheduled) &&
+      (filter === "" || findFolded(a.combined[role], filter) !== undefined),
   );
   if (filter !== "" && shown.length === 0) return null;
   return (
@@ -527,7 +543,12 @@ function CombinedItem({
   readonly selected: boolean;
 }) {
   const filter = useContext(FilterContext);
-  const count = useCombinedCount(role);
+  const combined = useCombinedCount(role);
+  const scheduled = useContext(ScheduledContext);
+  const count =
+    role === "scheduled"
+      ? [...scheduled.values()].reduce((sum, n) => sum + n, 0)
+      : combined;
   const a = useT().accounts;
   const name = a.combined[role];
   const bold = role === "inbox" && count > 0;
@@ -557,11 +578,34 @@ function CombinedItem({
           <span className="sr-only">, </span>
           {count}
           <span className="sr-only">
-            {role === "drafts" ? a.drafts(count) : a.unread}
+            {role === "drafts"
+              ? a.drafts(count)
+              : role === "scheduled"
+                ? a.scheduled(count)
+                : a.unread}
           </span>
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * The Scheduled view counts its mail, and shows only while there's some
+ * (hidden otherwise).
+ */
+function withScheduledCount(
+  mailboxes: readonly Mailbox[],
+  count: number,
+): readonly Mailbox[] {
+  return mailboxes.map((mailbox) =>
+    mailbox.role === "scheduled"
+      ? {
+          ...mailbox,
+          hidden: count === 0,
+          counts: { total: count, unread: 0 },
+        }
+      : mailbox,
   );
 }
 
@@ -641,7 +685,7 @@ function MailboxBranch({
           }
         />
         <span
-          className={`min-w-0 flex-1 truncate ${badge !== undefined && mailbox.role !== "drafts" ? "font-semibold" : ""} ${node.match === false ? "text-zinc-400 dark:text-zinc-500" : ""}`}
+          className={`min-w-0 flex-1 truncate ${badge !== undefined && mailbox.role !== "drafts" && mailbox.role !== "scheduled" ? "font-semibold" : ""} ${node.match === false ? "text-zinc-400 dark:text-zinc-500" : ""}`}
         >
           <Highlighted text={mailbox.name} query={filter} />
         </span>
@@ -663,7 +707,11 @@ function MailboxBranch({
             <span className="sr-only">, </span>
             {badge}
             <span className="sr-only">
-              {mailbox.role === "drafts" ? a.drafts(badge) : a.unread}
+              {mailbox.role === "drafts"
+                ? a.drafts(badge)
+                : mailbox.role === "scheduled"
+                  ? a.scheduled(badge)
+                  : a.unread}
             </span>
           </span>
         )}

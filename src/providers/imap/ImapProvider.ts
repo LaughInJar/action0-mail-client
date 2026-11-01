@@ -5,6 +5,7 @@
  * spam move into role folders (created when missing), drafts live in the
  * Drafts folder, and sending goes over SMTP with a copy in Sent.
  */
+import { formatSendAtMarker, type Schedule } from "../../core/schedule";
 import { MailError } from "../../core/errors";
 import {
   attachmentOf,
@@ -152,6 +153,8 @@ export class ImapProvider implements MailProvider {
       signatureStore: "browser",
       // Like mail programs (Thunderbird): Sent, Trash, Junk, in the UI's language.
       roleNames: "client",
+      // No server scheduling: drafts wait with a marker until action0 sends them.
+      scheduling: "drafts",
     };
   }
 
@@ -347,6 +350,14 @@ export class ImapProvider implements MailProvider {
     return {
       id,
       messageId: message.id,
+      ...(message.sendAt
+        ? {
+            schedule: {
+              sendAt: new Date(message.sendAt),
+              by: message.scheduledBy ?? "",
+            },
+          }
+        : {}),
       to: message.to,
       cc: message.cc,
       bcc: message.bcc,
@@ -444,6 +455,28 @@ export class ImapProvider implements MailProvider {
       () => undefined,
     );
     return { messageId: asMessageId(sentId) };
+  }
+
+  /** Stores the draft with the marker: action0 sends it when it's due. */
+  async scheduleDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    schedule: Schedule,
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    const { messageId } = await this.saveDraft({ ...draft, schedule }, signal);
+    return { messageId };
+  }
+
+  /** Stores the draft again without the marker. */
+  async unscheduleDraft(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    const { schedule: _schedule, ...draft } = await this.getDraft(
+      asDraftId(messageId),
+      signal,
+    );
+    return this.saveDraft(draft, signal);
   }
 
   /** From the address books of the account's calendar server (CardDAV), if any. */
@@ -731,14 +764,18 @@ export class ImapProvider implements MailProvider {
   ): Promise<Uint8Array> {
     const attachments = await this.#attachments(draft.attachments, signal);
     return encoder.encode(
-      buildMessage(
-        this.#outgoing(
+      buildMessage({
+        ...this.#outgoing(
           draft,
           attachments,
           newMessageId(this.#from(draft).address),
           new Date(),
         ),
-      ),
+        // Only the stored draft keeps its Send later time.
+        ...(draft.schedule
+          ? { sendAtMarker: formatSendAtMarker(draft.schedule) }
+          : {}),
+      }),
     );
   }
 }

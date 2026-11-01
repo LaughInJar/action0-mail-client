@@ -91,6 +91,7 @@ mod parse;
 pub mod pool;
 mod proto;
 mod read;
+mod scheduled;
 mod search;
 pub mod session;
 pub mod sieve;
@@ -132,6 +133,7 @@ pub use account::{
 pub use error::{ErrorKind, MailServerCertificate, MailServerError, ServerRole};
 pub use pool::PooledSession;
 pub use read::{InboxMark, Unread, new_unread};
+pub use scheduled::send_due;
 pub use session::{Access, Capabilities, ImapSession, Login, Secret, Selected, Stream, Transport};
 pub use smtp::Envelope;
 

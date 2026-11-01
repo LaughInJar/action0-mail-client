@@ -58,10 +58,12 @@ import {
   leafName,
   mapLabels,
   parentPathOf,
+  SCHEDULED_ID,
   SYNTHETIC_PREFIX,
   toUserMailbox,
 } from "./labels";
 import { SUMMARY_HEADERS, toMessage, toMessageSummary } from "./mappers";
+import { formatSendAtMarker, type Schedule } from "../../core/schedule";
 import { getHeader } from "./mime";
 import type {
   GmailListSendAsResponse,
@@ -85,13 +87,20 @@ import type {
 const SPAM_TRASH = new Set(["SPAM", "TRASH"]);
 
 /** Mailbox ids that are views, not labels. */
-const VIEW_IDS: ReadonlySet<string> = new Set([ALL_MAIL_ID, "STARRED"]);
+const VIEW_IDS: ReadonlySet<string> = new Set([
+  ALL_MAIL_ID,
+  "STARRED",
+  SCHEDULED_ID,
+]);
 
 /** An error if any id is one we invented for the tree (Gmail doesn't know them). */
 function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
   const invented = ids.find(
     (id) =>
-      id === ALL_MAIL_ID || id === CATEGORIES_ID || id.startsWith("synthetic:"),
+      id === ALL_MAIL_ID ||
+      id === CATEGORIES_ID ||
+      id === SCHEDULED_ID ||
+      id.startsWith("synthetic:"),
   );
   return invented === undefined
     ? undefined
@@ -217,6 +226,23 @@ const MAX_CHANGES = 100;
 /** Oldest-first id lists kept for paging (each holds ids only). */
 const MAX_SNAPSHOTS = 5;
 
+/** Drafts the Scheduled view looks through at most. */
+const MAX_DRAFTS_SCANNED = 2000;
+
+/** One page of a list held in full, by offset (the cursor). */
+function pageOf<T>(
+  all: readonly T[],
+  cursor: Cursor | undefined,
+  limit: number,
+): Page<T> {
+  const offset = cursor ? Number(cursor) : 0;
+  const next = offset + limit;
+  return {
+    items: all.slice(offset, next),
+    ...(next < all.length ? { nextCursor: asCursor(String(next)) } : {}),
+  };
+}
+
 /** `messages.batchModify` accepts at most this many ids per call. */
 export const BATCH_MODIFY_LIMIT = 1000;
 
@@ -257,6 +283,8 @@ export class GmailProvider implements MailProvider {
     rawSource: true,
     calendarMail: true,
     signatureStore: "provider",
+    // Gmail's API can't schedule: drafts wait with a marker until action0 sends them.
+    scheduling: "drafts",
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;
@@ -268,6 +296,11 @@ export class GmailProvider implements MailProvider {
     string,
     { readonly filterKey: string; readonly ids: readonly string[] }
   >();
+  /**
+   * Drafts' scheduled rows by message id (`null`: not scheduled), so the
+   * Scheduled view reads each draft's headers once. Ids only change.
+   */
+  readonly #markers = new Map<string, MessageSummary | null>();
 
   /**
    * @param http Gmail API client.
@@ -312,6 +345,8 @@ export class GmailProvider implements MailProvider {
     { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
+    if (mailboxId === SCHEDULED_ID)
+      return pageOf(await this.#scheduled(search, signal), cursor, limit);
     const filter = listFilter(mailboxId, search);
     if (order === "oldest")
       return this.#listOldest(
@@ -343,6 +378,16 @@ export class GmailProvider implements MailProvider {
     { mailboxId, search, order = "newest", cursor, limit }: ListMessagesQuery,
     signal?: AbortSignal,
   ): Promise<Page<ThreadSummary>> {
+    if (mailboxId === SCHEDULED_ID)
+      // One row per scheduled mail, like Drafts.
+      return pageOf(
+        (await this.#scheduled(search, signal)).map((message) => ({
+          id: message.threadId ?? asThreadId(message.id),
+          messages: [message],
+        })),
+        cursor,
+        limit,
+      );
     const filter = listFilter(mailboxId, search);
     const load = (ids: readonly string[]) => this.#threadSummaries(ids, signal);
     if (order === "oldest")
@@ -384,7 +429,7 @@ export class GmailProvider implements MailProvider {
     draft: DraftInput,
     signal?: AbortSignal,
   ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
-    const raw = await this.#raw(draft, signal);
+    const raw = await this.#raw(draft, signal, undefined, draft.schedule);
     const message = threadOf(draft);
     // Creating isn't retried: a lost response would leave a duplicate draft.
     const saved =
@@ -447,6 +492,14 @@ export class GmailProvider implements MailProvider {
     return {
       id: asDraftId(draft.id),
       messageId: message.id,
+      ...(message.sendAt
+        ? {
+            schedule: {
+              sendAt: new Date(message.sendAt),
+              by: message.scheduledBy ?? "",
+            },
+          }
+        : {}),
       ...(from ? { from } : {}),
       ...(message.replyTo.length ? { replyTo: message.replyTo } : {}),
       to: message.to,
@@ -486,6 +539,69 @@ export class GmailProvider implements MailProvider {
       { retry: false, signal },
     );
     return { messageId: asMessageId(sent.id) };
+  }
+
+  /** Saves the draft with the marker: action0 sends it when it's due. */
+  async scheduleDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    schedule: Schedule,
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    const { messageId } = await this.saveDraft({ ...draft, schedule }, signal);
+    return { messageId };
+  }
+
+  /** Saves the draft again without the marker. */
+  async unscheduleDraft(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    const id = await this.draftIdOf(messageId, signal);
+    if (id === undefined)
+      throw new MailError("not-found", "This draft no longer exists.", {
+        reason: "draftGone",
+      });
+    const { schedule: _schedule, ...draft } = await this.getDraft(id, signal);
+    return this.saveDraft(draft, signal);
+  }
+
+  /**
+   * The drafts marked with a send time, soonest first. Gmail can't search
+   * for the marker, so this lists every draft and reads the headers of
+   * those it hasn't seen yet (a message's headers never change: a saved
+   * draft is a new message).
+   */
+  async #scheduled(
+    search: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<MessageSummary[]> {
+    const ids: string[] = [];
+    let pageToken: string | undefined;
+    do {
+      const page: GmailListMessagesResponse = await this.#http.get(
+        "messages",
+        {
+          labelIds: ["DRAFT"],
+          maxResults: 500,
+          pageToken,
+          q: search?.trim() || undefined,
+        },
+        signal,
+      );
+      ids.push(...(page.messages ?? []).map(({ id }) => id));
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined && ids.length < MAX_DRAFTS_SCANNED);
+    const unknown = ids.filter((id) => !this.#markers.has(id));
+    for (const summary of await this.#summaries(unknown, signal))
+      this.#markers.set(summary.id, summary.sendAt ? summary : null);
+    // Forget drafts that are gone (sent, deleted or saved again).
+    const listed = new Set(ids);
+    if (!search?.trim())
+      for (const id of this.#markers.keys())
+        if (!listed.has(id)) this.#markers.delete(id);
+    return ids
+      .flatMap((id) => this.#markers.get(id) ?? [])
+      .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
   }
 
   /** Sent as it is; Gmail keeps the copy in Sent. */
@@ -843,6 +959,7 @@ export class GmailProvider implements MailProvider {
     draft: DraftInput,
     signal?: AbortSignal,
     date?: Date,
+    schedule?: Schedule,
   ): Promise<string> {
     const attachments = await Promise.all(
       draft.attachments.map(async (part) => {
@@ -873,6 +990,7 @@ export class GmailProvider implements MailProvider {
       references: draft.threading?.references ?? [],
       attachments,
       ...(date ? { date } : {}),
+      ...(schedule ? { sendAtMarker: formatSendAtMarker(schedule) } : {}),
     });
   }
 

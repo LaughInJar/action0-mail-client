@@ -4,6 +4,7 @@
  */
 import type { AttachmentId, DraftId, MessageId, ThreadId } from "./ids";
 import type { AttachmentInfo, EmailAddress, Message, Sender } from "./model";
+import type { Schedule } from "./schedule";
 
 /** Where the bytes of an attachment are: a part of another message. */
 export interface PartSource {
@@ -90,6 +91,11 @@ export interface DraftInput {
   readonly from?: EmailAddress;
   /** Where replies should go (the `Reply-To` header), if not to From. */
   readonly replyTo?: readonly EmailAddress[];
+  /**
+   * A scheduled draft's time: providers whose drafts wait for the app
+   * (`scheduling: "drafts"`) keep it with every save; sending ignores it.
+   */
+  readonly schedule?: Schedule;
 }
 
 /** A saved draft. */

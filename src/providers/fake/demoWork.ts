@@ -242,6 +242,8 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
   ];
   return {
     folders: true,
+    // Like a Microsoft 365 account: Exchange holds scheduled mail.
+    scheduling: "held",
     me: ME,
     mailboxes: MAILBOXES,
     messages: [...specials, ...generated].map((seed) =>

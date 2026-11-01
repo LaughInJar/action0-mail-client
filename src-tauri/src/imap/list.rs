@@ -25,7 +25,7 @@ use async_imap::imap_proto::{
 use super::error::MailServerError;
 use super::folders::{self, FolderTree};
 use super::ids::{self, Location, MailboxRef, Scheme, ServerIds, folder_id};
-use super::model::{Flags, ListQuery, Order, Page, Summary};
+use super::model::{Flags, ListQuery, Order, Page, Role, Summary};
 use super::parse::{self, HeaderInfo};
 use super::proto::{self, Command, next_answer};
 use super::search::Query;
@@ -41,7 +41,7 @@ const VIEW_PER_FOLDER: usize = 2000;
 /// Lists kept for paging, per account.
 const KEPT_SNAPSHOTS: usize = 20;
 /// The header fields a row needs.
-pub const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT MESSAGE-ID REFERENCES IN-REPLY-TO CONTENT-TYPE CONTENT-TRANSFER-ENCODING)]";
+pub const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT MESSAGE-ID REFERENCES IN-REPLY-TO CONTENT-TYPE CONTENT-TRANSFER-ENCODING X-ACTION0-SEND-AT)]";
 
 /// What a FETCH said about one message.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -452,6 +452,7 @@ pub fn summary_of(row: &Row, id: String, path: &str, snippet: String) -> Summary
             Some(structure) => structure.attachments,
             None => info.content_type.as_deref() == Some("multipart/mixed"),
         },
+        send_at: info.send_at,
     }
 }
 
@@ -642,6 +643,7 @@ async fn take<S: Transport>(
         }
         MailboxRef::Flagged => (tree.searched(), "UNDELETED FLAGGED"),
         MailboxRef::All => (tree.searched(), "UNDELETED"),
+        MailboxRef::Scheduled => return scheduled(session, tree, &query, snapshot).await,
     };
     let utf8 = session.enabled.has("UTF8=ACCEPT");
     let mut dated: Vec<(i64, usize, u32)> = Vec::new();
@@ -674,6 +676,47 @@ async fn take<S: Transport>(
         .into_iter()
         .map(|(_, folder, uid)| (folder, uid))
         .collect();
+    Ok(snapshot)
+}
+
+/// The drafts marked with a Send later time, soonest first.
+async fn scheduled<S: Transport>(
+    session: &mut ImapSession<S>,
+    tree: &FolderTree,
+    query: &Query,
+    mut snapshot: Snapshot,
+) -> Result<Snapshot, MailServerError> {
+    let Some(drafts) = tree.role(Role::Drafts).filter(|folder| folder.selectable) else {
+        return Ok(snapshot);
+    };
+    let selected = session.reopen_folder(&drafts.raw, Access::ReadOnly).await?;
+    let validity = selected.mailbox.uid_validity.unwrap_or_default();
+    snapshot.folders.push(SnapFolder {
+        path: drafts.path.clone(),
+        raw: drafts.raw.clone(),
+        validity,
+    });
+    if selected.mailbox.exists == 0 {
+        return Ok(snapshot);
+    }
+    let utf8 = session.enabled.has("UTF8=ACCEPT");
+    let keys = format!("UNDELETED HEADER {} \"\"", parse::SEND_AT_HEADER);
+    let uids = uids_of(proto::search(session, &query.search(&keys, utf8)).await?)?;
+    if uids.is_empty() {
+        return Ok(snapshot);
+    }
+    let items = format!(
+        "UID BODY.PEEK[HEADER.FIELDS ({})]",
+        parse::SEND_AT_HEADER.to_ascii_uppercase()
+    );
+    let rows = fetch(session, &uids, &items).await?;
+    // The marker starts with its time (ISO 8601, UTC), which sorts as text.
+    let mut timed: Vec<(String, u32)> = rows
+        .values()
+        .filter_map(|row| Some((HeaderInfo::read(&row.header).send_at?, row.uid)))
+        .collect();
+    timed.sort_unstable();
+    snapshot.entries = timed.into_iter().map(|(_, uid)| (0, uid)).collect();
     Ok(snapshot)
 }
 
@@ -944,6 +987,49 @@ mod tests {
         // Trash isn't searched.
         assert_eq!(snapshot.folders.len(), 1);
         assert_eq!(snapshot.entries, vec![(0, 7)]);
+    }
+
+    #[tokio::test]
+    async fn lists_scheduled_drafts_by_their_time() {
+        let rest = "
+            C: A0003 LIST \"\" \"*\"
+            S: * LIST (\\HasNoChildren) \"/\" INBOX
+            S: * LIST (\\HasNoChildren \\Drafts) \"/\" Drafts
+            S: A0003 OK done
+            C: A0004 EXAMINE \"Drafts\"
+            S: * 3 EXISTS
+            S: * OK [UIDVALIDITY 4] ok
+            S: A0004 OK done
+            C: A0005 UID SEARCH UNDELETED HEADER X-Action0-Send-At \"\"
+            S: * SEARCH 5 6
+            S: A0005 OK done
+            C: A0006 UID FETCH 5:6 (UID BODY.PEEK[HEADER.FIELDS (X-ACTION0-SEND-AT)])
+            S: * 1 FETCH (UID 5 BODY[HEADER.FIELDS (X-ACTION0-SEND-AT)] {53}
+            S: X-Action0-Send-At: 2026-11-04T07:00:00.000Z; by=a
+            S:
+            S: )
+            S: * 2 FETCH (UID 6 BODY[HEADER.FIELDS (X-ACTION0-SEND-AT)] {53}
+            S: X-Action0-Send-At: 2026-11-03T07:00:00.000Z; by=a
+            S:
+            S: )
+            S: A0006 OK done
+            ";
+        let (mut session, script) = logged_in("IMAP4rev1", rest).await;
+        let tree = folders::tree(&mut session, &Account::default())
+            .await
+            .unwrap();
+        let snapshot = take(&mut session, &tree, ids::SCHEDULED, None, Order::Newest)
+            .await
+            .unwrap();
+        script.await.unwrap().unwrap();
+        // Soonest first, whatever the order asked for.
+        assert_eq!(snapshot.entries, vec![(0, 6), (0, 5)]);
+        assert_eq!(
+            HeaderInfo::read(b"X-Action0-Send-At: 2026-11-03T07:00:00.000Z; by=a\r\n\r\n")
+                .send_at
+                .as_deref(),
+            Some("2026-11-03T07:00:00.000Z; by=a")
+        );
     }
 
     #[test]

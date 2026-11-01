@@ -4,7 +4,7 @@ import type { ProviderSetup } from "../accounts/types";
 import { createGoogleAndroidSetup } from "../app/googleSetup";
 import { validateMicrosoftClientId } from "../app/microsoftSetup";
 import { createDemoData } from "../providers/fake/demoData";
-import { createDemoModule } from "../providers/fake/module";
+import { createDemoModule, DEMO_ACCOUNT } from "../providers/fake/module";
 import { fakeAndroidPlatform } from "../test/androidPlatform";
 import { demoHash, renderApp, TEST_NOW } from "../test/renderApp";
 
@@ -64,7 +64,9 @@ describe("the Android app", () => {
         texts: {
           newMessages: "{count} new messages",
           noSubject: "(no subject)",
+          scheduledSent: "Sent your scheduled mail “{subject}”",
         },
+        device: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown,
       });
     });
     const dialog = await settings(user);
@@ -76,6 +78,37 @@ describe("the Android app", () => {
     expect(configure).toHaveBeenLastCalledWith(
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("hands the times scheduled mail is due to a background job", async () => {
+    const android = fakeAndroidPlatform();
+    const { services } = renderApp({ platform: android.platform });
+    await subject("Welcome to the demo");
+    const provider = services.registry.get(DEMO_ACCOUNT.id)?.provider;
+    const sendAt = Date.now() + 60 * 60_000;
+    const draft = {
+      to: [{ address: "anna@example.org" }],
+      cc: [],
+      bcc: [],
+      subject: "Later",
+      html: "<p>Hi</p>",
+      text: "Hi",
+      attachments: [],
+    };
+    await act(async () => {
+      const saved = await provider?.saveDraft(draft);
+      if (saved)
+        await provider?.scheduleDraft(
+          { ...draft, id: saved.id },
+          { sendAt: new Date(sendAt), by: "phone" },
+        );
+      await services.queryClient.invalidateQueries();
+    });
+    await waitFor(() => {
+      expect(android.platform.mobile.scheduleSends).toHaveBeenLastCalledWith([
+        sendAt,
+      ]);
+    });
   });
 
   it("asks once to turn on notifications, in its own words", async () => {
