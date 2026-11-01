@@ -59,11 +59,14 @@ export interface MergeSource {
 export function mergeByDate(
   sources: readonly MergeSource[],
   order: MessageOrder,
+  bySendTime = false,
 ): { readonly rows: ListRow[]; readonly behind: AccountId[] } {
-  const newest = order === "newest";
+  const newest = order === "newest" && !bySendTime;
   /** `a` is listed before `b`. */
   const before = (a: string, b: string) => (newest ? a > b : a < b);
-  const dateOf = (row: ListRow) => row.summary.receivedAt;
+  // Scheduled mail: soonest first, by when it goes out.
+  const dateOf = (row: ListRow) =>
+    (bySendTime ? row.summary.sendAt : undefined) ?? row.summary.receivedAt;
 
   // The frontier: the last loaded row that is listed first among accounts
   // with more to load (nothing at all while one of them has no rows).
@@ -125,6 +128,7 @@ export const UNIFIED_ROLES: readonly UnifiedRole[] = [
   "flagged",
   "sent",
   "drafts",
+  "scheduled",
 ];
 
 /** The combined view a route shows (All inboxes unless it names another). */
@@ -201,10 +205,12 @@ export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
             mailboxes: boxes?.data,
             scope,
             isolating: isolatingMailboxes(boxes?.data ?? []),
-            // Drafts open one by one in the composer, so they stay single messages.
+            // Drafts open one by one in the composer, so they stay single
+            // messages; scheduled mail too (each has its own time).
             conversations:
               (spec?.conversations ?? false) &&
               spec?.role !== "drafts" &&
+              spec?.role !== "scheduled" &&
               handle.provider.capabilities.threads,
           },
           spec:
@@ -297,6 +303,7 @@ export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
             : [],
         ),
         order,
+        spec?.role === "scheduled",
       );
   const errors = results.flatMap((entry) =>
     entry.result?.error ? [entry.result.error] : [],

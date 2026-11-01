@@ -5,7 +5,9 @@ import android.content.Context
 import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -18,9 +20,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/** The periodic check for new mail while the app isn't open. */
+/** The periodic check for new mail while the app isn't open, and Send later's job. */
 object Background {
   private const val WORK = "action0-mail-check"
+  private const val SEND = "action0-send-later"
 
   /** Starts (or keeps) the check every 15 minutes or so, or stops it. */
   fun schedule(context: Context, enabled: Boolean) {
@@ -36,6 +39,26 @@ object Background {
       .build()
     work.enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.KEEP, request)
   }
+
+  /**
+   * Runs the check once at `at` (epoch ms) to send scheduled mail, or
+   * cancels that (null). The system decides the exact time (Doze).
+   */
+  fun scheduleSend(context: Context, at: Long?) {
+    val work = WorkManager.getInstance(context)
+    if (at == null) {
+      work.cancelUniqueWork(SEND)
+      return
+    }
+    val delay = (at - System.currentTimeMillis()).coerceAtLeast(0)
+    val request = OneTimeWorkRequestBuilder<MailCheckWorker>()
+      .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+      .setConstraints(
+        Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+      )
+      .build()
+    work.enqueueUniqueWork(SEND, ExistingWorkPolicy.REPLACE, request)
+  }
 }
 
 /**
@@ -45,7 +68,13 @@ object Background {
  */
 class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
   override fun doWork(): Result {
-    if (AppState.foreground) return Result.success()
+    if (AppState.foreground) {
+      // The app sends while it's open; the job only keeps its time.
+      Native.load()
+      val next = Native.nextSend(applicationContext.dataDir.absolutePath)
+      if (next >= 0) Background.scheduleSend(applicationContext, next)
+      return Result.success()
+    }
     try {
       check()
     } catch (error: Exception) {
@@ -83,6 +112,9 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
       }
     }
     val notices = JSONArray(Native.check(dataDir, key, tokens.toString()))
+    // More scheduled mail to come: the job runs again then.
+    val next = Native.nextSend(dataDir)
+    Background.scheduleSend(context, if (next < 0) null else next)
     for (i in 0 until notices.length()) {
       val notice = notices.getJSONObject(i)
       Notifications.post(

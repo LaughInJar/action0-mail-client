@@ -137,6 +137,8 @@ export interface BackgroundTexts {
   /** `{count}` is replaced: "3 new messages". */
   readonly newMessages: string;
   readonly noSubject: string;
+  /** A scheduled mail sent while the app wasn't open; `{subject}` is replaced. */
+  readonly scheduledSent: string;
 }
 
 /** What only the Android app has. */
@@ -156,11 +158,20 @@ export interface MobileControls {
   readonly checkForUpdate: () => Promise<AvailableRelease | null>;
   /** The system bars follow the app's theme (`background`: "#rrggbb"). */
   readonly setTheme: (dark: boolean, background: string) => void;
-  /** Turns the check for new mail while the app isn't open on or off. */
+  /**
+   * Turns the check for new mail while the app isn't open on or off;
+   * `device`: this app's id for Send later.
+   */
   readonly configureBackground: (options: {
     readonly enabled: boolean;
     readonly texts: BackgroundTexts;
+    readonly device: string;
   }) => Promise<void>;
+  /**
+   * When scheduled mail waiting in Drafts is due (epoch ms): a background
+   * job sends it then if the app isn't open.
+   */
+  readonly scheduleSends: (sends: readonly number[]) => Promise<void>;
 }
 
 /** See the module docs. */

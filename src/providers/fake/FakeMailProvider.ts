@@ -40,6 +40,7 @@ import type {
   SenderSettings,
   CalendarMail,
 } from "../../core/provider";
+import type { Schedule } from "../../core/schedule";
 import { sleep } from "../../lib/sleep";
 import { foldText } from "../../lib/text";
 import { buildMessage } from "../mime/buildMessage";
@@ -68,7 +69,16 @@ export interface FakeMailData {
    * accounts), and mail goes out from any address the draft names.
    */
   readonly editSenders?: boolean;
+  /**
+   * Send later: like Exchange, the server holds the mail and sends it when
+   * it's due (`held`), or it waits in Drafts for the app (`drafts`, the
+   * default).
+   */
+  readonly scheduling?: "held" | "drafts";
 }
+
+/** The Scheduled view every fake account has. */
+export const FAKE_SCHEDULED_ID = asMailboxId("scheduled");
 
 /** Options of {@link FakeMailProvider}. */
 export interface FakeMailProviderOptions {
@@ -159,9 +169,23 @@ export class FakeMailProvider implements MailProvider {
   #arrived = 0;
   #messages: Message[];
   readonly #folders: boolean;
+  /** Mail the "server" holds until it's due (`held` scheduling), by message id. */
+  readonly #held = new Map<MessageId, DraftInput>();
 
   constructor(data: FakeMailData, options: FakeMailProviderOptions = {}) {
-    this.#mailboxes = data.mailboxes;
+    // The Scheduled view, after Drafts (the tree shows it only while it lists mail).
+    const drafts = data.mailboxes.findIndex((m) => m.role === "drafts");
+    this.#mailboxes = data.mailboxes.some((m) => m.role === "scheduled")
+      ? data.mailboxes
+      : data.mailboxes.toSpliced(drafts + 1, 0, {
+          id: FAKE_SCHEDULED_ID,
+          name: "Scheduled",
+          kind: "view",
+          role: "scheduled",
+          selectable: true,
+          hidden: false,
+          assignable: false,
+        });
     this.#messages = [...data.messages];
     this.#attachments = new Map(data.attachments);
     this.#me = data.me ?? { address: "me@example.com" };
@@ -186,6 +210,7 @@ export class FakeMailProvider implements MailProvider {
       ...this.capabilities,
       contacts: data.contacts !== undefined,
       editSenders: data.editSenders === true,
+      scheduling: data.scheduling ?? "drafts",
       ...(this.#folders
         ? {
             // Like Outlook: folders, and categories as labels.
@@ -205,6 +230,7 @@ export class FakeMailProvider implements MailProvider {
 
   async listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]> {
     await this.#delay(signal);
+    this.#sendHeldDue();
     return this.#mailboxes.map((mailbox) => {
       if (!mailbox.selectable) return mailbox;
       const messages = this.#messagesIn(mailbox.id);
@@ -223,6 +249,7 @@ export class FakeMailProvider implements MailProvider {
     signal?: AbortSignal,
   ): Promise<Page<MessageSummary>> {
     await this.#delay(signal);
+    this.#sendHeldDue();
     const offset = cursor ? Number(cursor) : 0;
     const words = foldText(search ?? "")
       .split(/\s+/)
@@ -651,8 +678,9 @@ export class FakeMailProvider implements MailProvider {
     const toMe = [...draft.to, ...draft.cc, ...draft.bcc].some((a) =>
       this.#isMine(a.address),
     );
+    const { schedule: _schedule, ...content } = draft;
     const sent = this.#composeMessage(
-      draft,
+      content,
       [...this.#roleIds("sent"), ...(toMe ? this.#roleIds("inbox") : [])],
       !toMe,
     );
@@ -661,6 +689,91 @@ export class FakeMailProvider implements MailProvider {
       sent,
     ]);
     return { messageId: sent.id };
+  }
+
+  async scheduleDraft(
+    draft: DraftInput & { readonly id: DraftId },
+    schedule: Schedule,
+    signal?: AbortSignal,
+  ): Promise<{ readonly messageId: MessageId }> {
+    if (this.capabilities.scheduling === "drafts")
+      return {
+        messageId: (await this.saveDraft({ ...draft, schedule }, signal))
+          .messageId,
+      };
+    // Held: out of Drafts, onto the server's queue (in no mailbox).
+    await this.#refuseIfFailing(signal);
+    const saved = this.#drafts.get(draft.id);
+    if (!saved)
+      throw new MailError("not-found", `No draft ${draft.id}`, { status: 404 });
+    this.#drafts.delete(draft.id);
+    const { schedule: _schedule, id: _id, ...input } = draft;
+    const held = {
+      ...this.#composeMessage(input, [], true),
+      sendAt: schedule.sendAt.toISOString(),
+    };
+    this.#held.set(held.id, input);
+    this.#setMessages([
+      ...this.#messages.filter((m) => m.id !== saved.messageId),
+      held,
+    ]);
+    return { messageId: held.id };
+  }
+
+  async unscheduleDraft(
+    messageId: MessageId,
+    signal?: AbortSignal,
+  ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }> {
+    await this.#refuseIfFailing(signal);
+    const held = this.#held.get(messageId);
+    if (held) {
+      // Copied back into Drafts, taken off the queue.
+      const message = this.#messages.find((m) => m.id === messageId);
+      this.#held.delete(messageId);
+      const draft = await this.saveDraft(
+        {
+          ...held,
+          attachments: (message?.attachments ?? []).map((part) =>
+            attachmentOf(messageId, part),
+          ),
+        },
+        signal,
+      );
+      this.#setMessages(this.#messages.filter((m) => m.id !== messageId));
+      return draft;
+    }
+    const id = await this.draftIdOf(messageId, signal);
+    if (id === undefined)
+      throw new MailError("not-found", `No scheduled mail ${messageId}`, {
+        status: 404,
+      });
+    const { schedule: _schedule, ...draft } = await this.getDraft(id, signal);
+    return this.saveDraft(draft, signal);
+  }
+
+  /** Held mail whose time has come goes out (like Exchange, without the app). */
+  #sendHeldDue() {
+    const now = this.#now();
+    const due = this.#messages.filter(
+      (message) =>
+        this.#held.has(message.id) &&
+        message.sendAt !== undefined &&
+        Date.parse(message.sendAt) <= now,
+    );
+    if (due.length === 0) return;
+    const sent = this.#roleIds("sent");
+    for (const message of due) this.#held.delete(message.id);
+    this.#setMessages(
+      this.#messages.map((message) => {
+        if (!due.includes(message)) return message;
+        const { sendAt: _sendAt, ...rest } = message;
+        return {
+          ...rest,
+          mailboxIds: sent,
+          receivedAt: new Date(now).toISOString(),
+        };
+      }),
+    );
   }
 
   async searchContacts(
@@ -726,6 +839,12 @@ export class FakeMailProvider implements MailProvider {
       hasAttachments: attachments.some((a) => a.contentId === undefined),
       body: { html: draft.html, text: draft.text },
       attachments,
+      ...(draft.schedule && mailboxIds.length > 0
+        ? {
+            sendAt: draft.schedule.sendAt.toISOString(),
+            scheduledBy: draft.schedule.by,
+          }
+        : {}),
     };
   }
 
@@ -1062,6 +1181,7 @@ export class FakeMailProvider implements MailProvider {
   ): Promise<ChangeSet> {
     await this.#delay(signal);
     this.#deliverDue();
+    this.#sendHeldDue();
     const current = asSyncToken(String(this.#version));
     if (token === undefined)
       return { token: current, reset: false, changes: [] };
@@ -1139,10 +1259,17 @@ export class FakeMailProvider implements MailProvider {
         .filter((m) => m.role === "junk" || m.role === "trash")
         .map((m) => m.id),
     );
+    // Held mail is on the server's queue, in no mailbox.
     const outsideSpamAndTrash = (message: Message) =>
-      !message.mailboxIds.some((id) => excluded.has(id));
+      !message.mailboxIds.some((id) => excluded.has(id)) &&
+      !this.#held.has(message.id);
 
     // Like Gmail: messages in Spam or Trash show up only there.
+    if (mailbox?.role === "scheduled")
+      // Soonest first.
+      return this.#messages
+        .filter((message) => message.sendAt !== undefined)
+        .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
     let matches: (message: Message) => boolean;
     if (mailbox?.role === "all") matches = outsideSpamAndTrash;
     else if (mailbox?.role === "flagged")

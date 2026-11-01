@@ -138,7 +138,8 @@ export function MessageList({
           mailbox: source.scope,
           isolating: source.isolating,
           mine,
-          showRecipients: role === "sent" || role === "drafts",
+          showRecipients:
+            role === "sent" || role === "drafts" || role === "scheduled",
           drafts: source.mailboxes?.find((m) => m.role === "drafts")?.id,
           t,
         };

@@ -11,8 +11,14 @@ import type { OutgoingAttachment } from "../../core/compose";
 import { errorMessage } from "../common/errorMessage";
 import { useChangeSenders, useSendersOf } from "../../data/senders";
 import { useRouter, useUi, useUiStore } from "../../state/context";
-import type { ComposerSession, UiActions } from "../../state/uiStore";
-import { formatBytes } from "../common/format";
+import type {
+  ComposerSession,
+  MenuPosition,
+  UiActions,
+} from "../../state/uiStore";
+import { formatBytes, formatSendAt } from "../common/format";
+import { belowElement } from "../common/menuPosition";
+import { SendLaterMenu } from "../schedule/SendLaterMenu";
 import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { useFocusTrap } from "../common/useFocusTrap";
@@ -62,7 +68,16 @@ function ComposerWindow({
   const accounts = useAccounts();
   const rootRef = useRef<HTMLDivElement>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [confirmNoSubject, setConfirmNoSubject] = useState(false);
+  /** Asking about the missing subject: what Send anyway then does. */
+  const [confirmNoSubject, setConfirmNoSubject] = useState<{
+    readonly go: () => void;
+  } | null>(null);
+  /** The Send later menu, open below its button. */
+  const [sendLaterAt, setSendLaterAt] = useState<MenuPosition | null>(null);
+  const sendLaterRef = useRef<HTMLButtonElement>(null);
+  const canSchedule =
+    accounts.find((handle) => handle.account.id === session.accountId)?.provider
+      .capabilities.scheduling !== undefined;
   const files = useComposerFiles(session, rootRef, setProblem);
   const pickerRef = useRef<HTMLInputElement>(null);
   const t = useT();
@@ -86,9 +101,10 @@ function ComposerWindow({
       document.getElementById(COMPOSER_IDS.to)?.focus();
   }, [initialFocus]);
   const sendAnywayRef = useRef<HTMLButtonElement>(null);
+  const asking = confirmNoSubject !== null;
   useEffect(() => {
-    if (confirmNoSubject) sendAnywayRef.current?.focus();
-  }, [confirmNoSubject]);
+    if (asking) sendAnywayRef.current?.focus();
+  }, [asking]);
 
   const { key } = session;
   const update = (
@@ -212,7 +228,8 @@ function ComposerWindow({
       );
   };
 
-  const trySend = (skipSubjectCheck = false) => {
+  /** Checks the mail, then sends it (or does `go`: schedule it). */
+  const trySend = (skipSubjectCheck = false, go = actions.send) => {
     const recipients = [...session.to, ...session.cc, ...session.bcc];
     const invalid = recipients.find((a) => !isValidAddress(a.address));
     if (recipients.length === 0) {
@@ -235,18 +252,38 @@ function ComposerWindow({
       return;
     }
     if (!skipSubjectCheck && !session.subject.trim()) {
-      setConfirmNoSubject(true);
+      setConfirmNoSubject({ go });
       return;
     }
     setProblem(null);
-    actions.send();
+    go();
+  };
+  /** Schedules the mail for `sendAt`, after the same checks. */
+  const trySendLater = (sendAt: Date) => {
+    trySend(false, () => {
+      actions.sendLater(sendAt);
+    });
+  };
+  /** The main button: Send, or Schedule for a scheduled mail being edited. */
+  const sendOrSchedule = () => {
+    if (session.schedule) trySendLater(session.schedule.sendAt);
+    else trySend();
+  };
+  const openSendLater = () => {
+    const button = sendLaterRef.current;
+    if (button) setSendLaterAt(belowElement(button));
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    // The Send later menu or its dialog has the keys.
+    if (sendLaterAt) return;
     const mod = event.ctrlKey || event.metaKey;
-    if (mod && event.key === "Enter") {
+    if (mod && event.shiftKey && event.key === "Enter" && canSchedule) {
       event.preventDefault();
-      trySend();
+      openSendLater();
+    } else if (mod && event.key === "Enter") {
+      event.preventDefault();
+      sendOrSchedule();
     } else if (mod && event.key.toLowerCase() === "j" && aiReady) {
       event.preventDefault();
       openAi();
@@ -255,7 +292,7 @@ function ComposerWindow({
       setTemplatesOpen(true);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      if (confirmNoSubject) setConfirmNoSubject(false);
+      if (confirmNoSubject) setConfirmNoSubject(null);
       else actions.close();
     } else if (
       mod &&
@@ -410,16 +447,32 @@ function ComposerWindow({
           </button>
         )}
         {fullScreen ? (
-          <button
-            type="button"
-            onClick={() => {
-              trySend();
-            }}
-            className="ml-1 flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white pointer-coarse:min-h-11"
-          >
-            <Icon name="send" className="size-4" />
-            {c.send}
-          </button>
+          <>
+            {canSchedule && (
+              <button
+                ref={sendLaterRef}
+                type="button"
+                aria-label={t.schedule.options}
+                title={t.schedule.options}
+                aria-haspopup="menu"
+                onClick={openSendLater}
+                className="grid size-9 shrink-0 place-items-center rounded-md text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800 pointer-coarse:size-11"
+              >
+                <Icon name="clock" className="size-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={sendOrSchedule}
+              className="ml-1 flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white pointer-coarse:min-h-11"
+            >
+              <Icon
+                name={session.schedule ? "clock" : "send"}
+                className="size-4"
+              />
+              {session.schedule ? t.schedule.schedule : c.send}
+            </button>
+          </>
         ) : (
           <>
             <IconButton
@@ -682,8 +735,9 @@ function ComposerWindow({
                 type="button"
                 ref={sendAnywayRef}
                 onClick={() => {
-                  setConfirmNoSubject(false);
-                  trySend(true);
+                  const go = confirmNoSubject.go;
+                  setConfirmNoSubject(null);
+                  trySend(true, go);
                 }}
                 className="rounded-md bg-blue-600 px-3 py-1 font-semibold text-white pointer-coarse:min-h-11"
               >
@@ -692,7 +746,7 @@ function ComposerWindow({
               <button
                 type="button"
                 onClick={() => {
-                  setConfirmNoSubject(false);
+                  setConfirmNoSubject(null);
                   document.getElementById(COMPOSER_IDS.subject)?.focus();
                 }}
                 className="rounded-md px-3 py-1 hover:bg-amber-100 dark:hover:bg-amber-900 pointer-coarse:min-h-11"
@@ -701,21 +755,56 @@ function ComposerWindow({
               </button>
             </div>
           )}
-          <footer className="flex shrink-0 items-center gap-2 border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            {!fullScreen && (
+          {session.schedule && (
+            <div className="flex shrink-0 items-center gap-2 border-t border-zinc-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-900 dark:border-zinc-800 dark:bg-blue-950 dark:text-blue-100">
+              <Icon name="clock" className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {t.schedule.scheduledLine(
+                  formatSendAt(session.schedule.sendAt.toISOString(), {
+                    locale: t.locale,
+                  }),
+                )}
+              </span>
               <button
                 type="button"
-                onClick={() => {
-                  trySend();
-                }}
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+                onClick={openSendLater}
+                className="rounded px-2 py-0.5 font-medium hover:bg-blue-100 dark:hover:bg-blue-900 pointer-coarse:min-h-11"
               >
-                <Icon name="send" className="size-4" />
-                {c.send}
-                <kbd className="ml-1 font-sans text-xs font-normal opacity-75 pointer-coarse:hidden">
-                  {c.sendKey}
-                </kbd>
+                {t.schedule.changeTime}
               </button>
+            </div>
+          )}
+          <footer className="flex shrink-0 items-center gap-2 border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            {!fullScreen && (
+              <div className="flex">
+                <button
+                  type="button"
+                  onClick={sendOrSchedule}
+                  className={`flex items-center gap-1.5 bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 ${canSchedule ? "rounded-l-md" : "rounded-md"}`}
+                >
+                  <Icon
+                    name={session.schedule ? "clock" : "send"}
+                    className="size-4"
+                  />
+                  {session.schedule ? t.schedule.schedule : c.send}
+                  <kbd className="ml-1 font-sans text-xs font-normal opacity-75 pointer-coarse:hidden">
+                    {c.sendKey}
+                  </kbd>
+                </button>
+                {canSchedule && (
+                  <button
+                    ref={sendLaterRef}
+                    type="button"
+                    aria-label={t.schedule.options}
+                    title={t.schedule.options}
+                    aria-haspopup="menu"
+                    onClick={openSendLater}
+                    className="grid place-items-center rounded-r-md border-l border-blue-500 bg-blue-600 px-1.5 text-white hover:bg-blue-700"
+                  >
+                    <Icon name="chevron-down" className="size-4" />
+                  </button>
+                )}
+              </div>
             )}
             <IconButton
               label={c.attachFiles}
@@ -747,6 +836,39 @@ function ComposerWindow({
             </div>
           )}
         </>
+      )}
+      {sendLaterAt && (
+        <SendLaterMenu
+          at={sendLaterAt}
+          {...(session.schedule
+            ? {
+                current: session.schedule.sendAt.toISOString(),
+                extra: [
+                  {
+                    id: "send-now",
+                    label: t.schedule.sendNow,
+                    icon: "send",
+                    run: () => {
+                      update({ schedule: undefined });
+                      trySend();
+                    },
+                  },
+                  {
+                    id: "dont-schedule",
+                    label: t.schedule.dontSchedule,
+                    icon: "x",
+                    run: () => {
+                      update({ schedule: undefined });
+                    },
+                  },
+                ],
+              }
+            : {})}
+          onPick={trySendLater}
+          onClose={() => {
+            setSendLaterAt(null);
+          }}
+        />
       )}
     </div>
   );

@@ -60,6 +60,7 @@ export function fakeAndroidPlatform({
       checkForUpdate: vi.fn(() => Promise.resolve(release)),
       setTheme: vi.fn(),
       configureBackground: vi.fn(() => Promise.resolve()),
+      scheduleSends: vi.fn(() => Promise.resolve()),
     },
   } satisfies Platform;
   return {

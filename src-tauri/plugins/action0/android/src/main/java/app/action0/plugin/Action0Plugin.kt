@@ -97,6 +97,12 @@ class ScheduleArgs {
 }
 
 @InvokeArg
+class ScheduleSendArgs {
+  /** Epoch ms; null cancels. */
+  var at: Long? = null
+}
+
+@InvokeArg
 class PrintArgs {
   var title: String = "action0"
 }
@@ -577,6 +583,13 @@ class Action0Plugin(private val activity: Activity) : Plugin(activity) {
   fun scheduleChecks(invoke: Invoke) {
     val args = invoke.parseArgs(ScheduleArgs::class.java)
     Background.schedule(activity, args.enabled)
+    invoke.resolve()
+  }
+
+  @Command
+  fun scheduleSend(invoke: Invoke) {
+    val args = invoke.parseArgs(ScheduleSendArgs::class.java)
+    Background.scheduleSend(activity, args.at)
     invoke.resolve()
   }
 }

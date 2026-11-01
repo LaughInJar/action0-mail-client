@@ -25,6 +25,8 @@ use super::session::Capabilities;
 pub const FLAGGED: &str = "v:flagged";
 /// The view of all mail (every folder but Trash and Junk).
 pub const ALL: &str = "v:all";
+/// The view of scheduled drafts (Send later).
+pub const SCHEDULED: &str = "v:scheduled";
 
 /// How many message locations are kept per account (the oldest half goes beyond).
 const MAX_IDS: usize = 50_000;
@@ -39,12 +41,14 @@ pub enum MailboxRef {
     Folder(String),
     Flagged,
     All,
+    Scheduled,
 }
 
 pub fn mailbox(id: &str) -> Result<MailboxRef, MailServerError> {
     match id {
         FLAGGED => Ok(MailboxRef::Flagged),
         ALL => Ok(MailboxRef::All),
+        SCHEDULED => Ok(MailboxRef::Scheduled),
         _ => id
             .strip_prefix("f:")
             .map(|path| MailboxRef::Folder(path.to_string()))

@@ -29,7 +29,7 @@ How requests flow from a click to a provider is described in [architecture.md](a
 | What it can do     | `capabilities` (see [Capabilities](domain-model.md#capabilities))                                                                                        |
 | Reading            | `listMailboxes`, `listMessages`, `listThreads`, `getThread`, `getMessage`, `getAttachment`, `getRawMessage`                                              |
 | Changing mail      | `archive`, `unarchive`, `setFlags`, `move`, `setLabels`, `trash`, `untrash`, `reportSpam`, `notSpam`, `deleteForever`, `emptyMailbox`, `markAllRead`     |
-| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `searchContacts`                                                                       |
+| Writing            | `saveDraft`, `draftIdOf`, `getDraft`, `deleteDraft`, `sendDraft`, `scheduleDraft`, `unscheduleDraft`, `searchContacts`                                   |
 | Live updates       | `changesSince`                                                                                                                                           |
 | Managing mailboxes | `createMailbox`, `updateMailbox`, `deleteMailbox`                                                                                                        |
 | Other              | `oneClickUnsubscribe`, `listSenders`, `saveSenders`, `catchAllDomains`, `updateSignature`, `sendCalendarMail` (iMIP, for CalDAV servers that don't send) |
@@ -301,6 +301,7 @@ Outgoing mail is a raw MIME message built by `buildMessage` (`src/providers/mime
 - `saveDraft` creates a draft with `POST drafts` (not retried: a lost answer would leave a duplicate) or replaces one with `PUT drafts/{id}` (retried). The `threadId` from `DraftInput.threading` files a reply into its conversation. Each save gives the draft's message a new id.
 - `sendDraft` uploads the final content and sends it in one request (`POST drafts/send`, not retried).
 - `draftIdOf` pages through `drafts.list` to find the draft behind a message of the Drafts mailbox; `getDraft` turns it back into a `Draft`, including its `In-Reply-To`.
+- Send later (`scheduling: "drafts"`): Gmail's API can't schedule, so `scheduleDraft` saves the draft with the marker header `X-Action0-Send-At: <time>; by=<device>` (`src/core/schedule.ts`) and action0 sends it when it's due; `unscheduleDraft` saves it again without. Only saves write the marker; `sendDraft` builds the mail without it. The marker is one of the summary headers, so rows of drafts carry `sendAt` and `scheduledBy`. The Scheduled view (`ACTION0_SCHEDULED`, after Drafts) lists every draft (Gmail can't search for the header) and reads the headers of drafts it hasn't seen yet: a saved draft is a new message, so `#markers` remembers per message id whether it's scheduled.
 
 ### Live updates
 
@@ -401,6 +402,7 @@ A Graph draft is a message: `DraftId` and the draft's `MessageId` are the same i
 - `#syncAttachments` then makes the draft's attachments match: it deletes the ones no longer wanted and uploads the missing ones. Files up to 3 MiB go up in one request as base64 (`SMALL_ATTACHMENT_BYTES`); bigger ones through an upload session in chunks of 3.75 MiB (`UPLOAD_CHUNK_BYTES`, a multiple of 320 KiB as Graph requires). The provider remembers which local attachment became which server attachment, so later saves don't upload them again; upload sessions don't return the new id, so it is matched by name. A network failure at the first chunk means the upload server can't be reached from here (`attachmentUploadBlocked`: files of up to 3 MB still work); one at a later chunk means the connection dropped (`attachmentUploadInterrupted`), and the draft's next save tries again.
 - `sendDraft` saves the final content and posts `…/send` (not retried).
 - `getDraft` turns a draft back into a `Draft`; a plain-text body becomes HTML.
+- Send later: work and school accounts (`scheduling: "held"`) set MAPI's deferred send time (`SystemTime 0x3FEF`, PidTagDeferredSendTime) on the saved draft and send it; Exchange holds it in the Outbox until then and sends it with action0 closed. The Scheduled view (`view:scheduled`) lists the Outbox with that property expanded. A held mail can't be changed or moved, so `unscheduleDraft` saves its content as a new draft (a reply through `createReply` again) and deletes the held one, which takes it off the queue. Whether Exchange holds mail for personal accounts isn't known, so those (`scheduling: "drafts"`) keep the time in an extended property of action0's own (`String {8a3b7c2e-…} Name action0SendAt`, never a header), which every save writes (empty for none) and `sendDraft` clears; the view lists Drafts with it expanded.
 
 ### Live updates
 
@@ -435,7 +437,7 @@ Like Graph: archive, trash and spam move into the folder with that role, which `
 
 ### Drafts and sending
 
-`saveDraft` builds the message with `buildMessage` (its own `Message-ID` and `Date`) and appends it to Drafts with `\Draft \Seen`, deleting the version before; the draft's id is its message's. `sendDraft` builds it once more, sends it over SMTP without the Bcc header (`withoutBcc`), appends a copy with Bcc to Sent (unless the SMTP server keeps one itself, as Gmail's does), and deletes the draft. Attachments of other messages are fetched through `getAttachment`. The size limit is the SMTP server's `SIZE`, less a third for encoding.
+`saveDraft` builds the message with `buildMessage` (its own `Message-ID` and `Date`) and appends it to Drafts with `\Draft \Seen`, deleting the version before; the draft's id is its message's. Send later (`scheduling: "drafts"`) works like Gmail's: the stored draft carries the `X-Action0-Send-At` marker, the rows read it (it's in `HEADER_FIELDS`), and the Scheduled view (`v:scheduled`) is a `UID SEARCH HEADER X-Action0-Send-At ""` in Drafts, sorted by the marker's time. `sendDraft` builds it once more, sends it over SMTP without the Bcc header (`withoutBcc`), appends a copy with Bcc to Sent (unless the SMTP server keeps one itself, as Gmail's does), and deletes the draft. Attachments of other messages are fetched through `getAttachment`. The size limit is the SMTP server's `SIZE`, less a third for encoding.
 
 ### Senders and signatures
 

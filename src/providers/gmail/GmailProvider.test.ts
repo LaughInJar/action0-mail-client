@@ -26,7 +26,12 @@ import {
   GmailHttp,
   PEOPLE_API_BASE,
 } from "./http";
-import { ALL_MAIL_ID, CATEGORIES_ID, GMAIL_LABEL_COLORS } from "./labels";
+import {
+  ALL_MAIL_ID,
+  CATEGORIES_ID,
+  GMAIL_LABEL_COLORS,
+  SCHEDULED_ID,
+} from "./labels";
 import type { GmailLabel } from "./types";
 
 const server = setupServer();
@@ -801,6 +806,84 @@ describe("GmailProvider drafts and sending", () => {
     expect(sent?.raw).toContain("AQID");
     expect(sent?.raw).toContain("b2s="); // "ok", loaded already: not fetched
     expect(sent?.raw).toMatch(/\r\nDate: /);
+  });
+
+  it("keeps a scheduled draft's time in it, and sends it without", async () => {
+    const uploads: Awaited<ReturnType<typeof readUpload>>[] = [];
+    server.use(
+      http.post(upload("drafts"), async ({ request }) => {
+        uploads.push(await readUpload(request));
+        return HttpResponse.json({ id: "d1", message: { id: "m-a" } });
+      }),
+      http.put(upload("drafts/d1"), async ({ request }) => {
+        uploads.push(await readUpload(request));
+        return HttpResponse.json({ id: "d1", message: { id: "m-b" } });
+      }),
+      http.post(upload("drafts/send"), async ({ request }) => {
+        uploads.push(await readUpload(request));
+        return HttpResponse.json({ id: "sent-1", threadId: "t1" });
+      }),
+    );
+    const gmail = provider();
+    const schedule = { sendAt: new Date("2026-11-03T07:00:00Z"), by: "dev1" };
+    const { id } = await gmail.saveDraft(draft);
+    expect(await gmail.scheduleDraft({ ...draft, id }, schedule)).toEqual({
+      messageId: "m-b",
+    });
+    await gmail.sendDraft({ ...draft, id, schedule });
+    expect(uploads[0]?.raw).not.toContain("X-Action0-Send-At");
+    expect(uploads[1]?.raw).toContain(
+      "X-Action0-Send-At: 2026-11-03T07:00:00.000Z; by=dev1",
+    );
+    expect(uploads[2]?.raw).not.toContain("X-Action0-Send-At");
+  });
+
+  it("lists scheduled drafts soonest first, reading each draft's headers once", async () => {
+    const gets: string[] = [];
+    const marker = (time: string) => [
+      { name: "X-Action0-Send-At", value: `${time}; by=dev1` },
+    ];
+    const drafts: Record<string, ReturnType<typeof gmailMessage>> = {
+      later: gmailMessage("later", {
+        labelIds: ["DRAFT"],
+        headers: marker("2026-11-04T07:00:00.000Z"),
+      }),
+      plain: gmailMessage("plain", { labelIds: ["DRAFT"] }),
+      sooner: gmailMessage("sooner", {
+        labelIds: ["DRAFT"],
+        headers: marker("2026-11-03T07:00:00.000Z"),
+      }),
+    };
+    server.use(
+      http.get(url("messages"), ({ request }) => {
+        expect(new URL(request.url).searchParams.getAll("labelIds")).toEqual([
+          "DRAFT",
+        ]);
+        return HttpResponse.json({
+          messages: Object.keys(drafts).map((id) => ({ id, threadId: id })),
+        });
+      }),
+      http.get(url("messages/:id"), ({ params }) => {
+        const id = String(params.id);
+        gets.push(id);
+        return HttpResponse.json(drafts[id]);
+      }),
+    );
+    const gmail = provider();
+    const query = {
+      mailboxId: asMailboxId(SCHEDULED_ID),
+      limit: 50,
+    };
+    const { items } = await gmail.listMessages(query);
+    expect(
+      items.map((item) => [item.id, item.sendAt, item.scheduledBy]),
+    ).toEqual([
+      ["sooner", "2026-11-03T07:00:00.000Z", "dev1"],
+      ["later", "2026-11-04T07:00:00.000Z", "dev1"],
+    ]);
+    expect(gets.sort()).toEqual(["later", "plain", "sooner"]);
+    await gmail.listMessages(query);
+    expect(gets).toHaveLength(3);
   });
 
   it("finds a draft by its message, reads and deletes it", async () => {

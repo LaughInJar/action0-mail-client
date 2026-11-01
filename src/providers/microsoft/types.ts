@@ -76,6 +76,11 @@ export interface GraphMessage {
   };
   readonly internetMessageId?: string;
   readonly internetMessageHeaders?: readonly GraphHeader[];
+  /** MAPI properties asked for with `$expand` (Send later's time). */
+  readonly singleValueExtendedProperties?: readonly {
+    readonly id: string;
+    readonly value?: string;
+  }[];
   /** Set on entries of a delta page for messages that left the folder. */
   readonly "@removed"?: { readonly reason?: string };
 }

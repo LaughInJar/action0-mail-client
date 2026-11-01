@@ -47,6 +47,7 @@ export function mailboxMenuItems(
     mailbox.selectable &&
     capabilities?.settableFlags.includes("seen") &&
     mailbox.role !== "drafts" &&
+    mailbox.role !== "scheduled" &&
     mailbox.role !== "sent"
   )
     general.push("mark-all-read");

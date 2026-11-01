@@ -34,6 +34,8 @@ pub struct HeaderInfo {
     pub in_reply_to: Option<String>,
     /// `type/subtype`, lower case.
     pub content_type: Option<String>,
+    /// A scheduled draft's Send later marker (`X-Action0-Send-At`).
+    pub send_at: Option<String>,
 }
 
 impl HeaderInfo {
@@ -90,9 +92,16 @@ impl HeaderInfo {
                     .to_ascii_lowercase(),
                 )
             }),
+            send_at: headers
+                .value(SEND_AT_HEADER)
+                .and_then(|value| value.as_text())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
         }
     }
 }
+
+pub use crate::scheduled::SEND_AT_HEADER;
 
 fn addresses(list: &AddressList<'_>) -> Vec<Address> {
     list.mailboxes()
@@ -328,6 +337,7 @@ pub fn message(raw: &[u8], meta: &Meta) -> Message {
                 flagged: meta.flagged,
             },
             has_attachments,
+            send_at: info.send_at.clone(),
         },
         cc: info.cc,
         bcc: info.bcc,
@@ -364,6 +374,7 @@ fn empty_message(meta: &Meta) -> Message {
                 flagged: meta.flagged,
             },
             has_attachments: false,
+            send_at: None,
         },
         cc: Vec::new(),
         bcc: Vec::new(),

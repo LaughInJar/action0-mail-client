@@ -69,6 +69,8 @@ export interface ImapSummary {
   readonly receivedAt: string;
   readonly flags: { readonly seen: boolean; readonly flagged: boolean };
   readonly hasAttachments: boolean;
+  /** A scheduled draft's Send later marker (`X-Action0-Send-At`), as stored. */
+  readonly sendAt?: string;
 }
 
 /**

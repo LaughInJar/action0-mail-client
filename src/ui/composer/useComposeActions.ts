@@ -35,6 +35,8 @@ import type {
   UiStore,
 } from "../../state/uiStore";
 import { errorMessage } from "../common/errorMessage";
+import { formatSendAt } from "../common/format";
+import { deviceIdOf } from "../../state/device";
 import { useT, type I18n } from "../../i18n/context";
 
 /** Starting, saving, sending and discarding mails. */
@@ -84,6 +86,18 @@ export interface ComposeActions {
   readonly undoSend: (id?: number) => void;
   /** Sends a queued mail right away. */
   readonly sendNow: (id: number) => void;
+  /**
+   * Schedules the composer's mail for `sendAt` (Send later) and closes the
+   * composer; the toast's Undo brings it back.
+   */
+  readonly sendLater: (sendAt: Date) => void;
+  /** Opens a scheduled mail in the composer (it stays scheduled). */
+  readonly editScheduled: (message: MessageRef, sendAt: string) => void;
+  /**
+   * Sends a scheduled mail now, after the undo-send wait (Undo opens it in
+   * the composer, still scheduled).
+   */
+  readonly sendScheduledNow: (message: MessageRef, sendAt: string) => void;
   /** Brings a discarded draft back into the composer. */
   readonly restoreDraft: (session: ComposerSession) => void;
   /**
@@ -283,10 +297,15 @@ export function useComposeActions(): ComposeActions {
           .updateComposer(current.key, { window: "docked" }, false);
         return;
       }
+      open(draftInit(accountId, draft));
+    };
+
+    /** A saved draft as a composer's content. */
+    const draftInit = (accountId: AccountId, draft: Draft): ComposerInit => {
       const split = splitQuote(draft.html || textToHtml(draft.text));
       const { quote } = split;
       const { body, signature } = splitSignature(split.body);
-      open({
+      return {
         accountId,
         kind: "draft",
         draftId: draft.id,
@@ -306,8 +325,71 @@ export function useComposeActions(): ComposeActions {
         ...(quote ? { quote } : {}),
         attachments: draft.attachments,
         ...(draft.threading ? { threading: draft.threading } : {}),
+        ...(draft.schedule ? { schedule: draft.schedule } : {}),
         focus: "body",
-      });
+      };
+    };
+
+    /** A scheduled mail's draft, keeping its time (a held mail's draft has none). */
+    const scheduledDraft = (
+      { accountId, messageId }: MessageRef,
+      sendAt: string,
+    ) =>
+      sync.scheduledDraft(accountId, messageId).then((draft): Draft => ({
+        ...draft,
+        schedule: draft.schedule ?? {
+          sendAt: new Date(sendAt),
+          by: deviceIdOf(store),
+        },
+      }));
+
+    /** Schedules a session (closed already) and says so; Undo reopens it. */
+    const schedule = (session: ComposerSession, sendAt: Date) => {
+      const plan = { sendAt, by: deviceIdOf(store) };
+      const { key, accountId } = session;
+      sync
+        .schedule(
+          key,
+          accountId,
+          { ...session, schedule: plan },
+          session.draftId,
+          plan,
+        )
+        .then(
+          (messageId) => {
+            store.getState().showToast({
+              message: t.schedule.scheduledFor(
+                formatSendAt(sendAt.toISOString(), { locale: t.locale }),
+              ),
+              tone: "info",
+              revert: () => {
+                sync.unschedule(accountId, messageId).then(({ id }) => {
+                  resumeDraft(accountId, id);
+                }, fail(t.schedule.couldntUnschedule));
+              },
+            });
+          },
+          (error: unknown) => {
+            // The mail is still there: back into the composer.
+            store.getState().openComposer({
+              ...session,
+              dirty: true,
+              focus: "body",
+              window: "docked",
+            });
+            fail(t.schedule.couldntSchedule)(error);
+          },
+        );
+    };
+
+    const resumeDraft = (accountId: AccountId, draftId: DraftId) => {
+      if (!canComposeIn(accountId)) return;
+      sync
+        .getDraft(accountId, draftId)
+        .then((draft) => {
+          openDraft(accountId, draft);
+        })
+        .catch(fail(c.couldntOpenDraft));
     };
 
     /**
@@ -456,21 +538,20 @@ export function useComposeActions(): ComposeActions {
           .catch(fail(c.couldntOpenDraft));
       },
 
-      resumeDraft: (accountId, draftId) => {
-        if (!canComposeIn(accountId)) return;
-        sync
-          .getDraft(accountId, draftId)
-          .then((draft) => {
-            openDraft(accountId, draft);
-          })
-          .catch(fail(c.couldntOpenDraft));
-      },
+      resumeDraft,
 
       close: () => {
         const current = store.getState().composer;
         if (!current) return;
-        void saveSession(store, sync, current, t);
         store.getState().closeComposer(current.key);
+        // A mail the server held goes back onto its queue.
+        if (
+          current.schedule &&
+          registry.get(current.accountId)?.provider.capabilities.scheduling ===
+            "held"
+        )
+          schedule(current, current.schedule.sendAt);
+        else void saveSession(store, sync, current, t);
       },
 
       discard: () => {
@@ -526,6 +607,36 @@ export function useComposeActions(): ComposeActions {
 
       sendNow: (id) => {
         sendQueued(store, sync, id, t);
+      },
+
+      sendLater: (sendAt) => {
+        const current = store.getState().composer;
+        if (!current) return;
+        store.getState().closeComposer(current.key);
+        schedule(current, sendAt);
+        const { settings, updateSettings } = store.getState();
+        if (settings.lastSendAccount !== current.accountId)
+          updateSettings({ lastSendAccount: current.accountId });
+      },
+
+      editScheduled: (message, sendAt) => {
+        if (!canComposeIn(message.accountId)) return;
+        scheduledDraft(message, sendAt).then((draft) => {
+          openDraft(message.accountId, draft);
+        }, fail(c.couldntOpenDraft));
+      },
+
+      sendScheduledNow: (message, sendAt) => {
+        if (!canComposeIn(message.accountId)) return;
+        scheduledDraft(message, sendAt).then((draft) => {
+          // Saved already: it waits out the undo period like a sent mail.
+          store
+            .getState()
+            .queueDraft(
+              draftInit(message.accountId, draft),
+              store.getState().settings.undoSendSeconds * 1000,
+            );
+        }, fail(t.schedule.couldntSend));
       },
 
       attachFiles: (files) => {

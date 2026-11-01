@@ -72,17 +72,17 @@ A `Mailbox` (`src/core/model.ts`) is anything a message can be in. A message has
 
 The other fields:
 
-| Field        | Meaning                                                                                                                                                                                                                          |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Leaf name ("Clients" for the Gmail label "Work/Clients"). Interface names of roles and standard mailboxes come from the translations instead (`mailboxName` in `src/ui/common/mailboxNames.ts`).                                 |
-| `parentId`   | Nesting in the tree; absent at the top level.                                                                                                                                                                                    |
-| `role`       | Special purpose, from the JMAP / IMAP SPECIAL-USE (RFC 6154) vocabulary: `inbox`, `flagged`, `important`, `sent`, `drafts`, `all`, `archive`, `junk`, `trash`. `MAILBOX_ROLE_ORDER` sorts siblings in the tree.                  |
-| `standard`   | A well-known mailbox without a role, named by the interface: `categories`, `primary`, `social`, `promotions`, `updates`, `forums`.                                                                                               |
-| `selectable` | `false` for grouping nodes that hold no messages themselves: Gmail's "Categories" group and the parents Gmail implies by a path like "Work/Clients" when no "Work" label exists, Outlook's "Categories" group, IMAP `\Noselect`. |
-| `hidden`     | The user asked the provider to hide it from the folder list. The tree leaves it and everything below it out (`src/ui/mailboxes/buildTree.ts`); Manage labels still lists it.                                                     |
-| `assignable` | Users may put messages in and take them out: a target for moving and labelling. `false` for views and for system mailboxes that fill themselves (Sent, Drafts).                                                                  |
-| `counts`     | `{ unread, total }`, if the provider reports them.                                                                                                                                                                               |
-| `color`      | `{ background, text }` CSS colours of a label chip.                                                                                                                                                                              |
+| Field        | Meaning                                                                                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Leaf name ("Clients" for the Gmail label "Work/Clients"). Interface names of roles and standard mailboxes come from the translations instead (`mailboxName` in `src/ui/common/mailboxNames.ts`).                                                      |
+| `parentId`   | Nesting in the tree; absent at the top level.                                                                                                                                                                                                         |
+| `role`       | Special purpose, from the JMAP / IMAP SPECIAL-USE (RFC 6154) vocabulary: `inbox`, `flagged`, `important`, `sent`, `drafts`, `all`, `archive`, `junk`, `trash`, plus `scheduled` (Send later's view). `MAILBOX_ROLE_ORDER` sorts siblings in the tree. |
+| `standard`   | A well-known mailbox without a role, named by the interface: `categories`, `primary`, `social`, `promotions`, `updates`, `forums`.                                                                                                                    |
+| `selectable` | `false` for grouping nodes that hold no messages themselves: Gmail's "Categories" group and the parents Gmail implies by a path like "Work/Clients" when no "Work" label exists, Outlook's "Categories" group, IMAP `\Noselect`.                      |
+| `hidden`     | The user asked the provider to hide it from the folder list. The tree leaves it and everything below it out (`src/ui/mailboxes/buildTree.ts`); Manage labels still lists it.                                                                          |
+| `assignable` | Users may put messages in and take them out: a target for moving and labelling. `false` for views and for system mailboxes that fill themselves (Sent, Drafts).                                                                                       |
+| `counts`     | `{ unread, total }`, if the provider reports them.                                                                                                                                                                                                    |
+| `color`      | `{ background, text }` CSS colours of a label chip.                                                                                                                                                                                                   |
 
 Rules built on these fields (`src/data/mailboxActions.ts`, `src/ui/pickers/MailboxPicker.tsx`):
 
@@ -298,6 +298,15 @@ export interface DraftInput {
 ```
 
 A `Draft` is a saved `DraftInput` with its `id` and the `messageId` of its current message. `MailProvider.saveDraft` creates a draft (no `id`) or replaces one, `sendDraft` sends a draft with its final content, and `draftIdOf` finds the draft behind a message in the Drafts mailbox. Gmail gives a draft's message a new id on every save; Graph keeps one id for the draft, which it also keeps in Sent Items. Drafts are always saved to the provider, never to browser storage.
+
+### Send later
+
+`src/core/schedule.ts` has the rules. A `Schedule` is `{ sendAt, by }`: when the mail goes out, and the device id (a random id per browser or app, `deviceIdOf` in `src/state/device.ts`) of the action0 that scheduled it. Providers schedule one of two ways (`capabilities.scheduling`):
+
+- `held`: the server holds the mail and sends it itself (Exchange for work and school accounts).
+- `drafts`: the mail waits in Drafts marked with its time (`DraftInput.schedule`, which `saveDraft` keeps and `sendDraft` ignores), and whichever action0 runs then sends it: the one that scheduled it at its time, others two minutes later (`isDue`). Gmail's send uses up the draft, and `DraftSync.sendScheduled` checks the draft is still the scheduled one right before sending, so it goes out once. Mail more than 30 minutes late isn't sent unasked (`isMissed`).
+
+`scheduleDraft(draft, schedule)` and `unscheduleDraft(messageId)` are the contract's two calls; each provider lists its scheduled mail in a view with role `scheduled`, whose rows carry `sendAt` (and `scheduledBy`). `useScheduledMail` (`src/data/scheduled.ts`) reads the first page of each account's view; `ScheduledSender` (`src/ui/schedule/`) sends what's due every 15 seconds while the app runs and shows the bar for missed mail; the tree shows Scheduled only while it lists mail.
 
 `createDraftSync` (`src/data/drafts.ts`) queues the saves, sends and discards of one composer one after another, and later calls reuse the draft an earlier one created, so a composer never ends up with two drafts. Before each upload it loads the bytes of attachments that are parts of other messages, because a draft's own parts vanish when the draft is replaced. The undo-send wait happens in the UI before `send` is called (`src/ui/composer/useComposeActions.ts`).
 

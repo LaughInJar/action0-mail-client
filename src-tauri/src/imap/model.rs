@@ -36,6 +36,7 @@ pub enum Role {
     Flagged,
     Sent,
     Drafts,
+    Scheduled,
     All,
     Archive,
     Junk,
@@ -50,10 +51,11 @@ impl Role {
             Self::Flagged => 1,
             Self::Sent => 3,
             Self::Drafts => 4,
-            Self::All => 5,
-            Self::Archive => 6,
-            Self::Junk => 7,
-            Self::Trash => 8,
+            Self::Scheduled => 5,
+            Self::All => 6,
+            Self::Archive => 7,
+            Self::Junk => 8,
+            Self::Trash => 9,
         }
     }
 
@@ -64,6 +66,7 @@ impl Role {
             Self::Flagged => Some("\\Flagged"),
             Self::Sent => Some("\\Sent"),
             Self::Drafts => Some("\\Drafts"),
+            Self::Scheduled => None,
             Self::All => Some("\\All"),
             Self::Archive => Some("\\Archive"),
             Self::Junk => Some("\\Junk"),
@@ -108,6 +111,9 @@ pub struct Summary {
     pub received_at: String,
     pub flags: Flags,
     pub has_attachments: bool,
+    /// A scheduled draft's Send later marker (`X-Action0-Send-At`), as stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_at: Option<String>,
 }
 
 /// A conversation (`ImapThread`): messages oldest first.
@@ -316,6 +322,7 @@ mod tests {
             received_at: "2026-10-18T10:00:00Z".into(),
             flags: Flags::default(),
             has_attachments: false,
+            send_at: None,
         };
         let json = serde_json::to_value(Change::Updated {
             message: summary.clone(),

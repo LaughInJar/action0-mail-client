@@ -664,6 +664,7 @@ mod tests {
             received_at: String::new(),
             flags: Default::default(),
             has_attachments: false,
+            send_at: None,
         };
         let found = Found {
             added: vec![summary("e:1", "f:Archive"), summary("e:2", "f:INBOX")],

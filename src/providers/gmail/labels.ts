@@ -10,6 +10,8 @@ import type { GmailLabel } from "./types";
 
 /** Synthetic id of the "All Mail" view (Gmail has no label for it). */
 export const ALL_MAIL_ID = "ALL_MAIL";
+/** Synthetic id of the Scheduled view: drafts marked with a send time. */
+export const SCHEDULED_ID = "ACTION0_SCHEDULED";
 /** Synthetic id of the non-selectable "Categories" group. */
 export const CATEGORIES_ID = "CATEGORIES";
 /** Prefix of synthetic parents for user labels whose parent label doesn't exist. */
@@ -140,6 +142,16 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
       role: system.role,
       assignable: system.assignable,
     });
+    if (system.role === "drafts")
+      result.push({
+        id: asMailboxId(SCHEDULED_ID),
+        name: "Scheduled",
+        kind: "view",
+        role: "scheduled",
+        selectable: true,
+        hidden: false,
+        assignable: false,
+      });
   }
 
   const categories = CATEGORIES.filter(([id]) => byId.has(id));

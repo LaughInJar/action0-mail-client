@@ -198,6 +198,12 @@ impl<R: Runtime> Action0<R> {
     pub fn schedule_checks(&self, enabled: bool) -> Result<()> {
         self.call("scheduleChecks", serde_json::json!({ "enabled": enabled }))
     }
+
+    /// Sets the one-time job that sends scheduled mail at `at` (epoch ms),
+    /// or cancels it (`None`).
+    pub fn schedule_send(&self, at: Option<u64>) -> Result<()> {
+        self.call("scheduleSend", serde_json::json!({ "at": at }))
+    }
 }
 
 /// Access to [Action0] from an app handle.

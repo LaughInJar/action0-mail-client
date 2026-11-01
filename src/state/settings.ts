@@ -70,6 +70,13 @@ export interface AppSettings {
   readonly aiRecent: readonly AiChoice[];
   /** Ids of the command palette's places and actions chosen last, newest first. */
   readonly paletteRecent: readonly string[];
+  /**
+   * This browser's (or app's) id for Send later: mail it scheduled is sent
+   * by it first. Random, made once ("" until then).
+   */
+  readonly deviceId: string;
+  /** The time last picked for Send later (ISO; "" for none), offered again. */
+  readonly lastSendLater: string;
 }
 
 /** Where the AI is asked: about mail in the reader, or to write in the composer. */
@@ -103,6 +110,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiNoticed: [],
   aiRecent: [],
   paletteRecent: [],
+  deviceId: "",
+  lastSendLater: "",
 };
 
 /** How many recent AI choices the picker offers. */
@@ -316,6 +325,15 @@ export function parseSettings(value: unknown): AppSettings {
           .filter((id): id is string => typeof id === "string")
           .slice(0, MAX_PALETTE_RECENT)
       : d.paletteRecent,
+    deviceId:
+      typeof raw.deviceId === "string" && /^[\w-]{1,64}$/.test(raw.deviceId)
+        ? raw.deviceId
+        : d.deviceId,
+    lastSendLater:
+      typeof raw.lastSendLater === "string" &&
+      !Number.isNaN(Date.parse(raw.lastSendLater))
+        ? raw.lastSendLater
+        : d.lastSendLater,
   };
 }
 

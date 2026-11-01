@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { formatListDate } from "../common/format";
+import { formatListDate, formatSendAt } from "../common/format";
 import { Icon } from "../common/Icon";
 import type { RowView } from "./rowView";
 import { useT } from "../../i18n/context";
@@ -54,7 +54,17 @@ export const MessageRow = memo(function MessageRow({
       )}
     </>
   );
-  const time = (
+  const time = view.sendAt ? (
+    // A scheduled mail: when it goes out.
+    <time
+      dateTime={view.sendAt}
+      className="flex shrink-0 items-center gap-1 text-xs text-blue-700 tabular-nums dark:text-blue-300"
+    >
+      <Icon name="clock" className="size-3.5" />
+      <span className="sr-only">{t.schedule.sendLater}: </span>
+      {formatSendAt(view.sendAt, { locale: t.locale })}
+    </time>
+  ) : (
     <time
       dateTime={view.receivedAt}
       className={`shrink-0 text-xs tabular-nums ${unread ? "font-semibold text-blue-700 dark:text-blue-300" : "text-zinc-500"}`}

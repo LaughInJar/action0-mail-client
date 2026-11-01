@@ -25,6 +25,8 @@ import { useDocumentTitle } from "../sync/useDocumentTitle";
 import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { PaletteHost } from "../palette/CommandPalette";
+import { ScheduledSender } from "../schedule/ScheduledSender";
+import { SendLaterHost } from "../schedule/ScheduledBanner";
 import { usePaletteShortcut } from "../palette/usePaletteShortcut";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
@@ -196,6 +198,7 @@ function MailApp() {
   return (
     <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[var(--safe-bottom)] pl-[env(safe-area-inset-left)]">
       <ReconnectBar />
+      <ScheduledSender />
       <NotificationsBar />
       <DesktopIntegration compose={compose} />
       <AndroidIntegration compose={compose} />
@@ -208,6 +211,7 @@ function MailApp() {
       )}
       <ShortcutHelp />
       <PaletteHost />
+      <SendLaterHost />
       <MailboxPickerHost />
       <ContextMenuHost />
       <ManageLabelsHost />

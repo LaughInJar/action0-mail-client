@@ -29,6 +29,8 @@ export interface RowView {
   readonly unread: boolean;
   readonly flagged: boolean;
   readonly hasAttachments: boolean;
+  /** A scheduled mail: when it goes out (shown instead of the date). */
+  readonly sendAt?: string;
 }
 
 /** How rows are described in a list. */
@@ -37,7 +39,7 @@ export interface RowContext {
   readonly isolating: ReadonlySet<MailboxId>;
   /** The account's own addresses (lower case): shown as "me". */
   readonly mine: ReadonlySet<string>;
-  /** Show recipients instead of senders (Sent, Drafts). */
+  /** Show recipients instead of senders (Sent, Drafts, Scheduled). */
   readonly showRecipients: boolean;
   /** The drafts mailbox: its messages in a conversation show as "Draft". */
   readonly drafts: MailboxId | undefined;
@@ -93,6 +95,7 @@ export function rowView(
       unread: !summary.flags.seen,
       flagged: summary.flags.flagged,
       hasAttachments: summary.hasAttachments,
+      ...(summary.sendAt ? { sendAt: summary.sendAt } : {}),
     };
   }
   const shown = context.mailbox

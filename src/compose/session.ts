@@ -11,6 +11,7 @@ import {
 } from "../core/compose";
 import type { DraftId } from "../core/ids";
 import type { EmailAddress, Sender } from "../core/model";
+import type { Schedule } from "../core/schedule";
 import { editorHtmlToMail, htmlToText } from "./html";
 import type { Quote } from "./quote";
 import {
@@ -42,6 +43,11 @@ export interface ComposerContent {
    * removed it (changing From doesn't bring one back); absent: not known yet.
    */
   readonly signature?: ComposerSignature | null;
+  /**
+   * Send later: when the mail goes out (a scheduled mail being edited);
+   * `undefined` once the user takes it off ("Don't schedule").
+   */
+  readonly schedule?: Schedule | undefined;
 }
 
 /** The whole mail body: what the user wrote, the signature, then the quote. */
@@ -136,6 +142,7 @@ export function draftInputOf(
     text,
     attachments: sentAttachments(content, html),
     ...(content.threading ? { threading: content.threading } : {}),
+    ...(content.schedule ? { schedule: content.schedule } : {}),
   };
 }
 

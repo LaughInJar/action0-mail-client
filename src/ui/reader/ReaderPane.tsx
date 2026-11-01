@@ -1,4 +1,6 @@
 import { useId, useMemo, type ReactNode } from "react";
+import { useScheduledEntry } from "../../data/scheduled";
+import { ScheduledBanner } from "../schedule/ScheduledBanner";
 import {
   messageKey,
   messageRef,
@@ -239,7 +241,8 @@ function MessageView({
   const ai = useAiReaderActions();
   const target = aiTarget.message(accountId, messageId);
   useAiCommands(ai, message ? target : undefined);
-  const answerable = canWrite && !isDraft;
+  const scheduled = useScheduledEntry(accountId, message?.id);
+  const answerable = canWrite && !isDraft && !scheduled;
   // The header has no click of its own: the long press needs no swallowing.
   const menuOf = (id: MessageId) => {
     const { consumeClick: _consume, onKeyDown: _keys, ...rest } = handlers(id);
@@ -281,10 +284,11 @@ function MessageView({
               }
             : {})}
         />
+        {scheduled && <ScheduledBanner entry={scheduled} />}
         <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />
-        {canWrite && (
+        {canWrite && !scheduled && (
           <AnswerButtons
             compose={compose}
             message={{ accountId, messageId: message.id }}

@@ -10,6 +10,7 @@ import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
 import { draftInputOf, type ComposerContent } from "../compose/session";
 import type { Draft, OutgoingAttachment } from "../core/compose";
+import type { Schedule } from "../core/schedule";
 import { isMailError, MailError } from "../core/errors";
 import type { AccountId, DraftId, MessageId } from "../core/ids";
 import type { EmailAddress, Mailbox, Message, Sender } from "../core/model";
@@ -46,6 +47,52 @@ export interface DraftSync {
     content: ComposerContent,
     draftId: DraftId | undefined,
   ) => Promise<MessageId>;
+  /**
+   * Saves the final content and schedules it (Send later). Resolves with
+   * the scheduled message's id.
+   */
+  readonly schedule: (
+    key: number,
+    accountId: AccountId,
+    content: ComposerContent,
+    draftId: DraftId | undefined,
+    schedule: Schedule,
+  ) => Promise<MessageId>;
+  /** Takes a scheduled mail back: an ordinary draft again. */
+  readonly unschedule: (
+    accountId: AccountId,
+    messageId: MessageId,
+  ) => Promise<SavedDraft>;
+  /** Schedules a scheduled mail for another time; resolves with its new id. */
+  readonly reschedule: (
+    accountId: AccountId,
+    messageId: MessageId,
+    schedule: Schedule,
+  ) => Promise<MessageId>;
+  /** Schedules a saved draft (undoing Cancel send); resolves with the scheduled message's id. */
+  readonly scheduleSaved: (
+    accountId: AccountId,
+    draftId: DraftId,
+    schedule: Schedule,
+  ) => Promise<MessageId>;
+  /**
+   * A scheduled mail's draft, to edit or send it: where the server holds
+   * it, it's taken off the queue into Drafts first.
+   */
+  readonly scheduledDraft: (
+    accountId: AccountId,
+    messageId: MessageId,
+  ) => Promise<Draft>;
+  /**
+   * Sends a scheduled mail that waits in Drafts (it's due). Not while
+   * `skip` says its draft is busy (open in the composer): resolves
+   * `undefined` then.
+   */
+  readonly sendScheduled: (
+    accountId: AccountId,
+    messageId: MessageId,
+    skip?: (draftId: DraftId) => boolean,
+  ) => Promise<MessageId | undefined>;
   /** Deletes the composer's draft, if it has one. */
   readonly discard: (
     key: number,
@@ -198,6 +245,26 @@ export function createDraftSync(
     );
   };
 
+  /** A scheduled mail's draft, taken off the server's queue if it's held there. */
+  const scheduledDraft = async (
+    accountId: AccountId,
+    messageId: MessageId,
+  ): Promise<Draft> => {
+    const provider = providerOf(accountId);
+    if (provider.capabilities.scheduling === "held") {
+      const { id } = await provider.unscheduleDraft(messageId);
+      dropRow(accountId, messageId);
+      refresh(accountId, false);
+      return provider.getDraft(id);
+    }
+    const id = await provider.draftIdOf(messageId);
+    if (id === undefined)
+      throw new MailError("not-found", "This draft no longer exists.", {
+        reason: "draftGone",
+      });
+    return provider.getDraft(id);
+  };
+
   const getMessage = (accountId: AccountId, id: MessageId) =>
     queryClient.query({
       queryKey: queryKeys.message(accountId, id),
@@ -234,6 +301,83 @@ export function createDraftSync(
         refresh(accountId, true);
         return messageId;
       }),
+
+    schedule: (key, accountId, content, draftId, schedule) =>
+      queue(key, async () => {
+        const provider = providerOf(accountId);
+        const ready = await prepared(accountId, content);
+        let id = draftId ?? saved.get(key)?.id;
+        id ??= (await provider.saveDraft(draftInputOf(ready))).id;
+        const previous = saved.get(key);
+        const { messageId } = await provider.scheduleDraft(
+          { ...draftInputOf(ready, id), id },
+          schedule,
+        );
+        saved.delete(key);
+        if (previous) dropRow(accountId, previous.messageId);
+        refresh(accountId, true);
+        return messageId;
+      }),
+
+    unschedule: async (accountId, messageId) => {
+      const result = await providerOf(accountId).unscheduleDraft(messageId);
+      dropRow(accountId, messageId);
+      refresh(accountId, true);
+      return result;
+    },
+
+    reschedule: async (accountId, messageId, schedule) => {
+      const provider = providerOf(accountId);
+      const draft = await scheduledDraft(accountId, messageId);
+      const { messageId: id } = await provider.scheduleDraft(
+        {
+          ...draft,
+          attachments: await loadParts(accountId, draft.attachments),
+        },
+        schedule,
+      );
+      dropRow(accountId, messageId);
+      refresh(accountId, true);
+      return id;
+    },
+
+    scheduleSaved: async (accountId, draftId, schedule) => {
+      const provider = providerOf(accountId);
+      const draft = await provider.getDraft(draftId);
+      const { messageId } = await provider.scheduleDraft(
+        {
+          ...draft,
+          attachments: await loadParts(accountId, draft.attachments),
+        },
+        schedule,
+      );
+      dropRow(accountId, draft.messageId);
+      refresh(accountId, true);
+      return messageId;
+    },
+
+    scheduledDraft: (accountId, messageId) =>
+      scheduledDraft(accountId, messageId),
+
+    sendScheduled: async (accountId, messageId, skip) => {
+      const provider = providerOf(accountId);
+      const id = await provider.draftIdOf(messageId);
+      if (id === undefined)
+        // Sent or deleted meanwhile (by another action0, say).
+        return undefined;
+      if (skip?.(id)) return undefined;
+      const draft = await provider.getDraft(id);
+      // Changed meanwhile (saved again): that version decides.
+      if (draft.messageId !== messageId || !draft.schedule) return undefined;
+      const { schedule: _schedule, ...content } = draft;
+      const { messageId: sent } = await provider.sendDraft({
+        ...content,
+        attachments: await loadParts(accountId, content.attachments),
+      });
+      dropRow(accountId, messageId);
+      refresh(accountId, true);
+      return sent;
+    },
 
     discard: (key, accountId, draftId) =>
       queue(key, async () => {
