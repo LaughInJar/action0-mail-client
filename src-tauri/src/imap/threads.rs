@@ -214,6 +214,7 @@ pub async fn thread<S: Transport>(
                     seen: row.seen,
                     flagged: row.flagged,
                     draft: row.draft,
+                    keywords: row.keywords.clone(),
                     date: row.date,
                     server: row.server,
                 },

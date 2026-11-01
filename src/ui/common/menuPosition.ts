@@ -29,3 +29,16 @@ export function isMenuKey(event: {
 export function wantsAppMenu(event: { readonly shiftKey: boolean }): boolean {
   return !event.shiftKey;
 }
+
+/**
+ * A menu opened by a key without a button to hang from: below the focused
+ * element (a list row, the reader), else near the middle of the screen.
+ */
+export function positionNearFocus(): MenuPosition {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && focused !== document.body)
+    return belowElement(focused);
+  const x = Math.round(window.innerWidth / 2 - 120);
+  const y = Math.round(window.innerHeight / 3);
+  return { x, y, flipY: y };
+}

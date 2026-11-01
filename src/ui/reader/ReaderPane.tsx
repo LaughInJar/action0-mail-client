@@ -1,5 +1,7 @@
 import { useId, useMemo, type ReactNode } from "react";
-import { useScheduledEntry } from "../../data/scheduled";
+import { useScheduledEntry, useSnoozedEntry } from "../../data/scheduled";
+import { SnoozedBanner } from "../schedule/SnoozedBanner";
+import { useClearBackOnOpen } from "../schedule/useClearBackOnOpen";
 import { ScheduledBanner } from "../schedule/ScheduledBanner";
 import {
   messageKey,
@@ -242,6 +244,8 @@ function MessageView({
   const target = aiTarget.message(accountId, messageId);
   useAiCommands(ai, message ? target : undefined);
   const scheduled = useScheduledEntry(accountId, message?.id);
+  const snoozed = useSnoozedEntry(accountId, message?.id);
+  useClearBackOnOpen(accountId, message ? [message.id] : []);
   const answerable = canWrite && !isDraft && !scheduled;
   // The header has no click of its own: the long press needs no swallowing.
   const menuOf = (id: MessageId) => {
@@ -285,6 +289,7 @@ function MessageView({
             : {})}
         />
         {scheduled && <ScheduledBanner entry={scheduled} />}
+        {snoozed && <SnoozedBanner entry={snoozed} actions={actions} />}
         <InvitationBar accountId={accountId} message={message} />
         <MessageBody accountId={accountId} message={message} />
         <AttachmentList accountId={accountId} message={message} />

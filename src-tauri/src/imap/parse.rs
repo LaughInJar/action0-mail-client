@@ -103,6 +103,36 @@ impl HeaderInfo {
 
 pub use crate::scheduled::SEND_AT_HEADER;
 
+/// Snooze's keyword for a return time: `$A0Snooze-20261103T0700Z` (UTC).
+pub const SNOOZE_PREFIX: &str = "$A0Snooze-";
+/// The keyword of mail that came back from snooze.
+pub const BACK_KEYWORD: &str = "$A0Back";
+
+/// A snoozed message's return time (ISO 8601), from its keywords.
+pub fn snoozed_until(keywords: &[String]) -> Option<String> {
+    keywords.iter().find_map(|keyword| {
+        let rest = keyword
+            .get(..SNOOZE_PREFIX.len())
+            .filter(|start| start.eq_ignore_ascii_case(SNOOZE_PREFIX))
+            .map(|_| &keyword[SNOOZE_PREFIX.len()..])?;
+        // YYYYMMDDTHHMMZ
+        let digits = |range: std::ops::Range<usize>| {
+            rest.get(range)
+                .filter(|part| part.bytes().all(|b| b.is_ascii_digit()))
+        };
+        let (year, month, day) = (digits(0..4)?, digits(4..6)?, digits(6..8)?);
+        let (hour, minute) = (digits(9..11)?, digits(11..13)?);
+        Some(format!("{year}-{month}-{day}T{hour}:{minute}:00.000Z"))
+    })
+}
+
+/// Whether the keywords mark mail that came back from snooze.
+pub fn is_back(keywords: &[String]) -> bool {
+    keywords
+        .iter()
+        .any(|keyword| keyword.eq_ignore_ascii_case(BACK_KEYWORD))
+}
+
 fn addresses(list: &AddressList<'_>) -> Vec<Address> {
     list.mailboxes()
         .filter_map(|mailbox| {
@@ -208,6 +238,8 @@ pub struct Meta {
     pub seen: bool,
     pub flagged: bool,
     pub draft: bool,
+    /// Keywords (flags without a backslash), as the server has them.
+    pub keywords: Vec<String>,
     /// INTERNALDATE, ms since 1970.
     pub date: i64,
     pub server: ServerIds,
@@ -338,6 +370,8 @@ pub fn message(raw: &[u8], meta: &Meta) -> Message {
             },
             has_attachments,
             send_at: info.send_at.clone(),
+            snoozed_until: snoozed_until(&meta.keywords),
+            back_from_snooze: is_back(&meta.keywords),
         },
         cc: info.cc,
         bcc: info.bcc,
@@ -375,6 +409,8 @@ fn empty_message(meta: &Meta) -> Message {
             },
             has_attachments: false,
             send_at: None,
+            snoozed_until: snoozed_until(&meta.keywords),
+            back_from_snooze: is_back(&meta.keywords),
         },
         cc: Vec::new(),
         bcc: Vec::new(),
@@ -482,6 +518,21 @@ impl RawCache {
 mod tests {
     use super::*;
 
+    #[test]
+    fn reads_snooze_keywords() {
+        let keywords = vec![
+            "$A0Snooze-20261103T0700Z".to_string(),
+            "$a0back".to_string(),
+        ];
+        assert_eq!(
+            snoozed_until(&keywords).as_deref(),
+            Some("2026-11-03T07:00:00.000Z")
+        );
+        assert!(is_back(&keywords));
+        assert_eq!(snoozed_until(&["$A0Snooze-soon".to_string()]), None);
+        assert!(!is_back(&[]));
+    }
+
     fn meta() -> Meta {
         Meta {
             id: "l:f:INBOX:1:7".into(),
@@ -489,6 +540,7 @@ mod tests {
             seen: true,
             flagged: false,
             draft: false,
+            keywords: Vec::new(),
             date: 1_792_000_000_000,
             server: ServerIds::default(),
         }

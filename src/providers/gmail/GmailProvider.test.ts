@@ -80,7 +80,13 @@ describe("GmailProvider.listMailboxes", () => {
     );
     const mailboxes = await provider().listMailboxes();
     expect(fetched.sort()).toEqual(["INBOX", "Label_1"]);
-    expect(mailboxes.map((m) => m.name)).toEqual(["Inbox", "All Mail", "Work"]);
+    expect(mailboxes.map((m) => m.name)).toEqual([
+      "Inbox",
+      "All Mail",
+      "Work",
+      // Hidden: Snooze's view of mail that came back.
+      "Back from snooze",
+    ]);
     expect(mailboxes[0]?.counts?.unread).toBe(4);
   });
 });
@@ -1634,6 +1640,84 @@ describe("GmailProvider threads", () => {
     expect(full.messages.map((m) => [m.id, m.body.text])).toEqual([
       ["m1", "Body of m1"],
       ["m2", "Body of m2"],
+    ]);
+  });
+});
+
+describe("GmailProvider snooze", () => {
+  it("snoozes with action0's labels, reads the time back, and wakes mail up", async () => {
+    const labels: { id: string; name: string; type: "user" }[] = [];
+    const modified: unknown[] = [];
+    server.use(
+      http.get(url("labels"), () => HttpResponse.json({ labels })),
+      http.post(url("labels"), async ({ request }) => {
+        const body = (await request.json()) as {
+          name: string;
+          labelListVisibility: string;
+        };
+        const label = {
+          id: `Label_${String(labels.length + 1)}`,
+          name: body.name,
+          type: "user" as const,
+        };
+        labels.push(label);
+        modified.push({ created: body.name, list: body.labelListVisibility });
+        return HttpResponse.json(label);
+      }),
+      http.post(url("messages/batchModify"), async ({ request }) => {
+        modified.push(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get(url("labels/:id"), ({ params }) =>
+        HttpResponse.json({
+          ...labels.find((label) => label.id === params.id),
+          messagesTotal: 0,
+        }),
+      ),
+      http.delete(
+        url("labels/:id"),
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+      http.get(url("messages/:id"), () =>
+        HttpResponse.json(
+          gmailMessage("m1", { labelIds: ["Label_1", "Label_2"] }),
+        ),
+      ),
+    );
+    const gmail = provider();
+    await gmail.snooze([asMessageId("m1")], new Date("2026-11-03T07:00:00Z"));
+    expect(modified.slice(0, 3)).toEqual([
+      { created: "Snoozed (action0)", list: "labelShow" },
+      { created: "Snoozed (action0)/2026-11-03T07:00Z", list: "labelHide" },
+      {
+        ids: ["m1"],
+        addLabelIds: ["Label_1", "Label_2"],
+        removeLabelIds: ["INBOX"],
+      },
+    ]);
+    // Rows know the time; the time label isn't a mailbox.
+    const message = await gmail.getMessage(asMessageId("m1"));
+    expect(message.snoozedUntil).toBe("2026-11-03T07:00:00.000Z");
+    expect(message.mailboxIds).toEqual(["Label_1"]);
+    const mailboxes = await gmail.listMailboxes();
+    expect(
+      mailboxes
+        .filter((mailbox) => mailbox.role === "snoozed")
+        .map((m) => m.name),
+    ).toEqual(["Snoozed"]);
+
+    modified.length = 0;
+    await gmail.unsnooze([asMessageId("m1")], {
+      to: asMailboxId("INBOX"),
+      back: true,
+    });
+    expect(modified).toEqual([
+      { created: "Snoozed (action0)/Back", list: "labelHide" },
+      {
+        ids: ["m1"],
+        addLabelIds: ["INBOX", "Label_3", "UNREAD"],
+        removeLabelIds: ["Label_1", "Label_2"],
+      },
     ]);
   });
 });

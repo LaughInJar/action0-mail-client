@@ -65,6 +65,7 @@ describe("the Android app", () => {
           newMessages: "{count} new messages",
           noSubject: "(no subject)",
           scheduledSent: "Sent your scheduled mail “{subject}”",
+          snoozeBack: "Back from snooze: {subject}",
         },
         device: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown,
       });

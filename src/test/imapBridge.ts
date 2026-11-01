@@ -19,10 +19,33 @@ import type {
   ImapSummary,
 } from "../providers/imap/bridge";
 
-/** A stored message: what the bridge answers for it, and its bytes. */
+/** A stored message: what the bridge answers for it, its bytes and keywords. */
 interface Stored {
   message: ImapMessage;
   raw: Uint8Array;
+  keywords?: Set<string>;
+}
+
+/** What the native side reads from Snooze's keywords (see `imap/parse.rs`). */
+function withKeywords(
+  message: ImapMessage,
+  keywords: ReadonlySet<string>,
+): ImapMessage {
+  const { snoozedUntil: _until, backFromSnooze: _back, ...rest } = message;
+  const time = [...keywords]
+    .map((keyword) =>
+      /^\$A0Snooze-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z$/.exec(keyword),
+    )
+    .find(Boolean);
+  return {
+    ...rest,
+    ...(time
+      ? {
+          snoozedUntil: `${time[1]}-${time[2]}-${time[3]}T${time[4]}:${time[5]}:00.000Z`,
+        }
+      : {}),
+    ...(keywords.has("$A0Back") ? { backFromSnooze: true as const } : {}),
+  };
 }
 
 /** Options of {@link fakeImapBridge}. */
@@ -192,16 +215,28 @@ export function fakeImapBridge(options: FakeImapOptions = {}) {
         .map(({ message }) => message)
         .filter((message) => message.threadId === id),
     message: ({ id }) => get(id).message,
-    flags: ({ ids, seen, flagged }) => {
+    flags: ({ ids, seen, flagged, add = [], remove = [], removePrefix }) => {
       for (const id of ids) {
         const stored = get(id);
-        stored.message = {
-          ...stored.message,
-          flags: {
-            seen: seen ?? stored.message.flags.seen,
-            flagged: flagged ?? stored.message.flags.flagged,
+        const keywords = new Set(
+          [...(stored.keywords ?? [])].filter(
+            (keyword) =>
+              !remove.includes(keyword) &&
+              !(removePrefix && keyword.startsWith(removePrefix)),
+          ),
+        );
+        for (const keyword of add) keywords.add(keyword);
+        stored.keywords = keywords;
+        stored.message = withKeywords(
+          {
+            ...stored.message,
+            flags: {
+              seen: seen ?? stored.message.flags.seen,
+              flagged: flagged ?? stored.message.flags.flagged,
+            },
           },
-        };
+          keywords,
+        );
       }
       version++;
       return {};

@@ -43,6 +43,9 @@ pub struct Texts {
     /// For a scheduled mail sent; `{subject}` is replaced.
     #[serde(default)]
     pub scheduled_sent: String,
+    /// For snoozed mail that came back; `{subject}` is replaced.
+    #[serde(default)]
+    pub snooze_back: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -187,18 +190,28 @@ pub async fn check(
         };
         let Some(token) = token else { continue };
         if sending {
-            let sent = match account.provider {
-                Provider::Google => {
-                    scheduled::gmail_send_due(http, &apis.gmail, &token, &device, now).await
-                }
-                Provider::Microsoft => {
-                    scheduled::graph_send_due(http, &apis.graph, &token, &device, now).await
-                }
+            let (sent, back) = match account.provider {
+                Provider::Google => (
+                    scheduled::gmail_send_due(http, &apis.gmail, &token, &device, now).await,
+                    scheduled::gmail_wake_due(http, &apis.gmail, &token, now).await,
+                ),
+                Provider::Microsoft => (
+                    scheduled::graph_send_due(http, &apis.graph, &token, &device, now).await,
+                    scheduled::graph_wake_due(http, &apis.graph, &token, now).await,
+                ),
             };
             notices.extend(sent_notices(
                 key,
                 &account.email,
                 &sent.unwrap_or_default(),
+                Done::Sent,
+                &texts,
+            ));
+            notices.extend(sent_notices(
+                key,
+                &account.email,
+                &back.unwrap_or_default(),
+                Done::Back,
                 &texts,
             ));
         }
@@ -238,10 +251,23 @@ pub async fn check(
             },
         )
         .await;
-        let Ok((found, mark, sent)) = checked else {
+        let Ok((found, mark, sent, back)) = checked else {
             continue;
         };
-        notices.extend(sent_notices(key, &account.address, &sent, &texts));
+        notices.extend(sent_notices(
+            key,
+            &account.address,
+            &sent,
+            Done::Sent,
+            &texts,
+        ));
+        notices.extend(sent_notices(
+            key,
+            &account.address,
+            &back,
+            Done::Back,
+            &texts,
+        ));
         let Some(mark) = mark else { continue };
         let first = seen
             .inbox
@@ -269,18 +295,37 @@ pub async fn check(
     notices
 }
 
-/// Notifications for scheduled mail that went out.
-fn sent_notices(key: &str, email: &str, subjects: &[String], texts: &Texts) -> Vec<Notice> {
-    if texts.scheduled_sent.is_empty() {
+/// What went on with mail in the background.
+#[derive(Clone, Copy)]
+enum Done {
+    /// Scheduled mail went out.
+    Sent,
+    /// Snoozed mail came back.
+    Back,
+}
+
+/// Notifications for scheduled mail that went out, or snoozed mail that came back.
+fn sent_notices(
+    key: &str,
+    email: &str,
+    subjects: &[String],
+    done: Done,
+    texts: &Texts,
+) -> Vec<Notice> {
+    let (text, kind) = match done {
+        Done::Sent => (&texts.scheduled_sent, "sent"),
+        Done::Back => (&texts.snooze_back, "back"),
+    };
+    if text.is_empty() {
         return Vec::new();
     }
     subjects
         .iter()
         .enumerate()
         .map(|(index, subject)| Notice {
-            tag: format!("{key}/sent/{index}"),
+            tag: format!("{key}/{kind}/{index}"),
             title: email.to_string(),
-            body: texts.scheduled_sent.replace(
+            body: text.replace(
                 "{subject}",
                 if subject.trim().is_empty() {
                     &texts.no_subject
@@ -330,7 +375,7 @@ async fn imap_check(
     account: &ImapAccount,
     mark: Option<InboxMark>,
     work: ImapWork<'_>,
-) -> Result<(Vec<NewMail>, Option<InboxMark>, Vec<String>), imap::MailServerError> {
+) -> Result<(Vec<NewMail>, Option<InboxMark>, Vec<String>, Vec<String>), imap::MailServerError> {
     let (secret, bearer) = match &account.auth {
         ImapAuth::Password { password } => (password.clone(), false),
         ImapAuth::OAuth { .. } => {
@@ -357,6 +402,10 @@ async fn imap_check(
     };
     let tls = imap::tls::Connector::new(account.pinned.as_deref())?;
     let mut session = imap::session::connect(&login, &tls).await?;
+    let back = match work.send {
+        Some((_, now)) => imap::wake_due(&mut session, now).await.unwrap_or_default(),
+        None => Vec::new(),
+    };
     let sent = match work.send {
         Some((device, now)) => {
             let smtp = Login {
@@ -395,7 +444,7 @@ async fn imap_check(
             received: u64::try_from(unread.received).unwrap_or_default(),
         })
         .collect();
-    Ok((mail, mark, sent))
+    Ok((mail, mark, sent, back))
 }
 
 /// The SMTP server keeps a copy of sent mail itself (Gmail), like
@@ -782,6 +831,7 @@ mod tests {
             new_messages: "{count} new messages".into(),
             no_subject: "(no subject)".into(),
             scheduled_sent: "Sent “{subject}”".into(),
+            snooze_back: "Back: {subject}".into(),
         }
     }
 

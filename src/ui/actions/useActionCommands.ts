@@ -46,6 +46,16 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
         },
       },
       {
+        id: "mail.snooze",
+        group,
+        description: s.snooze,
+        keys: ["h"],
+        when: () => actions.canSnooze && !quarantined && hasTargets(),
+        run: () => {
+          actions.requestSnooze();
+        },
+      },
+      {
         id: "mail.move",
         group,
         description: s.moveTo,

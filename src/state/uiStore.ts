@@ -292,6 +292,12 @@ export interface UiState extends selection.SelectionState {
   readonly paletteOpen: boolean;
   /** A scheduled mail whose time is being picked anew (Change time from a menu). */
   readonly sendLaterFor: ScheduledEntry | null;
+  /** Snooze's times, open for these messages (`exact`: messages, not rows). */
+  readonly snoozeMenu: {
+    readonly keys: readonly MessageKey[];
+    readonly exact: boolean;
+    readonly at: MenuPosition;
+  } | null;
   /** The current toast. Session only. */
   readonly toast: Toast | null;
   readonly dragging: DragState | null;
@@ -376,6 +382,7 @@ export interface UiActions {
   readonly setHelpOpen: (open: boolean) => void;
   readonly setPaletteOpen: (open: boolean) => void;
   readonly setSendLaterFor: (entry: ScheduledEntry | null) => void;
+  readonly setSnoozeMenu: (menu: UiState["snoozeMenu"]) => void;
   /** Shows a toast, replacing the current one. */
   readonly showToast: (toast: Omit<Toast, "id" | "createdAt">) => void;
   /** Hides the toast with this id (if it is still the current one). */
@@ -568,6 +575,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           helpOpen: false,
           paletteOpen: false,
           sendLaterFor: null,
+          snoozeMenu: null,
           toast: null,
           dragging: null,
           picker: null,
@@ -690,6 +698,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setSendLaterFor: (sendLaterFor) => {
             set({ sendLaterFor });
+          },
+          setSnoozeMenu: (snoozeMenu) => {
+            set({ snoozeMenu });
           },
           showToast: (toast) => {
             set((s) => ({

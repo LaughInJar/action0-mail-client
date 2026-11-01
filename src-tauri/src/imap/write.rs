@@ -70,8 +70,8 @@ pub async fn flags<S: Transport>(
     account: &Account,
     request: &FlagsRequest,
 ) -> Result<(), MailServerError> {
-    let mut add = Vec::new();
-    let mut remove = Vec::new();
+    let mut add: Vec<&str> = Vec::new();
+    let mut remove: Vec<&str> = Vec::new();
     for (wanted, flag) in [(request.seen, "\\Seen"), (request.flagged, "\\Flagged")] {
         match wanted {
             Some(true) => add.push(flag),
@@ -79,7 +79,21 @@ pub async fn flags<S: Transport>(
             None => {}
         }
     }
-    if add.is_empty() && remove.is_empty() {
+    // Keywords (Snooze's): only what IMAP allows in an atom.
+    for keyword in request.add.iter().chain(&request.remove) {
+        if !valid_keyword(keyword) {
+            return Err(MailServerError::server(format!(
+                "\"{keyword}\" can't be a keyword."
+            )));
+        }
+    }
+    add.extend(request.add.iter().map(String::as_str));
+    remove.extend(request.remove.iter().map(String::as_str));
+    let prefix = request
+        .remove_prefix
+        .as_deref()
+        .filter(|p| valid_keyword(p));
+    if add.is_empty() && remove.is_empty() && prefix.is_none() {
         return Ok(());
     }
     let tree = folders::tree(session, account).await?;
@@ -93,14 +107,44 @@ pub async fn flags<S: Transport>(
             continue;
         }
         let uids: Vec<u32> = members.iter().map(|(_, uid)| *uid).collect();
+        // The keywords these messages have that start with the prefix go
+        // too (an old snooze time), unless they're the ones being set.
+        let mut clear: Vec<String> = remove.iter().map(|flag| flag.to_string()).collect();
+        if let Some(prefix) = prefix {
+            for row in list::fetch(session, &uids, "UID FLAGS")
+                .await?
+                .into_values()
+            {
+                for keyword in row.keywords {
+                    let matches = keyword
+                        .get(..prefix.len())
+                        .is_some_and(|start| start.eq_ignore_ascii_case(prefix));
+                    if matches
+                        && !add.iter().any(|added| added.eq_ignore_ascii_case(&keyword))
+                        && !clear.contains(&keyword)
+                    {
+                        clear.push(keyword);
+                    }
+                }
+            }
+        }
         if !add.is_empty() {
             store(session, &uids, '+', &add.join(" ")).await?;
         }
-        if !remove.is_empty() {
-            store(session, &uids, '-', &remove.join(" ")).await?;
+        if !clear.is_empty() {
+            store(session, &uids, '-', &clear.join(" ")).await?;
         }
     }
     Ok(())
+}
+
+/// A keyword IMAP can carry: an atom (RFC 3501), not a system flag.
+fn valid_keyword(keyword: &str) -> bool {
+    !keyword.is_empty()
+        && keyword.bytes().all(|b| {
+            b.is_ascii_graphic()
+                && !matches!(b, b'(' | b')' | b'{' | b'%' | b'*' | b'"' | b'\\' | b']')
+        })
 }
 
 /// A folder (not a view) by id, from `tree`.
@@ -289,8 +333,8 @@ pub async fn mark_all_read<S: Transport>(
         MailboxRef::Folder(_) => (vec![folder(&tree, mailbox_id)?], "UNSEEN UNDELETED"),
         MailboxRef::Flagged => (tree.searched(), "UNSEEN UNDELETED FLAGGED"),
         MailboxRef::All => (tree.searched(), "UNSEEN UNDELETED"),
-        // Drafts are read.
-        MailboxRef::Scheduled => return Ok(Vec::new()),
+        // Drafts are read; mail back from snooze is opened one by one.
+        MailboxRef::Scheduled | MailboxRef::Back => return Ok(Vec::new()),
     };
     let mut changed = Vec::new();
     for folder in folders.into_iter().filter(|folder| folder.selectable) {
@@ -711,6 +755,9 @@ mod tests {
             ids: vec!["l:f:INBOX:1:5".into()],
             seen: Some(true),
             flagged: Some(false),
+            add: Vec::new(),
+            remove: Vec::new(),
+            remove_prefix: None,
         };
         super::flags(&mut session, &account, &flags).await.unwrap();
         server.await.unwrap().unwrap();

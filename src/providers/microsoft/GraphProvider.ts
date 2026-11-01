@@ -61,6 +61,8 @@ import {
   categoryName,
   FLAGGED_VIEW_ID,
   SCHEDULED_VIEW_ID,
+  BACK_VIEW_ID,
+  SNOOZED_FOLDER,
   FOLDER_SELECT,
   folderIdsOf,
   internalIds,
@@ -87,6 +89,8 @@ import {
   headerOf,
   MESSAGE_SELECT,
   messageIds,
+  SNOOZE_EXPAND,
+  SNOOZE_PROPERTY,
   SUMMARY_SELECT,
   toAddresses,
   toInvitation,
@@ -256,6 +260,8 @@ export class GraphProvider implements MailProvider {
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
   #wellKnown: Promise<WellKnownFolders> | undefined;
+  /** The Snoozed folder's id, once known. */
+  #snoozedId: string | undefined;
   #me: Promise<OwnAddress> | undefined;
   /** Files of drafts already uploaded: draft id → (local id → attachment id). */
   readonly #uploaded = new Map<string, Map<string, string>>();
@@ -301,6 +307,8 @@ export class GraphProvider implements MailProvider {
       // Exchange holds scheduled mail for work and school accounts; whether
       // it does for Outlook.com isn't known, so those wait in Drafts.
       scheduling: options.personal ? "drafts" : "held",
+      // Graph can't snooze: action0's folder and property do.
+      snooze: true,
     };
   }
 
@@ -331,8 +339,12 @@ export class GraphProvider implements MailProvider {
       level = pages.flatMap((page) => page.value ?? []);
     }
     const categories = await this.#categories(signal);
+    const folders = mapFolders(all, wellKnown);
+    // Snooze's folder, for listing it by return time.
+    const snoozed = folders.find((mailbox) => mailbox.role === "snoozed");
+    if (snoozed) this.#snoozedId = snoozed.id;
     return [
-      ...mapFolders(all, wellKnown),
+      ...folders,
       ...(categories.length > 0 ? [CATEGORIES_GROUP, ...categories] : []),
     ];
   }
@@ -391,6 +403,14 @@ export class GraphProvider implements MailProvider {
         () => this.#scheduled(search, signal),
         (items) => Promise.resolve(items),
       );
+    if (mailboxId === BACK_VIEW_ID) return this.#backFromSnooze(limit, signal);
+    if (mailboxId === this.#snoozedId)
+      return this.#snapshotPage(
+        cursor,
+        limit,
+        () => this.#snoozedMessages(mailboxId, search, signal),
+        (items) => Promise.resolve(items),
+      );
     const text = search?.trim();
     const keep = await this.#viewFilter(mailboxId);
     if (text && order === "oldest")
@@ -410,7 +430,12 @@ export class GraphProvider implements MailProvider {
     else if (text) {
       url = this.#http.url(
         view ? "me/messages" : `me/mailFolders/${enc(mailboxId)}/messages`,
-        { $search: searchValue(text), $select: SUMMARY_SELECT, $top: limit },
+        {
+          $search: searchValue(text),
+          $select: SUMMARY_SELECT,
+          $expand: SNOOZE_EXPAND,
+          $top: limit,
+        },
       );
     } else {
       url = this.#listUrl(mailboxId, order, SUMMARY_SELECT, limit);
@@ -1033,6 +1058,145 @@ export class GraphProvider implements MailProvider {
       .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
   }
 
+  /** Into action0's Snoozed folder (made if needed), with the return time in its property. */
+  async snooze(
+    ids: readonly MessageId[],
+    until: Date,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const folder = await this.#snoozedFolder(signal, true);
+    if (folder === undefined) return {};
+    await this.#patchAll(
+      ids,
+      {
+        singleValueExtendedProperties: [
+          { id: SNOOZE_PROPERTY, value: until.toISOString() },
+        ],
+      },
+      signal,
+    );
+    return this.#moveAll(ids, folder, signal);
+  }
+
+  /** Back into `to` (the Inbox by default), the time cleared; `back`: unread and marked. */
+  async unsnooze(
+    ids: readonly MessageId[],
+    { to, back }: { readonly to: MailboxId | null; readonly back: boolean },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#patchAll(
+      ids,
+      {
+        singleValueExtendedProperties: [
+          { id: SNOOZE_PROPERTY, value: back ? "back" : "" },
+        ],
+        ...(back ? { isRead: false } : {}),
+      },
+      signal,
+    );
+    return this.#moveAll(ids, to ?? "inbox", signal);
+  }
+
+  async clearBackFromSnooze(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#patchAll(
+      ids,
+      { singleValueExtendedProperties: [{ id: SNOOZE_PROPERTY, value: "" }] },
+      signal,
+    );
+    return {};
+  }
+
+  /** The Snoozed folder's id (made first if `create` and it's missing). */
+  async #snoozedFolder(
+    signal: AbortSignal | undefined,
+    create: boolean,
+  ): Promise<string | undefined> {
+    if (this.#snoozedId !== undefined) return this.#snoozedId;
+    const { value = [] } = await this.#http.get<GraphPage<GraphMailFolder>>(
+      "me/mailFolders",
+      {
+        $filter: `displayName eq '${SNOOZED_FOLDER.replace(/'/g, "''")}'`,
+        $select: "id",
+      },
+      signal,
+    );
+    let id = value.find((folder) => folder.displayName === SNOOZED_FOLDER)?.id;
+    if (id === undefined && create)
+      id = (
+        await this.#http.post<GraphMailFolder>(
+          "me/mailFolders",
+          { displayName: SNOOZED_FOLDER },
+          { retry: false, ...(signal ? { signal } : {}) },
+        )
+      ).id;
+    if (id !== undefined) this.#snoozedId = id;
+    return id;
+  }
+
+  /** PATCHes every message the same way (batched). */
+  async #patchAll(
+    ids: readonly MessageId[],
+    body: object,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    bodiesOrThrow(
+      await this.#http.batch(
+        ids.map((id) => ({
+          method: "PATCH",
+          path: `me/messages/${enc(id)}`,
+          body,
+        })),
+        signal,
+      ),
+    );
+  }
+
+  /** The Snoozed folder's messages, back soonest first. */
+  async #snoozedMessages(
+    folder: MailboxId,
+    search: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<MessageSummary[]> {
+    const text = search?.trim();
+    const messages = await this.#all<GraphMessage>(
+      `me/mailFolders/${enc(folder)}/messages`,
+      {
+        $select: SUMMARY_SELECT,
+        $expand: SNOOZE_EXPAND,
+        $top: 250,
+        ...(text ? { $search: searchValue(text) } : {}),
+      },
+      signal,
+      MAX_SCHEDULED,
+    );
+    return messages
+      .map(toMessageSummary)
+      .sort((a, b) =>
+        (a.snoozedUntil ?? "").localeCompare(b.snoozedUntil ?? ""),
+      );
+  }
+
+  /** Inbox mail that came back from snooze (its property says "back"). */
+  async #backFromSnooze(
+    limit: number,
+    signal: AbortSignal | undefined,
+  ): Promise<Page<MessageSummary>> {
+    const page = await this.#http.get<GraphPage<GraphMessage>>(
+      "me/mailFolders/inbox/messages",
+      {
+        $select: SUMMARY_SELECT,
+        $expand: SNOOZE_EXPAND,
+        $top: limit,
+        $filter: `singleValueExtendedProperties/Any(ep: ep/id eq '${SNOOZE_PROPERTY}' and ep/value eq 'back')`,
+      },
+      signal,
+    );
+    return { items: (page.value ?? []).map(toMessageSummary) };
+  }
+
   /** Sent as MIME through `sendMail`, which keeps a copy in Sent Items. */
   async sendCalendarMail(
     mail: CalendarMail,
@@ -1579,6 +1743,7 @@ export class GraphProvider implements MailProvider {
       {
         $select: select,
         $top: top,
+        $expand: SNOOZE_EXPAND,
         $orderby: `receivedDateTime ${order === "oldest" ? "asc" : "desc"}`,
         // Graph wants the $orderby property in $filter too, and first.
         ...(filter === undefined

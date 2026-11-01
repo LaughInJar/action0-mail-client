@@ -33,6 +33,8 @@ export interface ImapMailbox {
     | "flagged"
     | "sent"
     | "drafts"
+    | "scheduled"
+    | "snoozed"
     | "all"
     | "archive"
     | "junk"
@@ -71,6 +73,10 @@ export interface ImapSummary {
   readonly hasAttachments: boolean;
   /** A scheduled draft's Send later marker (`X-Action0-Send-At`), as stored. */
   readonly sendAt?: string;
+  /** A snoozed message's return time (ISO 8601), from its keyword. */
+  readonly snoozedUntil?: string;
+  /** It came back from snooze and hasn't been opened since. */
+  readonly backFromSnooze?: true;
 }
 
 /**
@@ -156,6 +162,11 @@ export interface ImapCalls {
       readonly ids: readonly string[];
       readonly seen?: boolean;
       readonly flagged?: boolean;
+      /** Keywords to set and to clear (Snooze's). */
+      readonly add?: readonly string[];
+      readonly remove?: readonly string[];
+      /** Keywords starting with this are cleared too. */
+      readonly removePrefix?: string;
     };
     response: object;
   };
@@ -184,7 +195,8 @@ export interface ImapCalls {
     request: {
       readonly name: string;
       readonly parentId?: string;
-      readonly role?: "archive" | "trash" | "junk" | "sent" | "drafts";
+      readonly role?:
+        "archive" | "trash" | "junk" | "sent" | "drafts" | "snoozed";
     };
     response: ImapMailbox;
   };

@@ -102,6 +102,8 @@ Commands Rust calls: `googleAuthorize`, `googleClear`, `authTab`, `signatureHash
 
 Send later: mail that waits in Drafts (Gmail, personal Outlook, IMAP) also goes out while the app isn't open. `AndroidIntegration` hands the times it's due to `mobile_schedule_sends`, which keeps them in `background.json` and sets a one-time WorkManager job (`action0-send-later`, `Background.scheduleSend()`) for the earliest. The job runs `MailCheckWorker` too: while times are due, `background::check()` sends the due drafts (`crate::scheduled`: Gmail's raw draft without the marker through `drafts/send`, Graph's draft with its property cleared through `…/send`, IMAP's through `imap::send_due()` over SMTP with a Sent copy), whether new mail is notified or not, and notifies "Sent your scheduled mail …". Afterwards `Native.nextSend()` sets the job for the next time. Mail more than 30 minutes late is left for the app, which asks first. Exchange holds work accounts' mail itself.
 
+Snooze uses the same job: `AndroidIntegration` adds every snoozed message's return time to the times it hands over, so the job runs when one is due. `background::check()` then also brings due snoozed mail back (`crate::scheduled::gmail_wake_due`, `graph_wake_due`, `imap::wake_due`): into the Inbox, unread and marked as back, exactly as the app does, and notifies "Back from snooze: …". The app shows it at the top of the Inbox when it's opened next.
+
 `background.json` holds per account the last check time, up to 200 notified message ids and, for IMAP accounts, the Inbox's UIDVALIDITY and highest UID seen; no content. Accounts that are gone are dropped. Android has no IMAP IDLE: the app checks while open, the background check otherwise.
 
 ## Phone integration

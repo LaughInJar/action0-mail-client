@@ -378,6 +378,246 @@ pub async fn graph_send_due(
     Ok(sent)
 }
 
+/// Snooze's Gmail label (see `SNOOZED_LABEL` in `src/providers/gmail/labels.ts`).
+const GMAIL_SNOOZED: &str = "Snoozed (action0)";
+/// Snooze's Outlook folder and property (see `GraphProvider.ts`).
+const GRAPH_SNOOZED: &str = "Snoozed (action0)";
+const GRAPH_SNOOZE_PROPERTY: &str =
+    "String {8a3b7c2e-5d41-4f0a-9b6e-a0c1d2e3f405} Name action0Snooze";
+
+/// Gmail: snoozed mail that's due goes back into the Inbox, unread and
+/// marked (its time label goes, and is deleted once empty); its subjects.
+pub async fn gmail_wake_due(
+    http: &reqwest::Client,
+    base: &str,
+    token: &str,
+    now: u64,
+) -> Result<Vec<String>, String> {
+    #[derive(Deserialize)]
+    struct Labels {
+        #[serde(default)]
+        labels: Vec<Label>,
+    }
+    #[derive(Deserialize)]
+    struct Label {
+        id: String,
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct List {
+        #[serde(default)]
+        messages: Vec<Id>,
+    }
+    #[derive(Deserialize)]
+    struct Id {
+        id: String,
+    }
+    #[derive(Deserialize)]
+    struct Meta {
+        #[serde(default)]
+        payload: MetaPayload,
+    }
+    #[derive(Default, Deserialize)]
+    struct MetaPayload {
+        #[serde(default)]
+        headers: Vec<MetaHeader>,
+    }
+    #[derive(Deserialize)]
+    struct MetaHeader {
+        name: String,
+        value: String,
+    }
+
+    let labels: Labels = get_json(http, &format!("{base}labels"), token).await?;
+    let Some(snoozed) = labels
+        .labels
+        .iter()
+        .find(|label| label.name == GMAIL_SNOOZED)
+    else {
+        return Ok(Vec::new());
+    };
+    let prefix = format!("{GMAIL_SNOOZED}/");
+    let due: Vec<&Label> = labels
+        .labels
+        .iter()
+        .filter(|label| {
+            label
+                .name
+                .strip_prefix(&prefix)
+                .and_then(|time| parse_iso_utc(&time.replace('Z', ":00Z")))
+                .is_some_and(|at| at <= now)
+        })
+        .collect();
+    if due.is_empty() {
+        return Ok(Vec::new());
+    }
+    let back_name = format!("{GMAIL_SNOOZED}/Back");
+    let back = match labels.labels.iter().find(|label| label.name == back_name) {
+        Some(label) => label.id.clone(),
+        None => {
+            let response = http
+                .post(format!("{base}labels"))
+                .bearer_auth(token)
+                .json(&serde_json::json!({
+                    "name": back_name,
+                    "labelListVisibility": "labelHide",
+                    "messageListVisibility": "hide",
+                }))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if !response.status().is_success() {
+                return Err(format!("HTTP {}", response.status().as_u16()));
+            }
+            response
+                .json::<Label>()
+                .await
+                .map_err(|e| e.to_string())?
+                .id
+        }
+    };
+    let mut subjects = Vec::new();
+    for label in due {
+        let list: List = get_json(
+            http,
+            &format!("{base}messages?labelIds={}&maxResults=500", label.id),
+            token,
+        )
+        .await?;
+        let ids: Vec<String> = list
+            .messages
+            .into_iter()
+            .map(|message| message.id)
+            .collect();
+        if !ids.is_empty() {
+            let response = http
+                .post(format!("{base}messages/batchModify"))
+                .bearer_auth(token)
+                .json(&serde_json::json!({
+                    "ids": ids,
+                    "addLabelIds": ["INBOX", "UNREAD", back],
+                    "removeLabelIds": [snoozed.id, label.id],
+                }))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            expect_success(response).await?;
+            for id in &ids {
+                let meta: Meta = get_json(
+                    http,
+                    &format!("{base}messages/{id}?format=metadata&metadataHeaders=Subject"),
+                    token,
+                )
+                .await?;
+                subjects.push(
+                    meta.payload
+                        .headers
+                        .into_iter()
+                        .find(|header| header.name.eq_ignore_ascii_case("Subject"))
+                        .map(|header| header.value)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        // Nothing has it any more.
+        let _ = http
+            .delete(format!("{base}labels/{}", label.id))
+            .bearer_auth(token)
+            .send()
+            .await;
+    }
+    Ok(subjects)
+}
+
+/// Outlook (`base`: `…/v1.0/me/`): snoozed mail that's due goes back into
+/// the Inbox, unread and marked; its subjects.
+pub async fn graph_wake_due(
+    http: &reqwest::Client,
+    base: &str,
+    token: &str,
+    now: u64,
+) -> Result<Vec<String>, String> {
+    #[derive(Deserialize)]
+    #[serde(bound(deserialize = "T: Deserialize<'de>"))]
+    struct Page<T> {
+        #[serde(default = "Vec::new")]
+        value: Vec<T>,
+    }
+    #[derive(Deserialize)]
+    struct Folder {
+        id: String,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Message {
+        id: String,
+        #[serde(default)]
+        subject: Option<String>,
+        #[serde(default)]
+        single_value_extended_properties: Vec<Property>,
+    }
+    #[derive(Deserialize)]
+    struct Property {
+        id: String,
+        #[serde(default)]
+        value: Option<String>,
+    }
+
+    let mut url = url::Url::parse(&format!("{base}mailFolders")).map_err(|e| e.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("$filter", &format!("displayName eq '{GRAPH_SNOOZED}'"))
+        .append_pair("$select", "id");
+    let folders: Page<Folder> = get_json(http, url.as_str(), token).await?;
+    let Some(folder) = folders.value.into_iter().next() else {
+        return Ok(Vec::new());
+    };
+    let mut url = url::Url::parse(&format!("{base}mailFolders/{}/messages", folder.id))
+        .map_err(|e| e.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("$select", "id,subject")
+        .append_pair("$top", &MAX_DRAFTS.to_string())
+        .append_pair(
+            "$expand",
+            &format!("singleValueExtendedProperties($filter=id eq '{GRAPH_SNOOZE_PROPERTY}')"),
+        );
+    let messages: Page<Message> = get_json(http, url.as_str(), token).await?;
+    let mut subjects = Vec::new();
+    for message in messages.value {
+        let due = message
+            .single_value_extended_properties
+            .iter()
+            .find(|property| property.id.eq_ignore_ascii_case(GRAPH_SNOOZE_PROPERTY))
+            .and_then(|property| property.value.as_deref())
+            .and_then(parse_iso_utc)
+            .is_some_and(|at| at <= now);
+        if !due {
+            continue;
+        }
+        let path = format!("{base}messages/{}", message.id);
+        let marked = http
+            .patch(&path)
+            .bearer_auth(token)
+            .json(&serde_json::json!({
+                "isRead": false,
+                "singleValueExtendedProperties": [{ "id": GRAPH_SNOOZE_PROPERTY, "value": "back" }],
+            }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        expect_success(marked).await?;
+        let moved = http
+            .post(format!("{path}/move"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({ "destinationId": "inbox" }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        expect_success(moved).await?;
+        subjects.push(message.subject.unwrap_or_default());
+    }
+    Ok(subjects)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -56,6 +56,7 @@ export function planChanges(
     archiveFolder,
     trash: roleId(mailboxes, "trash"),
     junk: roleId(mailboxes, "junk"),
+    snoozed: roleId(mailboxes, "snoozed"),
     folders: capabilities.mailboxKinds.includes("folder"),
     kindOf,
   };
@@ -77,6 +78,8 @@ interface ApplyContext {
   readonly archiveFolder: MailboxId | undefined;
   readonly trash: MailboxId | undefined;
   readonly junk: MailboxId | undefined;
+  /** The snoozed mailbox, once there is one. */
+  readonly snoozed: MailboxId | undefined;
   /** Folder-based provider: special mailboxes are reached by moving. */
   readonly folders: boolean;
   readonly kindOf: ReadonlyMap<MailboxId, Mailbox["kind"]>;
@@ -210,6 +213,49 @@ function apply(
       return leave(message, context.junk, context, inbox, inbox);
     case "delete-forever":
       return "deleted";
+    case "snooze": {
+      const { backFromSnooze: _back, ...rest } = message;
+      const isFolder = (id: MailboxId) => kindOf.get(id) === "folder";
+      // Out of the Inbox (labels) or out of its folder (folders), into Snoozed.
+      const kept = context.folders
+        ? message.mailboxIds.filter((id) => !isFolder(id))
+        : message.mailboxIds.filter((id) => id !== inbox);
+      return {
+        ...rest,
+        mailboxIds: [
+          ...new Set([
+            ...kept,
+            ...(context.snoozed === undefined ? [] : [context.snoozed]),
+          ]),
+        ],
+        snoozedUntil: intent.until,
+      };
+    }
+    case "unsnooze": {
+      if (message.snoozedUntil === undefined) return undefined;
+      const { snoozedUntil: _until, ...rest } = message;
+      const to = intent.to ?? (context.folders ? inbox : undefined);
+      return {
+        ...rest,
+        mailboxIds: [
+          ...new Set([
+            ...message.mailboxIds.filter((id) => id !== context.snoozed),
+            ...(to === undefined ? [] : [to]),
+          ]),
+        ],
+        ...(intent.back
+          ? {
+              flags: { ...message.flags, seen: false },
+              backFromSnooze: true as const,
+            }
+          : {}),
+      };
+    }
+    case "clear-back": {
+      if (!message.backFromSnooze) return undefined;
+      const { backFromSnooze: _back, ...rest } = message;
+      return rest;
+    }
   }
 }
 
@@ -230,6 +276,11 @@ export function belongsTo(
     return false;
   }
   if (mailbox.role === "flagged") return message.flags.flagged;
+  // Only scheduled mail (a view of drafts or of the server's queue).
+  if (mailbox.role === "scheduled") return message.sendAt !== undefined;
+  // The Inbox's mail that came back from snooze.
+  if (mailbox.standard === "backFromSnooze")
+    return message.backFromSnooze === true;
   if (mailbox.kind === "view") return true;
   return message.mailboxIds.includes(mailbox.id);
 }
@@ -262,13 +313,7 @@ export function patchList(
       const change = byId.get(item.id);
       if (!change) return [item];
       return staysIn(mailbox, change, isolating)
-        ? [
-            {
-              ...item,
-              mailboxIds: change.after.mailboxIds,
-              flags: change.after.flags,
-            },
-          ]
+        ? [patched(item, change.after)]
         : [];
     }),
   }));
@@ -287,6 +332,20 @@ export function patchList(
   for (const row of returning) pages = insertByDate(pages, row, order);
 
   return { ...data, pages };
+}
+
+/** A cached row with what a change sets: memberships, flags and snooze. */
+function patched(item: MessageSummary, after: MessageSummary): MessageSummary {
+  const { snoozedUntil: _until, backFromSnooze: _back, ...rest } = item;
+  return {
+    ...rest,
+    mailboxIds: after.mailboxIds,
+    flags: after.flags,
+    ...(after.snoozedUntil === undefined
+      ? {}
+      : { snoozedUntil: after.snoozedUntil }),
+    ...(after.backFromSnooze ? { backFromSnooze: true as const } : {}),
+  };
 }
 
 function insertByDate<T>(
@@ -352,11 +411,8 @@ export function applyServerChanges(
 
 /** Applies a change to a cached full message. */
 export function patchMessage(message: Message, change: MessageChange): Message {
-  return {
-    ...message,
-    mailboxIds: change.after.mailboxIds,
-    flags: change.after.flags,
-  };
+  const { snoozedUntil: _until, backFromSnooze: _back, ...rest } = message;
+  return { ...rest, ...patched(message, change.after) };
 }
 
 /** Adjusts total and unread counts of the mailbox list. */
@@ -453,13 +509,7 @@ function changedThread(
       const change = byId.get(message.id);
       if (!change) return [message];
       if (change.deleted === true) return [];
-      return [
-        {
-          ...message,
-          mailboxIds: change.after.mailboxIds,
-          flags: change.after.flags,
-        },
-      ];
+      return [patched(message, change.after)];
     }),
   };
 }

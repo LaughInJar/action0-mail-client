@@ -77,6 +77,8 @@ export interface AppSettings {
   readonly deviceId: string;
   /** The time last picked for Send later (ISO; "" for none), offered again. */
   readonly lastSendLater: string;
+  /** The time last picked for Snooze (ISO; "" for none), offered again. */
+  readonly lastSnooze: string;
 }
 
 /** Where the AI is asked: about mail in the reader, or to write in the composer. */
@@ -112,6 +114,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   paletteRecent: [],
   deviceId: "",
   lastSendLater: "",
+  lastSnooze: "",
 };
 
 /** How many recent AI choices the picker offers. */
@@ -334,6 +337,11 @@ export function parseSettings(value: unknown): AppSettings {
       !Number.isNaN(Date.parse(raw.lastSendLater))
         ? raw.lastSendLater
         : d.lastSendLater,
+    lastSnooze:
+      typeof raw.lastSnooze === "string" &&
+      !Number.isNaN(Date.parse(raw.lastSnooze))
+        ? raw.lastSnooze
+        : d.lastSnooze,
   };
 }
 

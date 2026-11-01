@@ -79,7 +79,7 @@ export function mailActionItems(
             id: "read",
             label: message.flags.seen ? a.markUnreadButton : a.markReadButton,
             icon: message.flags.seen ? "mail" : "mail-open",
-            keep: 8,
+            keep: 9,
             run: () => {
               actions.setSeen(!message.flags.seen, {
                 ...(ids ? { keys: ids } : {}),
@@ -93,7 +93,7 @@ export function mailActionItems(
             id: "read",
             label: a.markReadButton,
             icon: "mail-open",
-            keep: 8,
+            keep: 9,
             run: () => {
               actions.setSeen(true, { ...(ids ? { keys: ids } : {}), exact });
             },
@@ -102,7 +102,7 @@ export function mailActionItems(
             id: "unread",
             label: a.markUnreadButton,
             icon: "mail",
-            keep: 8,
+            keep: 9,
             run: () => {
               actions.setSeen(false, { ...(ids ? { keys: ids } : {}), exact });
             },
@@ -190,6 +190,33 @@ export function mailActionItems(
           }),
         ]
       : []),
+    ...(actions.canSnooze
+      ? [
+          ...(actions.view === "snoozed"
+            ? [
+                item({
+                  id: "unsnooze",
+                  label: a.unsnoozeButton,
+                  icon: "inbox",
+                  keep: 6,
+                  run: () => {
+                    actions.unsnooze(ids, options);
+                  },
+                }),
+              ]
+            : []),
+          item({
+            id: "snooze",
+            label: a.snoozeButton,
+            icon: "clock",
+            keep: 6,
+            run: () => {
+              // Below the button (focused by the click), or where the focus is.
+              actions.requestSnooze(undefined, ids, options);
+            },
+          }),
+        ]
+      : []),
     ...(actions.canMove
       ? [
           item({
@@ -229,7 +256,7 @@ export function mailActionItems(
               : a.starOrUnstarButton,
             icon: "star",
             ...(message ? { pressed: message.flags.flagged } : {}),
-            keep: 7,
+            keep: 8,
             run: () => {
               actions.toggleStar(ids, options);
             },

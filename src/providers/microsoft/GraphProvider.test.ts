@@ -88,6 +88,7 @@ describe("GraphProvider mailboxes", () => {
       ["Archive", "archive"],
       ["Flagged", "flagged"],
       ["Scheduled", "scheduled"],
+      ["Back from snooze", null],
       ["All mail", "all"],
       ["Projects", null],
       ["Clients", null],
@@ -817,6 +818,41 @@ describe("GraphProvider Send later", () => {
     await provider.sendDraft({ ...draft, id, schedule });
     expect(saved).toMatchObject({ parentFolderId: "sent-id", isDraft: false });
     expect(saved?.singleValueExtendedProperties?.[0]?.value).toBe("");
+  });
+});
+
+describe("GraphProvider snooze", () => {
+  it("moves mail into action0's Snoozed folder with its time, and back into the Inbox", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "a", isRead: true });
+    await provider.snooze([id("a")], new Date("2026-11-03T07:00:00Z"));
+    const snoozedFolder = graph.folders.find(
+      (folder) => folder.displayName === "Snoozed (action0)",
+    );
+    const message = graph.messages.find((m) => m.id === "a");
+    expect(message?.parentFolderId).toBe(snoozedFolder?.id);
+    expect(message?.singleValueExtendedProperties?.[0]?.value).toBe(
+      "2026-11-03T07:00:00.000Z",
+    );
+    const mailboxes = await provider.listMailboxes();
+    const snoozed = mailboxes.find((m) => m.role === "snoozed");
+    expect(snoozed).toMatchObject({ name: "Snoozed", assignable: false });
+    const { items } = await provider.listMessages({
+      mailboxId: box(snoozed?.id ?? ""),
+      limit: 10,
+    });
+    expect(items.map((m) => [m.id, m.snoozedUntil])).toEqual([
+      ["a", "2026-11-03T07:00:00.000Z"],
+    ]);
+
+    await provider.unsnooze([id("a")], { to: null, back: true });
+    expect(message).toMatchObject({
+      parentFolderId: "inbox-id",
+      isRead: false,
+    });
+    expect(message?.singleValueExtendedProperties?.[0]?.value).toBe("back");
+    await provider.clearBackFromSnooze([id("a")]);
+    expect(message?.singleValueExtendedProperties?.[0]?.value).toBe("");
   });
 });
 

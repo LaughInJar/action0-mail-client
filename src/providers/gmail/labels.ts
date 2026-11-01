@@ -12,6 +12,46 @@ import type { GmailLabel } from "./types";
 export const ALL_MAIL_ID = "ALL_MAIL";
 /** Synthetic id of the Scheduled view: drafts marked with a send time. */
 export const SCHEDULED_ID = "ACTION0_SCHEDULED";
+/**
+ * Snooze's label (Gmail reserves "Snoozed" for its own). Below it, hidden
+ * ones keep each snoozed message's return time (`…/2026-11-03T07:00Z`) and
+ * mark mail that came back (`…/Back`).
+ */
+export const SNOOZED_LABEL = "Snoozed (action0)";
+/** The label of mail that came back from snooze. */
+export const BACK_LABEL = `${SNOOZED_LABEL}/Back`;
+/** Synthetic id of the hidden view of Inbox mail that came back from snooze. */
+export const BACK_VIEW_ID = "ACTION0_BACK";
+
+/** The hidden view of Inbox mail that came back from snooze. */
+export const BACK_VIEW: Mailbox = {
+  id: asMailboxId(BACK_VIEW_ID),
+  name: "Back from snooze",
+  kind: "view",
+  standard: "backFromSnooze",
+  selectable: true,
+  hidden: true,
+  assignable: false,
+};
+
+/** A snooze label's name for a return time (to the minute, UTC). */
+export function snoozeLabelName(until: Date): string {
+  return `${SNOOZED_LABEL}/${until.toISOString().slice(0, 16)}Z`;
+}
+
+/** The return time (ISO) a snooze label stands for, if it is one. */
+export function snoozeTimeOf(name: string): string | undefined {
+  const prefix = `${SNOOZED_LABEL}/`;
+  if (!name.startsWith(prefix)) return undefined;
+  const at = Date.parse(name.slice(prefix.length));
+  return Number.isNaN(at) ? undefined : new Date(at).toISOString();
+}
+
+/** Snooze's own labels: action0's Snoozed label and the ones below it. */
+export function isSnoozeLabel(name: string): boolean {
+  return name === SNOOZED_LABEL || name.startsWith(`${SNOOZED_LABEL}/`);
+}
+
 /** Synthetic id of the non-selectable "Categories" group. */
 export const CATEGORIES_ID = "CATEGORIES";
 /** Prefix of synthetic parents for user labels whose parent label doesn't exist. */
@@ -180,8 +220,25 @@ export function mapLabels(labels: readonly GmailLabel[]): Mailbox[] {
     }
   }
 
+  // Snooze: its label has a role; the time and Back labels aren't mailboxes.
+  const snoozed = labels.find(
+    (label) => label.type === "user" && label.name === SNOOZED_LABEL,
+  );
+  if (snoozed)
+    result.push({
+      ...base(snoozed),
+      name: "Snoozed",
+      kind: "label",
+      role: "snoozed",
+      hidden: false,
+      assignable: false,
+    });
   result.push(
-    ...mapUserLabels(labels.filter((label) => label.type === "user")),
+    ...mapUserLabels(
+      labels.filter(
+        (label) => label.type === "user" && !isSnoozeLabel(label.name),
+      ),
+    ),
   );
   return result;
 }

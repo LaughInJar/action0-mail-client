@@ -30,6 +30,23 @@ export type MailIntent =
       readonly remove: readonly MailboxId[];
     }
   | {
+      /** Into the snoozed mailbox until `until` (ISO 8601); a new time for snoozed ones. */
+      readonly kind: "snooze";
+      readonly ids: readonly MessageId[];
+      readonly until: string;
+    }
+  | {
+      /**
+       * Out of the snoozed mailbox into `to` (`null`: label accounts add
+       * nothing); `back`: it came back on its own (unread, marked).
+       */
+      readonly kind: "unsnooze";
+      readonly ids: readonly MessageId[];
+      readonly to: MailboxId | null;
+      readonly back: boolean;
+    }
+  | { readonly kind: "clear-back"; readonly ids: readonly MessageId[] }
+  | {
       readonly kind:
         | "trash"
         | "untrash"
@@ -84,6 +101,16 @@ export function runIntent(
       return provider.notSpam(intent.ids, signal);
     case "delete-forever":
       return provider.deleteForever(intent.ids, signal);
+    case "snooze":
+      return provider.snooze(intent.ids, new Date(intent.until), signal);
+    case "unsnooze":
+      return provider.unsnooze(
+        intent.ids,
+        { to: intent.to, back: intent.back },
+        signal,
+      );
+    case "clear-back":
+      return provider.clearBackFromSnooze(intent.ids, signal);
   }
 }
 
@@ -96,6 +123,8 @@ export interface InverseOptions {
    * for label providers (Gmail).
    */
   readonly isFolder?: (id: MailboxId) => boolean;
+  /** The Inbox: label accounts unsnooze into it only if the message was there. */
+  readonly inbox?: MailboxId;
 }
 
 /**
@@ -106,8 +135,9 @@ export interface InverseOptions {
 export function inverseOf(
   intent: MailIntent,
   changes: readonly MessageChange[],
-  { isFolder }: InverseOptions = {},
+  options: InverseOptions = {},
 ): MailIntent[] {
+  const { isFolder } = options;
   if (changes.length === 0) return [];
   const ids = changes.map((change) => change.id);
   switch (intent.kind) {
@@ -153,7 +183,67 @@ export function inverseOf(
         : labelInverses(changes);
     case "delete-forever":
       return [];
+    case "snooze":
+      return snoozeInverses(changes, options);
+    case "unsnooze":
+      // Snoozed again until the time it had (a mail that came back on its
+      // own is only taken back by the waker, which offers no undo).
+      return groupBy(changes, (change) => change.before.snoozedUntil).flatMap(
+        ([until, ids]): MailIntent[] =>
+          until === undefined ? [] : [{ kind: "snooze", ids, until }],
+      );
+    case "clear-back":
+      return [];
   }
+}
+
+/**
+ * Undoing a snooze: messages that were snoozed already get their old time
+ * back; the others leave the snoozed mailbox for where they were (the
+ * folder they came from; for labels the Inbox if they were in it).
+ */
+function snoozeInverses(
+  changes: readonly MessageChange[],
+  { isFolder, inbox }: InverseOptions,
+): MailIntent[] {
+  const resnoozed = changes.filter(
+    (change) => change.before.snoozedUntil !== undefined,
+  );
+  const fresh = changes.filter(
+    (change) => change.before.snoozedUntil === undefined,
+  );
+  const origin = (change: MessageChange): MailboxId | null => {
+    if (isFolder)
+      return change.before.mailboxIds.find(isFolder) ?? inbox ?? null;
+    return inbox !== undefined && change.before.mailboxIds.includes(inbox)
+      ? inbox
+      : null;
+  };
+  return [
+    ...groupBy(resnoozed, (change) => change.before.snoozedUntil).flatMap(
+      ([until, ids]): MailIntent[] =>
+        until === undefined ? [] : [{ kind: "snooze", ids, until }],
+    ),
+    ...groupBy(fresh, origin).map(([to, ids]): MailIntent => ({
+      kind: "unsnooze",
+      ids,
+      to,
+      back: false,
+    })),
+  ];
+}
+
+/** The changes' ids grouped by `key`, in first-seen order. */
+function groupBy<K>(
+  changes: readonly MessageChange[],
+  key: (change: MessageChange) => K,
+): [K, MessageId[]][] {
+  const groups = new Map<K, MessageId[]>();
+  for (const change of changes) {
+    const value = key(change);
+    groups.set(value, [...(groups.get(value) ?? []), change.id]);
+  }
+  return [...groups];
 }
 
 /** Groups messages by their exact membership diff and reverses it. */

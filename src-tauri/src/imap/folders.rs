@@ -47,6 +47,8 @@ const ROLE_NAMES: &[(Role, &[&str])] = &[
     ),
     (Role::Junk, &["junk", "spam", "junk e-mail", "junk-e-mail"]),
     (Role::Archive, &["archive", "archives", "archiv"]),
+    // Snooze's folder, made by action0 (see `src/providers/imap/ImapProvider.ts`).
+    (Role::Snoozed, &["snoozed (action0)"]),
 ];
 
 /// What STATUS said about a folder.
@@ -451,7 +453,14 @@ impl FolderTree {
             assignable: folder.selectable
                 && !matches!(
                     folder.role,
-                    Some(Role::Sent | Role::Drafts | Role::Scheduled | Role::All | Role::Flagged)
+                    Some(
+                        Role::Sent
+                            | Role::Drafts
+                            | Role::Scheduled
+                            | Role::Snoozed
+                            | Role::All
+                            | Role::Flagged
+                    )
                 ),
             counts: folder.status.and_then(|status| {
                 Some(Counts {

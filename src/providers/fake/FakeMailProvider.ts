@@ -79,6 +79,10 @@ export interface FakeMailData {
 
 /** The Scheduled view every fake account has. */
 export const FAKE_SCHEDULED_ID = asMailboxId("scheduled");
+/** The Snoozed label or folder, once something was snoozed. */
+export const FAKE_SNOOZED_ID = asMailboxId("snoozed");
+/** The hidden view of the Inbox's mail that came back from snooze. */
+export const FAKE_BACK_ID = asMailboxId("back-from-snooze");
 
 /** Options of {@link FakeMailProvider}. */
 export interface FakeMailProviderOptions {
@@ -177,15 +181,28 @@ export class FakeMailProvider implements MailProvider {
     const drafts = data.mailboxes.findIndex((m) => m.role === "drafts");
     this.#mailboxes = data.mailboxes.some((m) => m.role === "scheduled")
       ? data.mailboxes
-      : data.mailboxes.toSpliced(drafts + 1, 0, {
-          id: FAKE_SCHEDULED_ID,
-          name: "Scheduled",
-          kind: "view",
-          role: "scheduled",
-          selectable: true,
-          hidden: false,
-          assignable: false,
-        });
+      : data.mailboxes.toSpliced(
+          drafts + 1,
+          0,
+          {
+            id: FAKE_SCHEDULED_ID,
+            name: "Scheduled",
+            kind: "view",
+            role: "scheduled",
+            selectable: true,
+            hidden: false,
+            assignable: false,
+          },
+          {
+            id: FAKE_BACK_ID,
+            name: "Back from snooze",
+            kind: "view",
+            standard: "backFromSnooze",
+            selectable: true,
+            hidden: true,
+            assignable: false,
+          },
+        );
     this.#messages = [...data.messages];
     this.#attachments = new Map(data.attachments);
     this.#me = data.me ?? { address: "me@example.com" };
@@ -211,6 +228,7 @@ export class FakeMailProvider implements MailProvider {
       contacts: data.contacts !== undefined,
       editSenders: data.editSenders === true,
       scheduling: data.scheduling ?? "drafts",
+      snooze: true,
       ...(this.#folders
         ? {
             // Like Outlook: folders, and categories as labels.
@@ -751,6 +769,80 @@ export class FakeMailProvider implements MailProvider {
     return this.saveDraft(draft, signal);
   }
 
+  async snooze(
+    ids: readonly MessageId[],
+    until: Date,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#refuseIfFailing(signal);
+    // Made on first use, like the real providers do.
+    if (!this.#mailboxes.some((mailbox) => mailbox.id === FAKE_SNOOZED_ID))
+      this.#setMailboxes([
+        ...this.#mailboxes,
+        {
+          id: FAKE_SNOOZED_ID,
+          name: "Snoozed",
+          kind: this.#folders ? "folder" : "label",
+          role: "snoozed",
+          selectable: true,
+          hidden: false,
+          assignable: false,
+        },
+      ]);
+    const inbox = this.#roleId("inbox");
+    const isFolder = (id: MailboxId) =>
+      this.#mailboxes.find((mailbox) => mailbox.id === id)?.kind === "folder";
+    return this.#write(ids, signal, (message) => {
+      const { backFromSnooze: _back, ...rest } = message;
+      const kept = this.#folders
+        ? message.mailboxIds.filter((id) => !isFolder(id))
+        : message.mailboxIds.filter((id) => id !== inbox);
+      return {
+        ...rest,
+        mailboxIds: [...new Set([...kept, FAKE_SNOOZED_ID])],
+        snoozedUntil: until.toISOString(),
+      };
+    });
+  }
+
+  async unsnooze(
+    ids: readonly MessageId[],
+    { to, back }: { readonly to: MailboxId | null; readonly back: boolean },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const target = to ?? (this.#folders ? this.#roleId("inbox") : undefined);
+    return this.#write(ids, signal, (message) => {
+      if (message.snoozedUntil === undefined) return message;
+      const { snoozedUntil: _until, ...rest } = message;
+      return {
+        ...rest,
+        mailboxIds: [
+          ...new Set([
+            ...message.mailboxIds.filter((id) => id !== FAKE_SNOOZED_ID),
+            ...(target === undefined ? [] : [target]),
+          ]),
+        ],
+        ...(back
+          ? {
+              flags: { ...message.flags, seen: false },
+              backFromSnooze: true as const,
+            }
+          : {}),
+      };
+    });
+  }
+
+  async clearBackFromSnooze(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    return this.#write(ids, signal, (message) => {
+      if (!message.backFromSnooze) return message;
+      const { backFromSnooze: _back, ...rest } = message;
+      return rest;
+    });
+  }
+
   /** Held mail whose time has come goes out (like Exchange, without the app). */
   #sendHeldDue() {
     const now = this.#now();
@@ -1270,6 +1362,24 @@ export class FakeMailProvider implements MailProvider {
       return this.#messages
         .filter((message) => message.sendAt !== undefined)
         .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
+    if (mailbox?.role === "snoozed")
+      // Back soonest first.
+      return this.#messages
+        .filter((message) => message.mailboxIds.includes(mailboxId))
+        .sort((a, b) =>
+          (a.snoozedUntil ?? "").localeCompare(b.snoozedUntil ?? ""),
+        );
+    if (mailbox?.standard === "backFromSnooze") {
+      const inbox = this.#roleId("inbox");
+      return this.#messages
+        .filter(
+          (message) =>
+            message.backFromSnooze === true &&
+            inbox !== undefined &&
+            message.mailboxIds.includes(inbox),
+        )
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+    }
     let matches: (message: Message) => boolean;
     if (mailbox?.role === "all") matches = outsideSpamAndTrash;
     else if (mailbox?.role === "flagged")

@@ -75,8 +75,25 @@ export function messageIds(value: string | undefined): string[] {
 }
 
 /** A list row. */
+/**
+ * Snooze's property of action0's own on a message: its return time (ISO),
+ * or "back" once it came back (empty: neither).
+ */
+export const SNOOZE_PROPERTY =
+  "String {8a3b7c2e-5d41-4f0a-9b6e-a0c1d2e3f405} Name action0Snooze";
+
+/** `$expand` for {@link SNOOZE_PROPERTY}. */
+export const SNOOZE_EXPAND = `singleValueExtendedProperties($filter=id eq '${SNOOZE_PROPERTY}')`;
+
 export function toMessageSummary(message: GraphMessage): MessageSummary {
   const from = toAddress(message.from ?? message.sender);
+  const snooze = message.singleValueExtendedProperties?.find(
+    (property) => property.id.toLowerCase() === SNOOZE_PROPERTY.toLowerCase(),
+  )?.value;
+  const until =
+    snooze && snooze !== "back" && !Number.isNaN(Date.parse(snooze))
+      ? new Date(snooze).toISOString()
+      : undefined;
   return {
     id: asMessageId(message.id),
     ...(message.conversationId
@@ -99,6 +116,8 @@ export function toMessageSummary(message: GraphMessage): MessageSummary {
       flagged: message.flag?.flagStatus === "flagged",
     },
     hasAttachments: message.hasAttachments ?? false,
+    ...(until === undefined ? {} : { snoozedUntil: until }),
+    ...(snooze === "back" ? { backFromSnooze: true as const } : {}),
   };
 }
 

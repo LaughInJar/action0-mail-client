@@ -92,7 +92,11 @@ export function filterMailboxTree(
 /** Number shown next to a mailbox: drafts count everything, others count unread. */
 export function badgeCount(mailbox: Mailbox): number | undefined {
   if (!mailbox.counts) return undefined;
-  if (mailbox.role === "drafts" || mailbox.role === "scheduled")
+  if (
+    mailbox.role === "drafts" ||
+    mailbox.role === "scheduled" ||
+    mailbox.role === "snoozed"
+  )
     return mailbox.counts.total || undefined;
   if (
     mailbox.role === "sent" ||

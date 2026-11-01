@@ -26,6 +26,8 @@ import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
 import { PaletteHost } from "../palette/CommandPalette";
 import { ScheduledSender } from "../schedule/ScheduledSender";
+import { SnoozeWaker } from "../schedule/SnoozeWaker";
+import { SnoozeMenuHost } from "../schedule/SnoozeMenuHost";
 import { SendLaterHost } from "../schedule/ScheduledBanner";
 import { usePaletteShortcut } from "../palette/usePaletteShortcut";
 import { Sidebar } from "../mailboxes/Sidebar";
@@ -199,6 +201,7 @@ function MailApp() {
     <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[var(--safe-bottom)] pl-[env(safe-area-inset-left)]">
       <ReconnectBar />
       <ScheduledSender />
+      <SnoozeWaker />
       <NotificationsBar />
       <DesktopIntegration compose={compose} />
       <AndroidIntegration compose={compose} />
@@ -212,6 +215,7 @@ function MailApp() {
       <ShortcutHelp />
       <PaletteHost />
       <SendLaterHost />
+      <SnoozeMenuHost actions={actions} />
       <MailboxPickerHost />
       <ContextMenuHost />
       <ManageLabelsHost />
