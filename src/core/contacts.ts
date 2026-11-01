@@ -121,6 +121,18 @@ export interface ContactGroup {
   readonly name: string;
   /** A CSS colour (Outlook categories). */
   readonly color?: string;
+  /** Which of {@link ContactCapabilities.groupColors} it has. Opaque. */
+  readonly colorId?: string;
+  /** A system group (Google's Starred): it can't be renamed or deleted. */
+  readonly fixed?: true;
+}
+
+/** A colour groups can have: the provider's id for it, and how it looks. */
+export interface GroupColor {
+  /** Opaque (Outlook's `preset0` … `preset24`). */
+  readonly id: string;
+  /** A CSS colour. */
+  readonly color: string;
 }
 
 /** What a source's contacts can hold; the editor offers only that. */
@@ -143,6 +155,17 @@ export interface ContactCapabilities {
   readonly birthdayYear: boolean;
   /** Contacts can be put into groups, and groups created. */
   readonly groups: boolean;
+  /** Groups can be renamed (Outlook categories can't). */
+  readonly renameGroups: boolean;
+  /**
+   * A group exists without members, so one can be made on its own ("New
+   * group"); vCard categories exist only on the cards that have them.
+   */
+  readonly emptyGroups: boolean;
+  /** The colours groups can have (Outlook's 25); none: groups have no colour. */
+  readonly groupColors?: readonly GroupColor[];
+  /** Photos can be set and removed (Outlook: set on work accounts, never removed). */
+  readonly photos: { readonly change: boolean; readonly remove: boolean };
   /** Google's "Other contacts" are listed ({@link ContactSnapshot.other}). */
   readonly otherContacts: boolean;
 }
@@ -188,6 +211,29 @@ export interface ContactWrite {
    * the fields that were changed (resolving to the contact as it is then).
    */
   readonly undo: (signal?: AbortSignal) => Promise<Contact | undefined>;
+}
+
+/** A group that was changed (renamed, recoloured), and how to take it back. */
+export interface GroupWrite {
+  readonly group: ContactGroup;
+  /** Puts the group back as it was (its id may change back too). */
+  readonly undo: (signal?: AbortSignal) => Promise<ContactGroup | undefined>;
+}
+
+/** A group that was deleted (its contacts kept), and how to bring it back. */
+export interface GroupRemoval {
+  /**
+   * Makes the group again with its members (a new id where the provider
+   * can't restore it, as Google's labels).
+   */
+  readonly undo: (signal?: AbortSignal) => Promise<ContactGroup>;
+}
+
+/** Progress of a change that touches many contacts (renaming a vCard category). */
+export interface ProgressOptions {
+  /** Called with how many are done, and of how many. */
+  readonly onProgress?: (done: number, total: number) => void;
+  readonly signal?: AbortSignal;
 }
 
 /** Contacts that were deleted, and how to bring them back. */
@@ -265,6 +311,39 @@ export interface ContactsProvider {
   ): Promise<ContactRemoval>;
   /** Creates a group (only with `groups`). */
   createGroup(name: string, signal?: AbortSignal): Promise<ContactGroup>;
+  /**
+   * Renames a group (only with `renameGroups`). vCard categories: every
+   * card with it is rewritten.
+   */
+  renameGroup?(
+    group: ContactGroup,
+    name: string,
+    options?: ProgressOptions,
+  ): Promise<GroupWrite>;
+  /** Gives a group another colour (only with `groupColors`). */
+  setGroupColor?(
+    group: ContactGroup,
+    colorId: string,
+    signal?: AbortSignal,
+  ): Promise<GroupWrite>;
+  /**
+   * Deletes a group; its contacts stay (Outlook's keep the category's name
+   * without a colour, like Outlook). vCard categories: every card with it
+   * is rewritten.
+   */
+  deleteGroup(
+    group: ContactGroup,
+    options?: ProgressOptions,
+  ): Promise<GroupRemoval>;
+  /**
+   * Sets the contact's picture, or removes it (`null`; only with
+   * `photos.remove`). The undo puts the previous one back.
+   */
+  setPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal?: AbortSignal,
+  ): Promise<ContactWrite>;
   /** Adds one of the "Other contacts" to the contacts (only with `otherContacts`). */
   addOther?(contact: Contact, signal?: AbortSignal): Promise<ContactWrite>;
   /** The contact's picture, if it has one. */

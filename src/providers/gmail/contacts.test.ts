@@ -275,7 +275,7 @@ describe("GoogleContactsProvider.load", () => {
       { id: "contacts", name: "Contacts", readOnly: false, isDefault: true },
     ]);
     expect(snapshot.groups).toEqual([
-      { id: "contactGroups/starred", name: "Starred" },
+      { id: "contactGroups/starred", name: "Starred", fixed: true },
       { id: "contactGroups/abc", name: "Hiking" },
     ]);
     expect(snapshot.contacts).toHaveLength(2);
@@ -908,6 +908,149 @@ describe("GoogleContactsProvider groups, Other contacts and access", () => {
     const max = contactOf(MAX);
     if (!max) throw new Error("Max didn't map");
     expect(await provider().photo(max)).toBeUndefined();
+  });
+});
+
+describe("GoogleContactsProvider label and photo changes", () => {
+  const family = { id: asContactGroupId("contactGroups/fam"), name: "Family" };
+
+  it("renames a label with its etag, and undo renames it back", async () => {
+    let name = "Family";
+    const seen = serve({
+      "GET contactGroups/fam": () => ({
+        resourceName: "contactGroups/fam",
+        etag: `g-${name}`,
+        name,
+      }),
+      "PUT contactGroups/fam": (request) => {
+        name = (request.body as { contactGroup: { name: string } }).contactGroup
+          .name;
+        return { resourceName: "contactGroups/fam", name };
+      },
+    });
+    const contacts = provider();
+    const write = await contacts.renameGroup(family, " Relatives ");
+    expect(write.group).toEqual({
+      id: "contactGroups/fam",
+      name: "Relatives",
+    });
+    expect(seen.find((one) => one.method === "PUT")?.body).toEqual({
+      contactGroup: { etag: "g-Family", name: "Relatives" },
+      updateGroupFields: "name",
+      readGroupFields: "name,groupType",
+    });
+    expect(await write.undo()).toEqual({
+      id: "contactGroups/fam",
+      name: "Family",
+    });
+    expect(seen.filter((one) => one.method === "PUT").at(-1)?.body).toEqual(
+      expect.objectContaining({
+        contactGroup: { etag: "g-Relatives", name: "Family" },
+      }),
+    );
+  });
+
+  it("deletes a label but not its contacts, and undo makes it again with its members", async () => {
+    const seen = serve({
+      "GET contactGroups/fam": () => ({
+        resourceName: "contactGroups/fam",
+        name: "Family",
+        memberResourceNames: ["people/c1", "people/c2"],
+      }),
+      "DELETE contactGroups/fam": () => undefined,
+      "POST contactGroups": () => ({
+        resourceName: "contactGroups/fam2",
+        name: "Family",
+      }),
+      "POST contactGroups/fam2/members:modify": () => ({}),
+    });
+    const removal = await provider().deleteGroup(family);
+    const deleted = seen.find((one) => one.method === "DELETE");
+    expect(deleted?.params.get("deleteContacts")).toBe("false");
+    expect(seen[0]?.params.get("maxMembers")).not.toBeNull();
+
+    expect(await removal.undo()).toEqual({
+      id: "contactGroups/fam2",
+      name: "Family",
+    });
+    expect(seen.at(-1)?.body).toEqual({
+      resourceNamesToAdd: ["people/c1", "people/c2"],
+    });
+  });
+
+  it("refuses to rename or delete Starred", async () => {
+    serve({});
+    const starred = {
+      id: asContactGroupId("contactGroups/starred"),
+      name: "Starred",
+    };
+    await expect(provider().deleteGroup(starred)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    await expect(
+      provider().renameGroup(starred, "Favourites"),
+    ).rejects.toMatchObject({ code: "unavailable" });
+  });
+
+  it("sets a photo and undo puts the old one back; removing one is undone too", async () => {
+    const photos: string[] = [];
+    const seen = serve({
+      "PATCH people/c1:updateContactPhoto": (request) => {
+        photos.push((request.body as { photoBytes: string }).photoBytes);
+        return {
+          person: {
+            ...ANNA,
+            photos: [{ url: `${PHOTO}&v=${String(photos.length)}` }],
+          },
+        };
+      },
+      "DELETE people/c1:deleteContactPhoto": () => undefined,
+      "GET people/c1": () => ({ ...ANNA, photos: [] }),
+    });
+    const contacts = provider();
+    const write = await contacts.setPhoto(
+      anna(),
+      new Blob([new Uint8Array([9, 9])], { type: "image/jpeg" }),
+    );
+    expect(photos[0]).toBe("CQk=");
+    expect(write.contact.photo).toEqual({
+      kind: "url",
+      url: `${PHOTO}&v=1`,
+    });
+    await write.undo();
+    // The previous photo's bytes (the photo server answers 1, 2, 3).
+    expect(photos[1]).toBe("AQID");
+
+    const removed = await contacts.setPhoto(anna(), null);
+    expect(removed.contact.photo).toBeUndefined();
+    expect(
+      seen.some(
+        (one) =>
+          one.method === "DELETE" &&
+          one.path === "people/c1:deleteContactPhoto",
+      ),
+    ).toBe(true);
+    await removed.undo();
+    expect(photos[2]).toBe("AQID");
+  });
+
+  it("removes nothing when undoing a photo set on a contact without one", async () => {
+    const seen = serve({
+      "PATCH people/c2:updateContactPhoto": () => ({ person: MAX }),
+      "DELETE people/c2:deleteContactPhoto": () => undefined,
+      "GET people/c2": () => MAX,
+    });
+    const max = contactOf(MAX);
+    if (!max) throw new Error("Max didn't map");
+    const write = await provider().setPhoto(
+      max,
+      new Blob([new Uint8Array([1])], { type: "image/jpeg" }),
+    );
+    await write.undo();
+    expect(seen.at(-2)).toMatchObject({
+      method: "DELETE",
+      path: "people/c2:deleteContactPhoto",
+    });
   });
 });
 

@@ -5,9 +5,11 @@ import {
   fitTo,
   mergeFields,
   nameOf,
+  sameFields,
   type AddressBookId,
   type Contact,
   type ContactFields,
+  type ContactGroup,
   type ContactGroupId,
 } from "../../core/contacts";
 import type { ContactSource } from "../../data/contacts";
@@ -35,6 +37,8 @@ export interface ContactActions {
     readonly book: AddressBookId;
     readonly fields: ContactFields;
     readonly newGroups: readonly string[];
+    /** A new picture, `null` to remove it; absent: unchanged. */
+    readonly photo?: Blob | null;
   }) => Promise<Contact>;
   /** Deletes contacts of one source (undo brings them back). */
   readonly remove: (
@@ -60,6 +64,24 @@ export interface ContactActions {
     source: ContactSource,
     sets: readonly (readonly Contact[])[],
   ) => Promise<void>;
+  /** Creates a group on its own; resolves to it (rejects with the reason). */
+  readonly addGroup: (
+    source: ContactSource,
+    name: string,
+    colorId?: string,
+  ) => Promise<ContactGroup>;
+  /** Renames a group and/or gives it another colour; rejects with the reason. */
+  readonly changeGroup: (
+    source: ContactSource,
+    group: ContactGroup,
+    change: { readonly name?: string; readonly colorId?: string },
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<ContactGroup>;
+  /** Deletes a group (its contacts stay); says how it went. */
+  readonly deleteGroup: (
+    source: ContactSource,
+    group: ContactGroup,
+  ) => Promise<boolean>;
 }
 
 /** See {@link ContactActions}. */
@@ -117,7 +139,7 @@ export function useContactActions(): ContactActions {
     return {
       ensureWritable,
 
-      save: async ({ source, contact, book, fields, newGroups }) => {
+      save: async ({ source, contact, book, fields, newGroups, photo }) => {
         const groupIds: ContactGroupId[] = [...fields.groupIds];
         for (const name of newGroups) {
           const group = await writes.createGroup(source, name);
@@ -125,11 +147,44 @@ export function useContactActions(): ContactActions {
         }
         const complete = { ...fields, groupIds };
         if (contact) {
-          const applied = await writes.update(source, contact, complete);
-          undoable(c.saved(nameOf(applied.result)), applied.undo);
-          return applied.result;
+          // The fields, then the picture: one change, one undo.
+          const changed = !sameFields(complete, fieldsOf(contact));
+          const updated = changed
+            ? await writes.update(source, contact, complete)
+            : undefined;
+          let pictured;
+          try {
+            pictured =
+              photo === undefined
+                ? undefined
+                : await writes.setPhoto(
+                    source,
+                    updated?.result ?? contact,
+                    photo,
+                  );
+          } catch (error) {
+            await updated?.undo().catch(() => undefined);
+            throw error;
+          }
+          const result = pictured?.result ?? updated?.result ?? contact;
+          undoable(c.saved(nameOf(result)), async () => {
+            // Outlook can't take a picture away again: the fields still go back.
+            const photoUndo = pictured
+              ? pictured.undo().then(
+                  () => null,
+                  (error: unknown) => error,
+                )
+              : Promise.resolve(null);
+            const failed = await photoUndo;
+            await updated?.undo();
+            if (failed instanceof Error) throw failed;
+          });
+          return result;
         }
-        const applied = await writes.create(source, book, { fields: complete });
+        const applied = await writes.create(source, book, {
+          fields: complete,
+          ...(photo ? { photo } : {}),
+        });
         undoable(
           c.created(nameOf(applied.result) || displayNameOf(complete)),
           applied.undo,
@@ -172,6 +227,61 @@ export function useContactActions(): ContactActions {
         } catch (error) {
           toast(c.couldntMerge(errorMessage(error, t)));
           return undefined;
+        }
+      },
+
+      addGroup: async (source, name, colorId) => {
+        const applied = await writes.addGroup(source, name, colorId);
+        undoable(c.groupCreated(applied.result.name), applied.undo);
+        return applied.result;
+      },
+
+      changeGroup: async (source, group, change, onProgress) => {
+        const undos: (() => Promise<void>)[] = [];
+        let result = group;
+        try {
+          if (change.name !== undefined && change.name !== group.name) {
+            const renamed = await writes.renameGroup(
+              source,
+              result,
+              change.name,
+              onProgress,
+            );
+            result = renamed.result;
+            undos.push(renamed.undo);
+          }
+          if (
+            change.colorId !== undefined &&
+            change.colorId !== group.colorId
+          ) {
+            const colored = await writes.setGroupColor(
+              source,
+              result,
+              change.colorId,
+            );
+            result = colored.result;
+            undos.push(colored.undo);
+          }
+        } catch (error) {
+          for (const undo of undos.reverse())
+            await undo().catch(() => undefined);
+          throw error;
+        }
+        if (undos.length > 0)
+          undoable(c.groupSaved(result.name), async () => {
+            for (const undo of [...undos].reverse()) await undo();
+          });
+        return result;
+      },
+
+      deleteGroup: async (source, group) => {
+        try {
+          const applied = await writes.deleteGroup(source, group);
+          undoable(c.groupDeleted(group.name), applied.undo);
+          return true;
+        } catch (error) {
+          toast(c.couldntDelete(errorMessage(error, t)));
+          return false;
         }
       },
 

@@ -226,6 +226,57 @@ describe("contacts on the calendar server", () => {
   });
 });
 
+describe("CardDAV contacts in the contacts", () => {
+  it("renames a category by rewriting the cards that have it", async () => {
+    const card = (name: string, address: string) =>
+      [
+        "BEGIN:VCARD",
+        "VERSION:3.0",
+        `FN:${name}`,
+        `EMAIL:${address}`,
+        "CATEGORIES:Climbing,Friends",
+        "X-CUSTOM:kept",
+        "END:VCARD",
+      ].join("\r\n");
+    const dav = fakeDavServer({
+      objects: { personal: { "lunch.ics": lunch } },
+      addressBooks: {
+        contacts: {
+          "annika.vcf": card("Annika Bauer", "annika@example.net"),
+          "bernd.vcf": card("Bernd Gruber", "bernd@example.net"),
+        },
+      },
+    });
+    const imap = fakeImapBridge({ discovery: GMX });
+    const { user } = renderApp({ imap: imap.bridge, caldav: dav.bridge });
+    await addAccount(user);
+    await user.click(await screen.findByRole("button", { name: "Show them" }));
+    await toastText("Connected me@gmx.at");
+    await user.keyboard("gp");
+    const section = await screen.findByRole("region", { name: "me@gmx.at" });
+    await user.click(
+      await within(section).findByRole("button", { name: /^Climbing2/ }),
+    );
+    await user.click(
+      within(section).getByRole("button", { name: "More for Climbing" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Rename…" }));
+    const edit = await dialog("Edit group");
+    const name = within(edit).getByLabelText("Name");
+    await user.clear(name);
+    await user.type(name, "Bouldering");
+    await user.click(within(edit).getByRole("button", { name: "Save" }));
+    await toastText("Saved the group Bouldering");
+    expect(dav.cardText("contacts", "annika.vcf")).toMatch(
+      /CATEGORIES:Bouldering,Friends/,
+    );
+    expect(dav.cardText("contacts", "bernd.vcf")).toMatch(/X-CUSTOM:kept/);
+    expect(
+      await within(section).findByRole("button", { name: /^Bouldering2/ }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("calendar-only servers", () => {
   it("are added with their own login, shown, and removed", async () => {
     const dav = fakeDavServer({

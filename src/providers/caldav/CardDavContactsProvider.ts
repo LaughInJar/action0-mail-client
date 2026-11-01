@@ -8,12 +8,16 @@ import {
   type ContactCapabilities,
   type ContactFields,
   type ContactGroup,
+  type ContactGroupId,
   type ContactRemoval,
   type ContactsAccess,
   type ContactSnapshot,
   type ContactsProvider,
   type ContactWrite,
+  type GroupRemoval,
+  type GroupWrite,
   type NewContact,
+  type ProgressOptions,
 } from "../../core/contacts";
 import { isMailError, MailError } from "../../core/errors";
 import { loadIcal, type Ical } from "../ical/icalendar";
@@ -40,10 +44,14 @@ const CAPABILITIES: ContactCapabilities = {
   websiteKinds: true,
   birthdayYear: false,
   groups: true,
+  renameGroups: true,
+  // A category exists only on the cards that have it.
+  emptyGroups: false,
+  photos: { change: true, remove: true },
   otherContacts: false,
 };
 
-/** Contacts created at the same time during an import. */
+/** Contacts created (or rewritten) at the same time. */
 const PARALLEL_CREATES = 4;
 
 export interface CardDavContactsOptions {
@@ -191,6 +199,84 @@ export class CardDavContactsProvider implements ContactsProvider {
     const object = await this.#current(entry, contact, signal);
     const ICAL = await loadIcal();
     const text = editCard(ICAL, object.text, fields, { now: this.#now() });
+    return this.#rewrite(ICAL, entry, object, text, signal);
+  }
+
+  async setPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal?: AbortSignal,
+  ): Promise<ContactWrite> {
+    const entry = await this.#writableBook(contact.addressBookId, signal);
+    const object = await this.#current(entry, contact, signal);
+    const ICAL = await loadIcal();
+    const card = readCard(ICAL, object.text);
+    if (!card) throw gone();
+    const text = editCard(ICAL, object.text, card.fields, {
+      now: this.#now(),
+      photo: photo ? await cardPhotoOf(photo) : null,
+    });
+    return this.#rewrite(ICAL, entry, object, text, signal);
+  }
+
+  /** A category is renamed on every card that has it. */
+  async renameGroup(
+    group: ContactGroup,
+    name: string,
+    options: ProgressOptions = {},
+  ): Promise<GroupWrite> {
+    const renamed = asContactGroupId(name.trim());
+    if (!renamed)
+      throw new MailError("provider", "A group needs a name.", {
+        reason: "labelNeedsName",
+      });
+    const undo = await this.#rewriteGroup(
+      group,
+      (ids) => [...new Set(ids.map((id) => (id === group.id ? renamed : id)))],
+      options,
+    );
+    return {
+      group: { id: renamed, name: renamed },
+      undo: async (signal) => {
+        await undo(signal);
+        return group;
+      },
+    };
+  }
+
+  /** A category is taken off every card that has it (the cards stay). */
+  async deleteGroup(
+    group: ContactGroup,
+    options: ProgressOptions = {},
+  ): Promise<GroupRemoval> {
+    const undo = await this.#rewriteGroup(
+      group,
+      (ids) => ids.filter((id) => id !== group.id),
+      options,
+    );
+    return {
+      undo: async (signal) => {
+        await undo(signal);
+        return group;
+      },
+    };
+  }
+
+  /**
+   * Writes a card's new text over its old one (`If-Match`); the undo puts
+   * the old text back exactly.
+   */
+  async #rewrite(
+    ICAL: Ical,
+    entry: AddressBookEntry,
+    object: {
+      readonly url: string;
+      readonly etag?: string;
+      readonly text: string;
+    },
+    text: string,
+    signal: AbortSignal | undefined,
+  ): Promise<ContactWrite> {
     if (text === object.text) {
       const same = this.#contact(ICAL, entry, object.url, object.etag, text);
       return { contact: same, undo: () => Promise.resolve(same) };
@@ -270,6 +356,66 @@ export class CardDavContactsProvider implements ContactsProvider {
         return back;
       },
     };
+  }
+
+  /**
+   * Changes the categories of every card (in the writable books) that has
+   * `group`, a few at a time. A failure puts back the ones already changed.
+   * Resolves to what undoes it all: every card's old text, put back exactly.
+   */
+  async #rewriteGroup(
+    group: ContactGroup,
+    change: (ids: readonly ContactGroupId[]) => ContactGroupId[],
+    options: ProgressOptions,
+  ): Promise<(signal?: AbortSignal) => Promise<void>> {
+    const { signal } = options;
+    const ICAL = await loadIcal();
+    const books = (await this.#books.books(signal, true)).filter(
+      (book) => !book.readOnly,
+    );
+    await Promise.all(books.map((book) => this.#sync(book, signal)));
+    const targets = books.flatMap((entry) =>
+      [...entry.store.objects()].flatMap((object) => {
+        const card = this.#cardOf(ICAL, object.url, object.etag, object.text);
+        return card && !card.isGroup && card.fields.groupIds.includes(group.id)
+          ? [
+              {
+                entry,
+                card,
+                url: object.url,
+                etag: object.etag,
+                text: crlf(object.text),
+              },
+            ]
+          : [];
+      }),
+    );
+    const done: { entry: AddressBookEntry; url: string; text: string }[] = [];
+    const putBack = async (undoSignal: AbortSignal | undefined) => {
+      await pool(done, async ({ entry, url, text }) => {
+        const latest = await this.#latestEtag(entry, url, undoSignal);
+        await this.#put(entry, url, text, latest, undoSignal);
+      });
+    };
+    options.onProgress?.(0, targets.length);
+    try {
+      await pool(targets, async ({ entry, card, url, etag, text }) => {
+        const next = editCard(
+          ICAL,
+          text,
+          { ...card.fields, groupIds: change(card.fields.groupIds) },
+          { now: this.#now() },
+        );
+        await this.#put(entry, url, next, etag, signal);
+        done.push({ entry, url, text });
+        options.onProgress?.(done.length, targets.length);
+      });
+    } catch (error) {
+      // Nothing half done: the cards already changed get their old text back.
+      await putBack(undefined).catch(() => undefined);
+      throw error;
+    }
+    return putBack;
   }
 
   /** A group is a category: it exists once a contact has it. */
@@ -487,6 +633,33 @@ export class CardDavContactsProvider implements ContactsProvider {
     if (!card) throw gone();
     return contactOf(entry, url, etag, card);
   }
+}
+
+/**
+ * Runs `work` on every item, a few at a time. After a failure no new item
+ * starts; once the ones under way have settled, it rejects with the first.
+ */
+async function pool<T>(
+  items: readonly T[],
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  let failure: { readonly error: unknown } | undefined;
+  const worker = async () => {
+    while (next < items.length && !failure) {
+      const item = items[next++];
+      if (item === undefined) continue;
+      try {
+        await work(item);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(PARALLEL_CREATES, items.length) }, worker),
+  );
+  if (failure) throw failure.error;
 }
 
 /**

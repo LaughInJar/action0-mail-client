@@ -201,6 +201,21 @@ describe("changing a card in place", () => {
     expect(fields && editCard(ICAL, apple, fields, { now: NOW })).toBe(apple);
   });
 
+  it("sets, replaces and removes the embedded photo, and leaves it when it's the same", async () => {
+    const ICAL = await loadIcal();
+    const fields = fieldsOfCard(ICAL, v4);
+    if (!fields) throw new Error("no fields");
+    const jpeg = { mediaType: "image/jpeg", base64: "QUJD" };
+    const replaced = editCard(ICAL, v4, fields, { now: NOW, photo: jpeg });
+    expect(replaced).toContain("PHOTO:data:image/jpeg;base64,QUJD\r\n");
+    expect(replaced).not.toContain("image/png");
+    expect(replaced).toContain("ANNIVERSARY:20100601\r\n");
+    const removed = editCard(ICAL, v4, fields, { now: NOW, photo: null });
+    expect(removed).not.toContain("PHOTO");
+    const same = { mediaType: "image/png", base64: "iVBORw0KGgo=" };
+    expect(editCard(ICAL, v4, fields, { now: NOW, photo: same })).toBe(v4);
+  });
+
   it("rewrites only what changed and keeps everything else byte for byte", async () => {
     const ICAL = await loadIcal();
     const fields = fieldsOfCard(ICAL, apple);

@@ -8,7 +8,12 @@ import {
   type ContactCapabilities,
   type ContactFields,
   type ContactGroup,
+  type ContactGroupId,
+  type ContactPhoto,
   type ContactRemoval,
+  type GroupColor,
+  type GroupRemoval,
+  type GroupWrite,
   type ContactsAccess,
   type ContactSnapshot,
   type ContactsProvider,
@@ -17,6 +22,7 @@ import {
 } from "../../core/contacts";
 import { MailError } from "../../core/errors";
 import { Emitter } from "../../lib/emitter";
+import { OUTLOOK_CATEGORY_COLORS } from "../microsoft/folders";
 import { sleep } from "../../lib/sleep";
 
 /** In-memory contacts of a demo account. */
@@ -46,8 +52,16 @@ const GOOGLE: ContactCapabilities = {
   websiteKinds: true,
   birthdayYear: false,
   groups: true,
+  renameGroups: true,
+  emptyGroups: true,
+  photos: { change: true, remove: true },
   otherContacts: true,
 };
+
+/** Outlook's category colours, as group colours. */
+const OUTLOOK_COLORS: readonly GroupColor[] = OUTLOOK_CATEGORY_COLORS.map(
+  (color, index) => ({ id: `preset${String(index)}`, color: color.background }),
+);
 
 const OUTLOOK: ContactCapabilities = {
   emailKinds: false,
@@ -60,6 +74,11 @@ const OUTLOOK: ContactCapabilities = {
   maxWebsites: 1,
   birthdayYear: true,
   groups: true,
+  renameGroups: false,
+  emptyGroups: true,
+  groupColors: OUTLOOK_COLORS,
+  // Like a work account: photos can be set, never removed.
+  photos: { change: true, remove: false },
   otherContacts: false,
 };
 
@@ -199,13 +218,128 @@ export class FakeContactsProvider implements ContactsProvider {
 
   async createGroup(name: string, signal?: AbortSignal): Promise<ContactGroup> {
     await this.#refuseIfFailing(signal);
-    const group = {
-      id: asContactGroupId(`g${String(this.#nextId++)}`),
+    const outlook = this.capabilities.groupColors !== undefined;
+    const color = this.capabilities.groupColors?.[0];
+    const group: ContactGroup = {
+      // Outlook's categories are known by their names.
+      id: asContactGroupId(
+        outlook ? name.trim() : `g${String(this.#nextId++)}`,
+      ),
       name: name.trim(),
+      ...(color ? { color: color.color, colorId: color.id } : {}),
     };
     this.#groups = [...this.#groups, group];
     this.#revision++;
     return group;
+  }
+
+  async renameGroup(
+    group: ContactGroup,
+    name: string,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<GroupWrite> {
+    await this.#refuseIfFailing(options.signal);
+    if (!this.capabilities.renameGroups)
+      throw new MailError("unavailable", "Categories can't be renamed.", {
+        reason: "categoryRename",
+      });
+    const before = this.#group(group.id);
+    const after = this.#putGroup({ ...before, name: name.trim() });
+    return {
+      group: after,
+      undo: async (signal) => {
+        await this.#refuseIfFailing(signal);
+        return this.#putGroup(before);
+      },
+    };
+  }
+
+  async setGroupColor(
+    group: ContactGroup,
+    colorId: string,
+    signal?: AbortSignal,
+  ): Promise<GroupWrite> {
+    await this.#refuseIfFailing(signal);
+    const before = this.#group(group.id);
+    const color = this.capabilities.groupColors?.find(
+      (candidate) => candidate.id === colorId,
+    );
+    const after = this.#putGroup({
+      ...before,
+      ...(color ? { color: color.color, colorId: color.id } : {}),
+    });
+    return {
+      group: after,
+      undo: async (undoSignal) => {
+        await this.#refuseIfFailing(undoSignal);
+        return this.#putGroup(before);
+      },
+    };
+  }
+
+  async deleteGroup(
+    group: ContactGroup,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<GroupRemoval> {
+    await this.#refuseIfFailing(options.signal);
+    const before = this.#group(group.id);
+    const outlook = this.capabilities.groupColors !== undefined;
+    const members = this.#contacts
+      .filter((contact) => contact.groupIds.includes(before.id))
+      .map((contact) => contact.id);
+    this.#groups = this.#groups.filter(
+      (candidate) => candidate.id !== before.id,
+    );
+    // Outlook's contacts keep the category's name; Google's lose the label.
+    if (!outlook) this.#setMembers(before.id, members, false);
+    this.#revision++;
+    return {
+      undo: async (signal) => {
+        await this.#refuseIfFailing(signal);
+        if (outlook) {
+          this.#groups = [...this.#groups, before];
+          this.#revision++;
+          return before;
+        }
+        // Like Google: a new label with the same members.
+        const again: ContactGroup = {
+          ...before,
+          id: asContactGroupId(`g${String(this.#nextId++)}`),
+        };
+        this.#groups = [...this.#groups, again];
+        this.#setMembers(again.id, members, true);
+        this.#revision++;
+        return again;
+      },
+    };
+  }
+
+  async setPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal?: AbortSignal,
+  ): Promise<ContactWrite> {
+    await this.#refuseIfFailing(signal);
+    if (photo === null && !this.capabilities.photos.remove)
+      throw new MailError("unavailable", "Photos can't be removed here.");
+    const before = this.#find(contact);
+    const previous = this.#photos.get(before.id);
+    const after = this.#withPhoto(before, photo);
+    return {
+      contact: after,
+      undo: async (undoSignal) => {
+        await this.#refuseIfFailing(undoSignal);
+        const current = this.#find(after);
+        if (previous) return this.#withPhoto(current, previous);
+        const { photo: _photo, ...rest } = current;
+        this.#photos.delete(current.id);
+        return this.#replace({
+          ...rest,
+          ...(before.photo ? { photo: before.photo } : {}),
+          version: String(Number(current.version ?? "0") + 1),
+        });
+      },
+    };
   }
 
   async addOther(
@@ -253,6 +387,53 @@ export class FakeContactsProvider implements ContactsProvider {
     return this.#photos.get(contact.id);
   }
 
+  /** The contact with this picture (`null`: none), with a new version. */
+  #withPhoto(contact: Contact, photo: Blob | null): Contact {
+    const { photo: _photo, ...rest } = contact;
+    if (photo) this.#photos.set(contact.id, photo);
+    else this.#photos.delete(contact.id);
+    return this.#replace({
+      ...rest,
+      ...(photo ? { photo: photoOf(photo) } : {}),
+      version: String(Number(contact.version ?? "0") + 1),
+    });
+  }
+
+  #group(id: ContactGroupId): ContactGroup {
+    const group = this.#groups.find((candidate) => candidate.id === id);
+    if (!group)
+      throw new MailError("not-found", "No such group.", { status: 404 });
+    return group;
+  }
+
+  #putGroup(group: ContactGroup): ContactGroup {
+    this.#groups = this.#groups.map((candidate) =>
+      candidate.id === group.id ? group : candidate,
+    );
+    this.#revision++;
+    return group;
+  }
+
+  /** Adds `group` to these contacts, or takes it away. */
+  #setMembers(
+    group: ContactGroupId,
+    ids: readonly string[],
+    member: boolean,
+  ): void {
+    const chosen = new Set(ids);
+    this.#contacts = this.#contacts.map((contact) =>
+      chosen.has(contact.id)
+        ? {
+            ...contact,
+            groupIds: member
+              ? [...contact.groupIds.filter((id) => id !== group), group]
+              : contact.groupIds.filter((id) => id !== group),
+            version: String(Number(contact.version ?? "0") + 1),
+          }
+        : contact,
+    );
+  }
+
   #create(book: AddressBookId, contact: NewContact): ContactWrite {
     const id = asContactId(`c${String(this.#nextId++)}`);
     const created: Contact = {
@@ -261,7 +442,7 @@ export class FakeContactsProvider implements ContactsProvider {
       addressBookId: book,
       displayName: displayNameOf(contact.fields),
       version: "1",
-      ...(contact.photo ? { photo: { kind: "fetch" as const } } : {}),
+      ...(contact.photo ? { photo: photoOf(contact.photo) } : {}),
     };
     if (contact.photo) this.#photos.set(id, contact.photo);
     this.#contacts = [...this.#contacts, created];
@@ -350,4 +531,11 @@ function normalizeFor(
         ...fields,
         emails: fields.emails.map(({ value }) => ({ value, kind: "other" })),
       };
+}
+
+/** How a picture the demo keeps is shown: as an object URL where there are any. */
+function photoOf(photo: Blob): ContactPhoto {
+  return typeof URL.createObjectURL === "function"
+    ? { kind: "url", url: URL.createObjectURL(photo) }
+    : { kind: "fetch" };
 }

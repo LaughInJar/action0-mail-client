@@ -279,6 +279,101 @@ describe("CardDavContactsProvider", () => {
     expect(dav.requests.length).toBe(before);
   });
 
+  it("renames a category on every card that has it, with progress, and undo puts them back", async () => {
+    const { provider, dav } = setup();
+    await loaded(provider);
+    const progress: [number, number][] = [];
+    const write = await provider.renameGroup(
+      { id: asContactGroupId("Work"), name: "Work" },
+      " Job ",
+      {
+        onProgress: (done, total) => {
+          progress.push([done, total]);
+        },
+      },
+    );
+    expect(write.group).toEqual({ id: "Job", name: "Job" });
+    const a = dav.cardText("contacts", "anna.vcf") ?? "";
+    expect(a).toContain("\r\nCATEGORIES:Job\r\n");
+    expect(a).not.toContain("CATEGORIES:Work");
+    // Everything else stays as it was.
+    expect(a).toContain("PHOTO;ENCODING=b;TYPE=JPEG:QUJD\r\n");
+    expect(a).toContain("item1.X-ABLabel:_$!<Other>!$_\r\n");
+    expect(dav.cardText("contacts", "max.vcf")).toContain(
+      "CATEGORIES:Family,Job\r\n",
+    );
+    expect(progress).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+    const { snapshot } = await loaded(provider);
+    expect(snapshot.groups.map((group) => group.name)).toEqual([
+      "Family",
+      "Job",
+    ]);
+
+    await write.undo();
+    expect(dav.cardText("contacts", "anna.vcf")).toBe(anna);
+    expect(dav.cardText("contacts", "max.vcf")).toBe(max);
+  });
+
+  it("deletes a category but keeps the cards, and undo puts it back", async () => {
+    const { provider, dav } = setup();
+    await loaded(provider);
+    const removal = await provider.deleteGroup({
+      id: asContactGroupId("Work"),
+      name: "Work",
+    });
+    expect(dav.cardText("contacts", "anna.vcf")).not.toContain("CATEGORIES");
+    expect(dav.cardText("contacts", "max.vcf")).toContain(
+      "CATEGORIES:Family\r\n",
+    );
+    expect(await removal.undo()).toEqual({ id: "Work", name: "Work" });
+    expect(dav.cardText("contacts", "anna.vcf")).toBe(anna);
+    expect(dav.cardText("contacts", "max.vcf")).toBe(max);
+  });
+
+  it("puts the changed cards back when another changed meanwhile", async () => {
+    const { provider, dav } = setup();
+    await loaded(provider);
+    dav.editCard("contacts", "max.vcf", max.replace("Max Huber", "Max H."));
+    await expect(
+      provider.deleteGroup({ id: asContactGroupId("Work"), name: "Work" }),
+    ).rejects.toMatchObject({ reason: "contactChanged" });
+    expect(dav.cardText("contacts", "anna.vcf")).toBe(anna);
+  });
+
+  it("sets and removes the photo in the card, and undo puts the card back", async () => {
+    const { provider, dav } = setup();
+    const { byName } = await loaded(provider);
+    const jpeg = new Blob([new Uint8Array([65, 66, 67, 68])], {
+      type: "image/jpeg",
+    });
+    const set = await provider.setPhoto(byName("Max Huber"), jpeg);
+    expect(dav.cardText("contacts", "max.vcf")).toContain(
+      "PHOTO:data:image/jpeg;base64,QUJDRA==\r\n",
+    );
+    expect(set.contact.photo).toEqual({
+      kind: "url",
+      url: "data:image/jpeg;base64,QUJDRA==",
+    });
+    await set.undo();
+    expect(dav.cardText("contacts", "max.vcf")).toBe(max);
+
+    const replaced = await provider.setPhoto(byName("Anna Berger"), jpeg);
+    expect(dav.cardText("contacts", "anna.vcf")).toContain(
+      "PHOTO;ENCODING=b;TYPE=JPEG:QUJDRA==\r\n",
+    );
+    await replaced.undo();
+    const { byName: again } = await loaded(provider);
+    const removed = await provider.setPhoto(again("Anna Berger"), null);
+    expect(dav.cardText("contacts", "anna.vcf")).not.toContain("PHOTO");
+    expect(removed.contact.photo).toBeUndefined();
+    await removed.undo();
+    expect(dav.cardText("contacts", "anna.vcf")).toBe(anna);
+  });
+
   it("imports cards as they are, with a UID, a few at a time", async () => {
     const { provider, dav } = setup();
     await provider.load(undefined);

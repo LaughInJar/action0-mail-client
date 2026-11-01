@@ -28,7 +28,7 @@ afterAll(() => {
   server.close();
 });
 
-function setup(options: { granted?: boolean } = {}) {
+function setup(options: { granted?: boolean; personal?: boolean } = {}) {
   const graph = new FakeGraph();
   server.use(...graph.handlers());
   let granted = options.granted ?? true;
@@ -51,6 +51,7 @@ function setup(options: { granted?: boolean } = {}) {
       sleep: () => Promise.resolve(),
     }),
     session,
+    { personal: options.personal ?? false },
   );
   return { graph, provider };
 }
@@ -140,7 +141,7 @@ describe("GraphContactsProvider", () => {
     expect(byName(snapshot, "Kaiser").addressBookId).toBe("print-id");
     // The category without a master entry shows too, without colour.
     expect(snapshot.groups).toEqual([
-      { id: "Team", name: "Team", color: "#4cb4e7" },
+      { id: "Team", name: "Team", color: "#4cb4e7", colorId: "preset7" },
       { id: "Old", name: "Old" },
     ]);
   });
@@ -401,6 +402,91 @@ describe("GraphContactsProvider", () => {
     await provider.requestAccess();
     expect(provider.access()).toBe("granted");
     expect(told).toBe(1);
+  });
+});
+
+describe("GraphContactsProvider categories and photos", () => {
+  it("offers Outlook's 25 colours, no renaming, and photos only on work accounts", () => {
+    const work = setup().provider.capabilities;
+    expect(work.renameGroups).toBe(false);
+    expect(work.emptyGroups).toBe(true);
+    expect(work.groupColors).toHaveLength(25);
+    expect(work.groupColors?.[7]).toEqual({
+      id: "preset7",
+      color: expect.stringMatching(/^#/) as unknown,
+    });
+    expect(work.photos).toEqual({ change: true, remove: false });
+    expect(setup({ personal: true }).provider.capabilities.photos).toEqual({
+      change: false,
+      remove: false,
+    });
+  });
+
+  it("changes a category's colour, and undo puts the old one back", async () => {
+    const { graph, provider } = setup();
+    graph.categories.push({ id: "c1", displayName: "Team", color: "preset7" });
+    const { groups } = await provider.load(undefined);
+    const team = groups.find((group) => group.id === "Team");
+    if (!team) throw new Error("no Team");
+    expect(team.colorId).toBe("preset7");
+    const write = await provider.setGroupColor(team, "preset2");
+    expect(write.group).toMatchObject({ id: "Team", colorId: "preset2" });
+    expect(graph.categories[0]?.color).toBe("preset2");
+    await write.undo();
+    expect(graph.categories[0]?.color).toBe("preset7");
+  });
+
+  it("deletes a category, keeping it on contacts, and undo makes it again", async () => {
+    const { graph, provider } = setup();
+    graph.categories.push({ id: "c1", displayName: "Team", color: "preset7" });
+    graph.addContact({ displayName: "Anna", categories: ["Team"] });
+    const removal = await provider.deleteGroup({
+      id: asContactGroupId("Team"),
+      name: "Team",
+    });
+    expect(graph.categories).toEqual([]);
+    expect(graph.contacts[0]?.categories).toEqual(["Team"]);
+    const back = await removal.undo();
+    expect(back).toMatchObject({ id: "Team", colorId: "preset7" });
+    expect(graph.categories.map((c) => [c.displayName, c.color])).toEqual([
+      ["Team", "preset7"],
+    ]);
+  });
+
+  it("sets a photo with undo to the old one, and refuses what Graph can't do", async () => {
+    const { graph, provider } = setup();
+    graph.addContact({
+      displayName: "Anna",
+      photo: new Blob(["old"], { type: "image/jpeg" }),
+    });
+    graph.addContact({ displayName: "Max" });
+    const loaded = await provider.load(undefined);
+    const anna = byName(loaded, "Anna");
+    const write = await provider.setPhoto(
+      anna,
+      new Blob(["new"], { type: "image/jpeg" }),
+    );
+    expect(write.contact.id).toBe(anna.id);
+    expect(await graph.contacts[0]?.photo?.text()).toBe("new");
+    await write.undo();
+    expect(await graph.contacts[0]?.photo?.text()).toBe("old");
+
+    // No photo before: Graph can't remove the new one again.
+    const max = byName(loaded, "Max");
+    const first = await provider.setPhoto(
+      max,
+      new Blob(["max"], { type: "image/jpeg" }),
+    );
+    await expect(first.undo()).rejects.toBeInstanceOf(MailError);
+    await expect(provider.setPhoto(anna, null)).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    await expect(
+      setup({ personal: true }).provider.setPhoto(
+        anna,
+        new Blob(["x"], { type: "image/jpeg" }),
+      ),
+    ).rejects.toMatchObject({ code: "unavailable" });
   });
 });
 

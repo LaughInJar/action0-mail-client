@@ -20,12 +20,14 @@ import {
   type ContactSnapshot,
   type ContactsProvider,
   type ContactWrite,
+  type GroupRemoval,
+  type GroupWrite,
   type NewContact,
   type PostalAddress,
   type ValueKind,
 } from "../../core/contacts";
 import { MailError } from "../../core/errors";
-import { colorOfPreset } from "./folders";
+import { colorOfPreset, OUTLOOK_CATEGORY_COLORS } from "./folders";
 import {
   BATCH_LIMIT,
   graphErrorCode,
@@ -52,6 +54,15 @@ export const GRAPH_CONTACT_CAPABILITIES: ContactCapabilities = {
   maxWebsites: 1,
   birthdayYear: true,
   groups: true,
+  // Graph can't rename categories.
+  renameGroups: false,
+  emptyGroups: true,
+  groupColors: OUTLOOK_CATEGORY_COLORS.map((color, index) => ({
+    id: `preset${String(index)}`,
+    color: color.background,
+  })),
+  // Graph can't delete contact photos (nor change them on personal accounts).
+  photos: { change: true, remove: false },
   otherContacts: false,
 };
 
@@ -148,7 +159,7 @@ const enc = encodeURIComponent;
  * queries per folder. Needs `Contacts.ReadWrite`, asked for on demand.
  */
 export class GraphContactsProvider implements ContactsProvider {
-  readonly capabilities = GRAPH_CONTACT_CAPABILITIES;
+  readonly capabilities: ContactCapabilities;
   readonly setup = "consent" as const;
   readonly #http: GraphHttp;
   readonly #session: ScopedSession;
@@ -156,10 +167,20 @@ export class GraphContactsProvider implements ContactsProvider {
   /**
    * @param http Client whose token carries {@link CONTACTS_SCOPES}.
    * @param session Tells whether the account consented to them.
+   * @param options.personal An Outlook.com account: Graph can't change its
+   *   contacts' photos.
    */
-  constructor(http: GraphHttp, session: ScopedSession) {
+  constructor(
+    http: GraphHttp,
+    session: ScopedSession,
+    options: { readonly personal?: boolean } = {},
+  ) {
     this.#http = http;
     this.#session = session;
+    this.capabilities = {
+      ...GRAPH_CONTACT_CAPABILITIES,
+      photos: { change: options.personal !== true, remove: false },
+    };
   }
 
   readonly access = (): ContactsAccess =>
@@ -423,6 +444,93 @@ export class GraphContactsProvider implements ContactsProvider {
     }
   }
 
+  async setGroupColor(
+    group: ContactGroup,
+    colorId: string,
+    signal?: AbortSignal,
+  ): Promise<GroupWrite> {
+    const category = await this.#masterCategory(group, signal);
+    const before = category.color ?? "none";
+    const recolour = async (color: string, undoSignal?: AbortSignal) => {
+      try {
+        return groupOf(
+          await this.#http.patch<GraphCategory>(
+            `me/outlook/masterCategories/${enc(category.id)}`,
+            { color },
+            undoSignal,
+          ),
+        );
+      } catch (error) {
+        throw writeError(error);
+      }
+    };
+    return {
+      group: await recolour(colorId, signal),
+      undo: (undoSignal) => recolour(before, undoSignal),
+    };
+  }
+
+  async deleteGroup(
+    group: ContactGroup,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<GroupRemoval> {
+    const category = await this.#masterCategory(group, options.signal);
+    try {
+      await this.#http.delete(
+        `me/outlook/masterCategories/${enc(category.id)}`,
+        options.signal,
+      );
+    } catch (error) {
+      throw writeError(error);
+    }
+    return {
+      // Contacts kept the name, so they're in it again.
+      undo: async (signal) => {
+        try {
+          return groupOf(
+            await this.#http.post<GraphCategory>(
+              "me/outlook/masterCategories",
+              {
+                displayName: category.displayName,
+                color: category.color ?? "none",
+              },
+              { retry: false, ...(signal ? { signal } : {}) },
+            ),
+          );
+        } catch (error) {
+          throw writeError(error);
+        }
+      },
+    };
+  }
+
+  async setPhoto(
+    contact: Contact,
+    photo: Blob | null,
+    signal?: AbortSignal,
+  ): Promise<ContactWrite> {
+    if (!photo || !this.capabilities.photos.change)
+      throw new MailError(
+        "unavailable",
+        photo
+          ? "Outlook.com accounts can't change their contacts' photos."
+          : "Outlook can't remove a contact's photo.",
+      );
+    const previous = await this.photo(contact, signal).catch(() => undefined);
+    const after = await this.#replacePhoto(contact, photo, signal);
+    return {
+      contact: after,
+      undo: async (undoSignal) => {
+        if (!previous)
+          throw new MailError(
+            "unavailable",
+            "Outlook can't remove a contact's photo again.",
+          );
+        return this.#replacePhoto(after, previous, undoSignal);
+      },
+    };
+  }
+
   async photo(
     contact: Contact,
     signal?: AbortSignal,
@@ -646,6 +754,50 @@ export class GraphContactsProvider implements ContactsProvider {
     }
   }
 
+  /** The master category behind a group (its id is the category's name). */
+  async #masterCategory(
+    group: ContactGroup,
+    signal: AbortSignal | undefined,
+  ): Promise<GraphCategory> {
+    const { value = [] } = await this.#http.get<GraphPage<GraphCategory>>(
+      "me/outlook/masterCategories",
+      undefined,
+      signal,
+    );
+    const found = value.find((category) => category.displayName === group.id);
+    if (!found)
+      throw new MailError("not-found", "This category no longer exists.", {
+        status: 404,
+        reason: "notACategory",
+      });
+    return found;
+  }
+
+  /** Puts a photo on a contact; the contact as it is afterwards. */
+  async #replacePhoto(
+    contact: Contact,
+    photo: Blob,
+    signal: AbortSignal | undefined,
+  ): Promise<Contact> {
+    try {
+      await this.#http.putBlob(
+        `me/contacts/${enc(contact.id)}/photo/$value`,
+        photo.type === "image/jpeg"
+          ? photo
+          : new Blob([photo], { type: "image/jpeg" }),
+        signal,
+      );
+      const graph = await this.#http.get<GraphContact>(
+        `me/contacts/${enc(contact.id)}`,
+        { $select: SELECT },
+        signal,
+      );
+      return toContact(graph, contact.addressBookId);
+    } catch (error) {
+      throw writeError(error);
+    }
+  }
+
   /** Sets a contact's photo; a failure leaves the contact without one. */
   async #putPhoto(id: string, photo: Blob, signal: AbortSignal | undefined) {
     try {
@@ -737,7 +889,7 @@ function groupOf(category: GraphCategory): ContactGroup {
   return {
     id: asContactGroupId(category.displayName),
     name: category.displayName,
-    ...(color ? { color } : {}),
+    ...(color && category.color ? { color, colorId: category.color } : {}),
   };
 }
 

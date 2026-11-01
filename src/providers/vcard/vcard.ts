@@ -909,13 +909,18 @@ const sameJson = (a: unknown, b: unknown) => canonical(a) === canonical(b);
  * The card with `after` written into it. Only the properties whose values
  * changed are rewritten; values that stayed keep their lines (labels,
  * parameters, groups), and everything action0 doesn't read stays as it is.
- * VERSION stays first. Returns the text unchanged when nothing changed.
+ * VERSION stays first. With `photo`, the embedded photo is set (or removed:
+ * `null`). Returns the text unchanged when nothing changed.
  */
 export function editCard(
   ICAL: Ical,
   card: string,
   after: ContactFields,
-  options: { readonly now?: number; readonly uid?: string } = {},
+  options: {
+    readonly now?: number;
+    readonly uid?: string;
+    readonly photo?: CardPhoto | null;
+  } = {},
 ): string {
   const parsed = parse(ICAL, card);
   const before = parsed.read.fields;
@@ -1029,6 +1034,19 @@ export function editCard(
       indexesOf("CATEGORIES"),
       after.groupIds.length > 0 ? LIST("CATEGORIES", after.groupIds) : "",
     );
+  if (options.photo !== undefined) {
+    const current = parsed.read.photo;
+    const same =
+      options.photo === null
+        ? current === undefined
+        : current?.base64 === options.photo.base64 &&
+          current.mediaType === options.photo.mediaType;
+    if (!same)
+      rewrite(
+        indexesOf("PHOTO"),
+        options.photo ? writer.photo(options.photo) : "",
+      );
+  }
   if (options.uid && !parsed.read.uid) {
     changed = true;
     added.push(lineOf({ name: "UID", value: escape(options.uid) }));
