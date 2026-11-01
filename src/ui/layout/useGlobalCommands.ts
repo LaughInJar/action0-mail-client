@@ -11,7 +11,11 @@ import { SEARCH_FIELD_ID } from "../messages/ListToolbar";
 import type { Breakpoint } from "./useBreakpoint";
 import { useT } from "../../i18n/context";
 import { useMailboxList } from "../common/mailboxNames";
-import { ALL_INBOXES_FROM, useOpenAllInboxes } from "../mailboxes/allInboxes";
+import {
+  ALL_INBOXES_FROM,
+  useOpenAllInboxes,
+  useOpenCombined,
+} from "../mailboxes/allInboxes";
 import { dayKey } from "../calendar/dates";
 
 /** Id of the scroll container of the reader, for the scroll shortcuts. */
@@ -38,6 +42,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
   const { data: mailboxes } = useMailboxList(accountId);
   const t = useT();
   const openAllInboxes = useOpenAllInboxes();
+  const openCombined = useOpenCombined();
   const severalAccounts = accounts.length >= ALL_INBOXES_FROM;
 
   const commands = useMemo((): Command[] => {
@@ -60,6 +65,11 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
           description: t.shortcuts[text],
           keys: [keys],
           run: () => {
+            // In a combined view, its counterpart of every account.
+            const combinable =
+              role === "inbox" || role === "sent" || role === "drafts";
+            if (router.getRoute()?.unified && combinable && openCombined(role))
+              return;
             router.navigate({ accountId, mailboxId: mailbox.id });
           },
         },
@@ -171,6 +181,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
     breakpoint,
     mailboxes,
     openAllInboxes,
+    openCombined,
     router,
     severalAccounts,
     store,

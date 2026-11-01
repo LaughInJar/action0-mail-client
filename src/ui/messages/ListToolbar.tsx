@@ -6,6 +6,7 @@ import { focusWhenReady } from "../common/focusWhenReady";
 import { Icon } from "../common/Icon";
 import { MESSAGE_LIST_ID } from "./MessageList";
 import { listKeyOf } from "./useCurrentList";
+import { unifiedRoleOf } from "../../data/unified";
 import { useT } from "../../i18n/context";
 
 /** DOM id of the mail search field (focused by `/`). */
@@ -20,7 +21,7 @@ export interface ListToolbarProps {
   readonly mailbox: Mailbox | undefined;
   /** The mailbox that "Everywhere" searches; undefined if the account has none. */
   readonly everywhere: Mailbox | undefined;
-  /** All inboxes: searches every account's Inbox, or every whole account. */
+  /** A combined view: searches each account's mailbox of its kind, or every whole account. */
   readonly unified: boolean;
 }
 
@@ -45,7 +46,7 @@ export function ListToolbar({
       (everywhere !== undefined &&
         mailbox !== undefined &&
         mailbox.id !== everywhere.id));
-  const here = unified ? t.list.allInboxes : mailbox?.name;
+  const here = unified ? t.list.combined[unifiedRoleOf(route)] : mailbox?.name;
 
   const searchIn = (all: boolean) => {
     const current = router.getRoute();
@@ -54,6 +55,7 @@ export function ListToolbar({
       accountId: current.accountId,
       mailboxId: current.mailboxId,
       ...(current.unified ? { unified: true } : {}),
+      ...(current.combined ? { combined: current.combined } : {}),
       search: { text: current.search.text, everywhere: all },
     });
   };
@@ -151,10 +153,10 @@ function SearchField({ placeholder }: { placeholder: string }) {
   const router = useRouter();
   const store = useUiStore();
   const routeText = route?.search?.text.trim() ?? "";
-  // All inboxes stays one list while the account in context changes.
+  // A combined view stays one list while the account in context changes.
   const listId = JSON.stringify(
     route?.unified
-      ? ["all"]
+      ? ["all", unifiedRoleOf(route)]
       : [route?.accountId ?? null, route?.mailboxId ?? null],
   );
   const [text, setText] = useState(routeText);
@@ -183,6 +185,7 @@ function SearchField({ placeholder }: { placeholder: string }) {
         accountId: current.accountId,
         mailboxId: current.mailboxId,
         ...(current.unified ? { unified: true as const } : {}),
+        ...(current.combined ? { combined: current.combined } : {}),
       };
       const searched = next
         ? {

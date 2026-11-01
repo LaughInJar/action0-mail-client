@@ -170,6 +170,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
                     accountId: route.accountId,
                     mailboxId: route.mailboxId,
                     unified: true as const,
+                    ...(route.combined ? { combined: route.combined } : {}),
                   }
                 : { accountId: single.accountId, mailboxId: route.mailboxId }),
               search: { text: `from:${from.address}`, everywhere: true },

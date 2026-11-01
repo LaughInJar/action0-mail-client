@@ -99,18 +99,19 @@ The rules, enforced by `eslint.config.js` where it can:
 
 All navigation lives in the URL hash (`src/state/router.ts`), so Back works everywhere, also between the panes on phones:
 
-| Hash                                                            | Meaning                                                                                  |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `#/`                                                            | Nothing chosen (on phones: the folder tree)                                              |
-| `#/<account>/<mailbox>[/<message>]`                             | A mailbox of an account, optionally with a message open                                  |
-| `#/all/<account>/<inbox>[/<message>]`                           | All inboxes; `<account>`/`<inbox>` name the context account (the open message's)         |
-| `…?q=<text>[&in=all]`                                           | A search in that mailbox, or everywhere                                                  |
-| `…&compose=new\|<draft>[&ca=<account>]`                         | A full-screen composer (tablets, phones), so Back closes it; `ca` is the draft's account |
-| `#/calendar/<view>/<date>[/<event>[/edit]\|/new[/<from>/<to>]]` | The calendar                                                                             |
-| `#/contacts/<list>[/<contact>[/edit]\|/new\|/duplicates]`       | The contacts: a list (`all`, or a source's address book or group), a contact, the editor |
-| `…?q=<text>`, `…&import`, `…/new?name=…&address=…`              | A contact search; the vCard import preview; a new contact started from mail              |
-| `…&settings` / `…?settings`                                     | Settings open over the current place                                                     |
-| `…&original=<message>&oa=<account>`                             | A message's original (headers and source) open over the current place                    |
+| Hash                                                            | Meaning                                                                                   |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `#/`                                                            | Nothing chosen (on phones: the folder tree)                                               |
+| `#/<account>/<mailbox>[/<message>]`                             | A mailbox of an account, optionally with a message open                                   |
+| `#/all/<account>/<inbox>[/<message>]`                           | All inboxes; `<account>`/`<inbox>` name the context account (the open message's)          |
+| `#/all/<view>/<account>/<mailbox>[/<message>]`                  | A combined view (`flagged`, `sent`, `drafts`): the context account's mailbox of that kind |
+| `…?q=<text>[&in=all]`                                           | A search in that mailbox, or everywhere                                                   |
+| `…&compose=new\|<draft>[&ca=<account>]`                         | A full-screen composer (tablets, phones), so Back closes it; `ca` is the draft's account  |
+| `#/calendar/<view>/<date>[/<event>[/edit]\|/new[/<from>/<to>]]` | The calendar                                                                              |
+| `#/contacts/<list>[/<contact>[/edit]\|/new\|/duplicates]`       | The contacts: a list (`all`, or a source's address book or group), a contact, the editor  |
+| `…?q=<text>`, `…&import`, `…/new?name=…&address=…`              | A contact search; the vCard import preview; a new contact started from mail               |
+| `…&settings` / `…?settings`                                     | Settings open over the current place                                                      |
+| `…&original=<message>&oa=<account>`                             | A message's original (headers and source) open over the current place                     |
 
 `Route` is `null` for `#/`, and while the calendar or the contacts are open; `router.part()` says which of the three parts (`mail`, `calendar`, `contacts`) the URL names, and `getCalendarRoute()` / `getContactsRoute()` give their routes. The contacts' list and contact tokens are JSON made by the data layer (`listToken`, `contactKeyOf` in `src/data/contacts.ts`); the router treats them as opaque, like IDs. IDs are URI-encoded but never parsed. The router keeps a history depth counter in `history.state`, so the app knows whether Back stays inside the app.
 
@@ -151,7 +152,7 @@ Only settings-like state is persisted to localStorage (`partialize`): column wid
 1. A click in the tree (or a shortcut) navigates; the router emits the new `Route`.
 2. `useCurrentList()` (`src/ui/messages/useCurrentList.ts`) turns the route into what's listed:
    - a single mailbox: `listSpecOf()` gives the `ListSpec` (mailbox, search, order), and `useMessageList` or `useThreadList` (conversation view) load it;
-   - All inboxes: `useUnifiedList()` (`src/data/unified.ts`) builds one source per account (its Inbox, or everything when searching everywhere) and observes their lists with `useInfiniteLists()` (one `InfiniteQueryObserver` per account, since TanStack has no `useQueries` for infinite queries). `mergeByDate()` merges them, showing rows only down to the date every account with more pages has reached.
+   - All inboxes and the other combined views (`Route.combined`: Starred, Sent, Drafts): `useUnifiedList()` (`src/data/unified.ts`) builds one source per account (its mailbox of that role, or everything when searching everywhere; accounts without one are left out) and observes their lists with `useInfiniteLists()` (one `InfiniteQueryObserver` per account, since TanStack has no `useQueries` for infinite queries). `mergeByDate()` merges them, showing rows only down to the date every account with more pages has reached.
 3. The rows (`ListRow`: `key`, `accountId`, `id`, summary, optional thread) go to `MessageList`, which draws them as a multi-select listbox; `useListController` keeps focus, selection and the URL in sync and loads the next page before the cursor reaches the end.
 4. The reader (`ReaderPane`) shows the focused row (on phones: the message in the URL) with `useMessage` or `useThread`, and marks it read after the configured delay.
 

@@ -165,6 +165,8 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 
 **Trade-offs.** Actions have to group their targets by account (one undo step per account under one toast), and moving and labels only work within one account.
 
+**Later: more combined views.** Starred, Sent and Drafts use the same machinery with another mailbox role. Their kind is in the URL (`#/all/sent/…`) rather than taken from the context account's mailbox, because list keys, the search field and the folder filter tell lists apart from the route alone, without the mailboxes. All inboxes keeps its URL. In a combined view `g i`/`g s`/`g d` stay combined, so moving between them doesn't drop you into one account.
+
 ## What can be edited is described per mailbox kind
 
 **Context.** Gmail labels can be renamed, coloured, nested and hidden; Outlook folders can be renamed and nested but not coloured; Outlook categories can only change colour.

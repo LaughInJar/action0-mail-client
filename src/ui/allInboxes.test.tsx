@@ -33,7 +33,6 @@ const allInboxes = () =>
 const toastText = (text: string | RegExp) =>
   screen.findByText(text, { selector: "div[aria-live] span" });
 const treeItem = (name: RegExp) => screen.getByRole("treeitem", { name });
-const work = encodeURIComponent(DEMO_WORK_ACCOUNT.id);
 
 /** A stand-in for DataTransfer, which jsdom doesn't implement. */
 function dataTransfer() {
@@ -224,18 +223,27 @@ describe("All inboxes", () => {
     expect(await allInboxes()).toHaveAttribute("aria-selected", "true");
   });
 
-  it("goes there with g u, and g i to the Inbox of the open message's account", async () => {
+  it("goes there with g u; in it g s and g i stay combined, in an account they don't", async () => {
     const { user } = await start({ hash: demoHash("inbox") });
     expect(window.location.hash.startsWith("#/all/")).toBe(false);
+    // Inside an account: its own Sent.
+    await user.keyboard("gs");
+    await waitFor(() => {
+      expect(window.location.hash.startsWith(demoHash("sent"))).toBe(true);
+    });
     await user.keyboard("gu");
     await waitFor(() => {
       expect(window.location.hash.startsWith("#/all/")).toBe(true);
     });
     await user.click(await option(/Re: Planning for next quarter/));
     await subject("Re: Planning for next quarter");
+    await user.keyboard("gs");
+    await waitFor(() => {
+      expect(window.location.hash.startsWith("#/all/sent/")).toBe(true);
+    });
     await user.keyboard("gi");
     await waitFor(() => {
-      expect(window.location.hash.startsWith(`#/${work}/w-inbox`)).toBe(true);
+      expect(window.location.hash).toMatch(/^#\/all\/(?!sent)/);
     });
   });
 

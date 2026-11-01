@@ -17,6 +17,14 @@ const en = {
   moveHere: "Move here",
   otherAccount: "Other account",
   allInboxes: "All inboxes",
+  /** The group of combined views in the folder tree. */
+  allAccounts: "All accounts",
+  combined: {
+    inbox: "All inboxes",
+    flagged: "Starred",
+    sent: "Sent",
+    drafts: "Drafts",
+  },
   /** After a mailbox's count, for screen readers ("3 unread"). */
   drafts: (n: number): string => (n === 1 ? " draft" : " drafts"),
   unread: " unread",
@@ -354,6 +362,13 @@ const de: typeof en = {
   moveHere: "Hierher verschieben",
   otherAccount: "Anderes Konto",
   allInboxes: "Alle Posteingänge",
+  allAccounts: "Alle Konten",
+  combined: {
+    inbox: "Alle Posteingänge",
+    flagged: "Markiert",
+    sent: "Gesendet",
+    drafts: "Entwürfe",
+  },
   drafts: (n) => (n === 1 ? " Entwurf" : " Entwürfe"),
   unread: " ungelesen",
   actionsFor: (name) => `Aktionen für ${name}`,

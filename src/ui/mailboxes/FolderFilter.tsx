@@ -5,6 +5,7 @@ import { focusWhenReady } from "../common/focusWhenReady";
 import { Icon } from "../common/Icon";
 import { MESSAGE_LIST_ID } from "../messages/MessageList";
 import { listKeyOf } from "../messages/useCurrentList";
+import { COMBINED_VIEWS } from "../../state/router";
 import { useT } from "../../i18n/context";
 
 /** DOM id of the folder filter field (focused by `g f`). */
@@ -47,14 +48,16 @@ export function FolderFilter() {
           mailboxId = "",
           unified,
         } = match?.dataset ?? {};
-        if (!match || (unified !== "true" && (!accountId || !mailboxId))) break;
+        if (!match || (!unified && (!accountId || !mailboxId))) break;
         match.click();
         // Continue in the folder's messages (once they're shown), so j/k work.
+        const view = COMBINED_VIEWS.find((candidate) => candidate === unified);
         const key = listKeyOf(
           {
             accountId: asAccountId(accountId),
             mailboxId: asMailboxId(mailboxId),
-            ...(unified === "true" ? { unified: true } : {}),
+            ...(unified ? { unified: true } : {}),
+            ...(view ? { combined: view } : {}),
           },
           store.getState().listOrder,
           store.getState().settings.conversations,

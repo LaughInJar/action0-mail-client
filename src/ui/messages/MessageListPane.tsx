@@ -36,6 +36,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
     order,
     listKey,
     unified,
+    unifiedRole,
     sources,
     unavailable,
   } = useCurrentList();
@@ -49,7 +50,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const search = route?.search;
   const everywhere = everywhereMailbox(mailboxes);
   // What's listed, by name (where a search runs).
-  const here = unified ? l.allInboxes : mailbox?.name;
+  const here = unified ? l.combined[unifiedRole] : mailbox?.name;
   const isolated = scope?.role === "trash" || scope?.role === "junk";
   const selectedCount = useUi((state) => state.selectedIds.size);
   const clearSelection = useUi((state) => state.clearSelection);
@@ -145,7 +146,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
         {...(search
           ? { label: l.results(search.text) }
           : unified
-            ? { label: l.messagesIn(l.allInboxes) }
+            ? { label: l.messagesIn(l.combined[unifiedRole]) }
             : {})}
         hasNextPage={list.hasNextPage}
         isFetchingNextPage={list.isFetchingNextPage}
