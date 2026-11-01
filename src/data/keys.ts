@@ -57,6 +57,9 @@ export const queryKeys = {
   /** Only the automatic reply, for the notice above the list (memory only). */
   autoReply: (accountId: AccountId) =>
     ["acct", accountId, "auto-reply"] as const,
+  /** Focused Inbox sender rules (memory only). */
+  focusRules: (accountId: AccountId) =>
+    ["acct", accountId, "focus-rules"] as const,
   /** Mail a filter's conditions find, for "Also apply" (memory only). */
   filterMatches: (accountId: AccountId, conditions: unknown) =>
     ["acct", accountId, "filter-matches", conditions] as const,

@@ -66,6 +66,9 @@ export function mailActionItems(
       : undefined);
   const options = { exact };
   const quarantined = actions.view === "trash" || actions.view === "junk";
+  const focusTarget = quarantined
+    ? undefined
+    : actions.focusTarget(ids, options);
   const item = (fields: Omit<ToolbarItem, "group">): ToolbarItem => ({
     ...fields,
     group: "mail",
@@ -213,6 +216,29 @@ export function mailActionItems(
             run: () => {
               // Below the button (focused by the click), or where the focus is.
               actions.requestSnooze(undefined, ids, options);
+            },
+          }),
+        ]
+      : []),
+    // Outlook's Focused Inbox: to the other side, once or for the senders.
+    ...(focusTarget
+      ? [
+          item({
+            id: "focus",
+            label: focusTarget === "other" ? a.moveToOther : a.moveToFocused,
+            icon: "arrow-left-right",
+            menuOnly: true,
+            run: () => {
+              actions.setFocus(focusTarget, ids, options);
+            },
+          }),
+          item({
+            id: "focus-always",
+            label: focusTarget === "other" ? a.alwaysOther : a.alwaysFocused,
+            icon: "user",
+            menuOnly: true,
+            run: () => {
+              actions.alwaysFocus(focusTarget, ids, options);
             },
           }),
         ]

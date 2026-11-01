@@ -9,6 +9,11 @@ const en = {
   notSnoozed: "Not snoozed.",
   snoozeButton: "Snooze (h)",
   unsnoozeButton: "Unsnooze",
+  // Outlook's Focused Inbox.
+  moveToOther: "Move to Other",
+  moveToFocused: "Move to Focused",
+  alwaysOther: "Always move to Other",
+  alwaysFocused: "Always move to Focused",
   oneAccountOnly:
     "Moving and labels work within one account: select messages of one account.",
   marked: (what: string, read: boolean) =>
@@ -87,6 +92,10 @@ const de: typeof en = {
   notSnoozed: "Nicht zurückgestellt.",
   snoozeButton: "Zurückstellen (h)",
   unsnoozeButton: "Zurückholen",
+  moveToOther: "In „Sonstige“ verschieben",
+  moveToFocused: "In „Relevant“ verschieben",
+  alwaysOther: "Immer in „Sonstige“ verschieben",
+  alwaysFocused: "Immer in „Relevant“ verschieben",
   oneAccountOnly:
     "Verschieben und Labels gehen nur innerhalb eines Kontos: Wähle Nachrichten aus einem Konto.",
   marked: (what, read) =>

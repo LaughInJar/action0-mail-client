@@ -267,6 +267,28 @@ describe("inverseOf for snooze", () => {
   });
 });
 
+describe("inverseOf for Focused and Other", () => {
+  it("puts each message back on its side", () => {
+    const a = summary("a", ["inbox"]);
+    const b = { ...summary("b", ["inbox"]), focus: "focused" as const };
+    const c = { ...summary("c", ["inbox"]), focus: "other" as const };
+    expect(
+      inverseOf(
+        { kind: "set-focus", ids: ids("a", "b", "c"), focus: "other" },
+        [change(a, { focus: "other" }), change(b, { focus: "other" })],
+        folders,
+      ),
+    ).toEqual([{ kind: "set-focus", ids: ["a", "b"], focus: "focused" }]);
+    expect(
+      inverseOf(
+        { kind: "set-focus", ids: ids("c"), focus: "focused" },
+        [change(c, { focus: "focused" })],
+        folders,
+      ),
+    ).toEqual([{ kind: "set-focus", ids: ["c"], focus: "other" }]);
+  });
+});
+
 describe("runIntent", () => {
   it("dispatches to the provider method", async () => {
     const archive = vi.fn(() => Promise.resolve({}));

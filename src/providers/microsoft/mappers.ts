@@ -23,7 +23,7 @@ import { categoryId } from "./folders";
 
 /** `$select` for list rows. */
 export const SUMMARY_SELECT =
-  "id,conversationId,parentFolderId,from,toRecipients,subject,bodyPreview,receivedDateTime,createdDateTime,isRead,isDraft,flag,hasAttachments,categories";
+  "id,conversationId,parentFolderId,from,toRecipients,subject,bodyPreview,receivedDateTime,createdDateTime,isRead,isDraft,flag,hasAttachments,categories,inferenceClassification";
 
 /** `$select` for a whole message (its attachments come separately). */
 export const MESSAGE_SELECT = `${SUMMARY_SELECT},ccRecipients,bccRecipients,replyTo,internetMessageId,internetMessageHeaders,body`;
@@ -118,6 +118,11 @@ export function toMessageSummary(message: GraphMessage): MessageSummary {
     hasAttachments: message.hasAttachments ?? false,
     ...(until === undefined ? {} : { snoozedUntil: until }),
     ...(snooze === "back" ? { backFromSnooze: true as const } : {}),
+    ...(message.inferenceClassification === "other"
+      ? { focus: "other" as const }
+      : message.inferenceClassification === "focused"
+        ? { focus: "focused" as const }
+        : {}),
   };
 }
 

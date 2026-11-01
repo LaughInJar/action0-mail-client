@@ -22,9 +22,12 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  Focus,
+  FocusRule,
   Invitation,
   Mailbox,
   MailboxColor,
+  MailboxCounts,
   Message,
   MessageFlags,
   MessageSummary,
@@ -60,6 +63,8 @@ import {
   CATEGORIES_GROUP,
   categoryName,
   FLAGGED_VIEW_ID,
+  focusOfView,
+  focusViewsOf,
   SCHEDULED_VIEW_ID,
   BACK_VIEW_ID,
   SNOOZED_FOLDER,
@@ -101,6 +106,7 @@ import {
 import type {
   GraphAttachment,
   GraphCategory,
+  GraphFocusOverride,
   GraphMailFolder,
   GraphMessage,
   GraphPage,
@@ -309,6 +315,7 @@ export class GraphProvider implements MailProvider {
       scheduling: options.personal ? "drafts" : "held",
       // Graph can't snooze: action0's folder and property do.
       snooze: true,
+      focusedInbox: true,
     };
   }
 
@@ -343,10 +350,42 @@ export class GraphProvider implements MailProvider {
     // Snooze's folder, for listing it by return time.
     const snoozed = folders.find((mailbox) => mailbox.role === "snoozed");
     if (snoozed) this.#snoozedId = snoozed.id;
+    const inbox = folders.find((mailbox) => mailbox.role === "inbox");
     return [
       ...folders,
+      ...(inbox ? focusViewsOf(inbox, await this.#otherCounts(signal)) : []),
       ...(categories.length > 0 ? [CATEGORIES_GROUP, ...categories] : []),
     ];
+  }
+
+  /** What Outlook put into Other: all of it and the unread (undefined if Graph won't count). */
+  async #otherCounts(
+    signal: AbortSignal | undefined,
+  ): Promise<MailboxCounts | undefined> {
+    const count = (filter: string): BatchRequest => ({
+      method: "GET",
+      path: `me/mailFolders/inbox/messages?${new URLSearchParams({
+        $filter: filter,
+        $count: "true",
+        $top: "1",
+        $select: "id",
+      }).toString()}`,
+      headers: { ConsistencyLevel: "eventual" },
+    });
+    const [total, unread] = await this.#http.batch<{
+      "@odata.count"?: number;
+    }>(
+      [
+        count("inferenceClassification eq 'other'"),
+        count("isRead eq false and inferenceClassification eq 'other'"),
+      ],
+      signal,
+    );
+    const totalCount = total?.ok ? total.body["@odata.count"] : undefined;
+    const unreadCount = unread?.ok ? unread.body["@odata.count"] : undefined;
+    return totalCount === undefined || unreadCount === undefined
+      ? undefined
+      : { total: totalCount, unread: unreadCount };
   }
 
   /**
@@ -428,15 +467,12 @@ export class GraphProvider implements MailProvider {
     let url: URL;
     if (cursor) url = new URL(cursor);
     else if (text) {
-      url = this.#http.url(
-        view ? "me/messages" : `me/mailFolders/${enc(mailboxId)}/messages`,
-        {
-          $search: searchValue(text),
-          $select: SUMMARY_SELECT,
-          $expand: SNOOZE_EXPAND,
-          $top: limit,
-        },
-      );
+      url = this.#http.url(messagesPath(mailboxId), {
+        $search: searchValue(text),
+        $select: SUMMARY_SELECT,
+        $expand: SNOOZE_EXPAND,
+        $top: limit,
+      });
     } else {
       url = this.#listUrl(mailboxId, order, SUMMARY_SELECT, limit);
     }
@@ -500,10 +536,14 @@ export class GraphProvider implements MailProvider {
         },
       );
 
+    const inbox = (await this.#wellKnownFolders()).get("inbox");
+    // Focused and Other: a conversation sits where its newest Inbox message is.
     const belongs = (message: MessageSummary) =>
-      isViewId(mailboxId)
-        ? keep(message)
-        : message.mailboxIds.includes(mailboxId);
+      focusOfView(mailboxId) !== undefined
+        ? inbox !== undefined && message.mailboxIds.includes(asMailboxId(inbox))
+        : isViewId(mailboxId)
+          ? keep(message)
+          : message.mailboxIds.includes(mailboxId);
     const items: ThreadSummary[] = [];
     let next: string | undefined =
       cursor ?? this.#listUrl(mailboxId, "newest", SUMMARY_SELECT, limit).href;
@@ -677,16 +717,14 @@ export class GraphProvider implements MailProvider {
     const keep = await this.#viewFilter(mailboxId);
     const filter = viewFilterOf(mailboxId);
     const unread = await this.#all<GraphMessage>(
-      isViewId(mailboxId)
-        ? "me/messages"
-        : `me/mailFolders/${enc(mailboxId)}/messages`,
+      messagesPath(mailboxId),
       {
         $filter:
           filter === undefined
             ? "isRead eq false"
             : `isRead eq false and ${filter}`,
         // What the view's filter looks at.
-        $select: "id,parentFolderId,flag,categories",
+        $select: "id,parentFolderId,flag,categories,inferenceClassification",
         $top: MAX_PAGE_SIZE,
       },
       signal,
@@ -1107,6 +1145,63 @@ export class GraphProvider implements MailProvider {
       signal,
     );
     return {};
+  }
+
+  /** Outlook's Focused Inbox: each message's side (which trains Outlook). */
+  async setFocus(
+    ids: readonly MessageId[],
+    focus: Focus,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#patchAll(ids, { inferenceClassification: focus }, signal);
+    return {};
+  }
+
+  async listFocusRules(signal?: AbortSignal): Promise<readonly FocusRule[]> {
+    return (await this.#focusOverrides(signal)).map((rule) => ({
+      address: rule.senderEmailAddress.address,
+      ...(rule.senderEmailAddress.name
+        ? { name: rule.senderEmailAddress.name }
+        : {}),
+      focus: rule.classifyAs,
+    }));
+  }
+
+  /** POST replaces a rule for the same address; removing needs its id. */
+  async setFocusRule(
+    address: string,
+    focus: Focus | null,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (focus !== null) {
+      // Safe to retry: a second POST replaces the first.
+      await this.#http.post(
+        "me/inferenceClassification/overrides",
+        { classifyAs: focus, senderEmailAddress: { address } },
+        signal ? { signal } : {},
+      );
+      return;
+    }
+    const wanted = address.toLowerCase();
+    const rule = (await this.#focusOverrides(signal)).find(
+      (candidate) =>
+        candidate.senderEmailAddress.address.toLowerCase() === wanted,
+    );
+    if (rule)
+      await this.#http.delete(
+        `me/inferenceClassification/overrides/${enc(rule.id)}`,
+        signal,
+      );
+  }
+
+  #focusOverrides(
+    signal: AbortSignal | undefined,
+  ): Promise<GraphFocusOverride[]> {
+    return this.#all<GraphFocusOverride>(
+      "me/inferenceClassification/overrides",
+      {},
+      signal,
+    );
   }
 
   /** The Snoozed folder's id (made first if `create` and it's missing). */
@@ -1621,6 +1716,14 @@ export class GraphProvider implements MailProvider {
   ): Promise<(message: MessageSummary) => boolean> {
     if (!isViewId(mailboxId)) return () => true;
     const wellKnown = await this.#wellKnownFolders();
+    const focus = focusOfView(mailboxId);
+    if (focus !== undefined) {
+      const inbox = wellKnown.get("inbox");
+      return (message) =>
+        inbox !== undefined &&
+        message.mailboxIds.includes(asMailboxId(inbox)) &&
+        (message.focus ?? "focused") === focus;
+    }
     const hidden = new Set([
       ...internalIds(wellKnown),
       ...["deleteditems", "junkemail"].flatMap((name) => {
@@ -1646,9 +1749,7 @@ export class GraphProvider implements MailProvider {
   ): Promise<MessageSummary[]> {
     return (
       await this.#all<GraphMessage>(
-        isViewId(mailboxId)
-          ? "me/messages"
-          : `me/mailFolders/${enc(mailboxId)}/messages`,
+        messagesPath(mailboxId),
         { $search: searchValue(text), $select: SUMMARY_SELECT, $top: 250 },
         signal,
         MAX_SORTED_RESULTS,
@@ -1736,23 +1837,18 @@ export class GraphProvider implements MailProvider {
     top: number,
   ): URL {
     const filter = viewFilterOf(mailboxId);
-    return this.#http.url(
-      isViewId(mailboxId)
-        ? "me/messages"
-        : `me/mailFolders/${enc(mailboxId)}/messages`,
-      {
-        $select: select,
-        $top: top,
-        $expand: SNOOZE_EXPAND,
-        $orderby: `receivedDateTime ${order === "oldest" ? "asc" : "desc"}`,
-        // Graph wants the $orderby property in $filter too, and first.
-        ...(filter === undefined
-          ? {}
-          : {
-              $filter: `receivedDateTime ge 1900-01-01T00:00:00Z and ${filter}`,
-            }),
-      },
-    );
+    return this.#http.url(messagesPath(mailboxId), {
+      $select: select,
+      $top: top,
+      $expand: SNOOZE_EXPAND,
+      $orderby: `receivedDateTime ${order === "oldest" ? "asc" : "desc"}`,
+      // Graph wants the $orderby property in $filter too, and first.
+      ...(filter === undefined
+        ? {}
+        : {
+            $filter: `receivedDateTime ge 1900-01-01T00:00:00Z and ${filter}`,
+          }),
+    });
   }
 
   /**
@@ -2199,6 +2295,18 @@ function conversationOf(message: MessageSummary): string {
   return message.threadId ?? message.id;
 }
 
+/**
+ * Where a mailbox's messages are listed: a folder's own, the Inbox's for
+ * Focused and Other, all mail for the other views.
+ */
+function messagesPath(mailboxId: MailboxId): string {
+  if (focusOfView(mailboxId) !== undefined)
+    return "me/mailFolders/inbox/messages";
+  return isViewId(mailboxId)
+    ? "me/messages"
+    : `me/mailFolders/${enc(mailboxId)}/messages`;
+}
+
 /** `$filter` for the messages of a conversation. */
 function conversationFilter(id: string): string {
   return `conversationId eq '${id.replace(/'/g, "''")}'`;
@@ -2214,6 +2322,8 @@ function notACategory(name: string): MailError {
 /** What Graph filters a view's listing by (none for All mail). */
 function viewFilterOf(mailboxId: MailboxId): string | undefined {
   if (mailboxId === FLAGGED_VIEW_ID) return "flag/flagStatus eq 'flagged'";
+  const focus = focusOfView(mailboxId);
+  if (focus !== undefined) return `inferenceClassification eq '${focus}'`;
   const category = categoryName(mailboxId);
   return category === undefined ? undefined : categoryFilter(category);
 }

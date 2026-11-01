@@ -523,6 +523,62 @@ describe("snooze", () => {
   });
 });
 
+describe("Focused and Other", () => {
+  const folderInbox = box("inbox", {
+    kind: "folder",
+    role: "inbox",
+    counts: { unread: 2, total: 3 },
+  });
+  const view = (standard: "focused" | "other", unread: number) =>
+    box(standard, {
+      kind: "view",
+      standard,
+      parentId: folderInbox.id,
+      hidden: true,
+      counts: { unread, total: unread },
+    });
+  const boxes = [
+    folderInbox,
+    view("focused", 2),
+    view("other", 0),
+    archiveFolder,
+  ];
+  const unreadIn = (mailboxes: readonly Mailbox[], id: string) =>
+    mailboxes.find((mailbox) => mailbox.id === asMailboxId(id))?.counts?.unread;
+
+  it("moves Inbox mail between the sides, with the lists and counts following", () => {
+    const [change] = planChanges(
+      { kind: "set-focus", ids: ids("m1", "m4"), focus: "other" },
+      [m1, message("m4", 4, ["archive"], false)],
+      boxes,
+      folders,
+    );
+    // Only Inbox mail has a side.
+    expect(change?.id).toBe("m1");
+    expect(change?.after.focus).toBe("other");
+    const [focusedView, otherView] = [boxes[1], boxes[2]];
+    expect(belongsTo(focusedView!, m1)).toBe(true);
+    expect(belongsTo(otherView!, change!.after)).toBe(true);
+    expect(rowIds(patchList(list([m1, m2]), focusedView!, [change!]))).toEqual([
+      "m2",
+    ]);
+    expect(rowIds(patchList(list([]), otherView!, [change!]))).toEqual(["m1"]);
+    const counts = patchCounts(boxes, [change!]);
+    expect(unreadIn(counts, "focused")).toBe(1);
+    expect(unreadIn(counts, "other")).toBe(1);
+    expect(unreadIn(counts, "inbox")).toBe(2);
+    // Already there: nothing to do.
+    expect(
+      planChanges(
+        { kind: "set-focus", ids: ids("m1"), focus: "other" },
+        [change!.after],
+        boxes,
+        folders,
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("applyServerChanges", () => {
   const isolating = isolatingMailboxes(mailboxes);
   const fresh = message("m0", 0, ["inbox"], false);

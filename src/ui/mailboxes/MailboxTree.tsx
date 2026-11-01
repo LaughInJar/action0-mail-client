@@ -8,13 +8,17 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAccounts, useAuthStatus } from "../../accounts/context";
+import { findMailbox } from "../../data/hooks";
+import { cachedMailboxes } from "../../data/mutations";
 import type { AccountHandle } from "../../accounts/types";
 import {
   asAccountId,
   asMailboxId,
   messageRef,
   type AccountId,
+  type MailboxId,
 } from "../../core/ids";
 import type { ProviderCapabilities } from "../../core/provider";
 import { usePlatform } from "../../platform/context";
@@ -37,6 +41,8 @@ import {
 import { Icon } from "../common/Icon";
 import { useScheduledMail, useSnoozedMail } from "../../data/scheduled";
 import type { Mailbox } from "../../core/model";
+import { focusViews, isFocusView, isSplit } from "../../core/focus";
+import { useFocusSetting } from "../messages/useFocusedInbox";
 import { mailboxIcon, ROLE_ICONS } from "./mailboxIcon";
 import { wantsAppMenu } from "../common/menuPosition";
 import { useLongPress } from "../messages/useLongPress";
@@ -68,6 +74,15 @@ const DropContext = createContext<DropHighlight | null>(null);
 
 /** The folder filter's text (blank when not filtering). */
 const FilterContext = createContext("");
+
+/**
+ * Per account: the mailbox shown as selected (the Inbox while Focused or
+ * Other is open) and what the Inbox opens (Focused, when it's split).
+ */
+const SelectionContext = createContext<{
+  readonly selected?: MailboxId;
+  readonly inboxOpens?: MailboxId;
+}>({});
 
 /** The views that show only while they list mail: Scheduled and Snoozed. */
 type CountedRole = "scheduled" | "snoozed";
@@ -104,6 +119,7 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
   const store = useUiStore();
   const actions = useMailActions();
   const { sources } = useCurrentList();
+  const queryClient = useQueryClient();
   const openCombined = useOpenCombined();
   const [drop, setDrop] = useState<DropHighlight | null>(null);
   const filter = useUi((state) => state.folderFilter).trim();
@@ -173,11 +189,17 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
     if (assignable !== "true") return undefined;
     // The mailbox they're listed in isn't a target.
     const current = router.getRoute();
-    const listed = current?.unified
+    const listedId = current?.unified
       ? sources.get(asAccountId(accountId))?.scope?.id
       : current?.accountId === accountId
         ? current.mailboxId
         : undefined;
+    // Focused and Other are the Inbox.
+    const listedBox = findMailbox(
+      cachedMailboxes(queryClient, asAccountId(accountId)),
+      listedId,
+    );
+    const listed = isFocusView(listedBox) ? listedBox?.parentId : listedId;
     if (listed === mailboxId) return undefined;
     const folders = accounts
       .find((handle) => handle.account.id === accountId)
@@ -266,13 +288,9 @@ export function MailboxTree({ onNavigate }: MailboxTreeProps) {
       }
       return;
     }
-    const {
-      key = "",
-      accountId,
-      mailboxId,
-      selectable,
-      hasChildren,
-    } = item.dataset;
+    const { key = "", accountId, selectable, hasChildren } = item.dataset;
+    // A split Inbox opens on Focused.
+    const mailboxId = item.dataset.opens ?? item.dataset.mailboxId;
     const onChevron = target.closest("[data-toggle]") !== null;
     if (hasChildren === "true" && (onChevron || selectable !== "true")) {
       // While filtering, everything that's shown is expanded.
@@ -423,12 +441,36 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
   const counts = useContext(CountsContext);
   const scheduled = counts.scheduled.get(account.id) ?? 0;
   const snoozed = counts.snoozed.get(account.id) ?? 0;
+  const focusSetting = useFocusSetting(account.id);
+  const split = useMemo(
+    () =>
+      mailboxes && isSplit(mailboxes, focusSetting)
+        ? focusViews(mailboxes)
+        : undefined,
+    [mailboxes, focusSetting],
+  );
   const nodes = useMemo(() => {
     const tree = buildMailboxTree(
-      withViewCounts(mailboxes ?? [], { scheduled, snoozed }),
+      withFocusedCount(
+        withViewCounts(mailboxes ?? [], { scheduled, snoozed }),
+        split?.focused,
+      ),
     );
     return filter ? filterMailboxTree(tree, filter) : tree;
-  }, [mailboxes, filter, scheduled, snoozed]);
+  }, [mailboxes, filter, scheduled, snoozed, split]);
+  const route = useRoute();
+  const selection = useMemo(() => {
+    if (!route || route.unified || route.accountId !== account.id)
+      return split ? { inboxOpens: split.focused.id } : {};
+    const open = mailboxes?.find((mailbox) => mailbox.id === route.mailboxId);
+    return {
+      selected:
+        isFocusView(open) && open?.parentId !== undefined
+          ? open.parentId
+          : route.mailboxId,
+      ...(split ? { inboxOpens: split.focused.id } : {}),
+    };
+  }, [route, account.id, mailboxes, split]);
   const toggledNodes = useUi((state) => state.toggledNodes);
   const key = `account:${account.id}`;
   const expanded = filter !== "" || !toggledNodes.has(key);
@@ -493,7 +535,7 @@ function AccountBranch({ handle, isTabStop }: AccountBranchProps) {
           </span>
         )}
       </div>
-      {body}
+      <SelectionContext value={selection}>{body}</SelectionContext>
     </>
   );
 }
@@ -603,6 +645,18 @@ function CombinedItem({
   );
 }
 
+/** A split Inbox counts Focused's mail (Other's shows on its tab). */
+function withFocusedCount(
+  mailboxes: readonly Mailbox[],
+  focused: Mailbox | undefined,
+): readonly Mailbox[] {
+  const counts = focused?.counts;
+  if (!counts) return mailboxes;
+  return mailboxes.map((mailbox) =>
+    mailbox.role === "inbox" ? { ...mailbox, counts } : mailbox,
+  );
+}
+
 /**
  * Scheduled and Snoozed count their mail, and show only while there's
  * some (hidden otherwise).
@@ -643,7 +697,7 @@ function MailboxBranch({
   capabilities,
 }: MailboxBranchProps) {
   const { mailbox, children } = node;
-  const route = useRoute();
+  const { selected: selectedId, inboxOpens } = useContext(SelectionContext);
   const toggledNodes = useUi((state) => state.toggledNodes);
   const filter = useContext(FilterContext);
   const key = `${accountId}/${mailbox.id}`;
@@ -651,10 +705,7 @@ function MailboxBranch({
   const expanded =
     hasChildren &&
     (filter !== "" || expandedByDefault(mailbox) !== toggledNodes.has(key));
-  const selected =
-    route?.unified !== true &&
-    route?.accountId === accountId &&
-    route.mailboxId === mailbox.id;
+  const selected = selectedId === mailbox.id;
   const badge = badgeCount(mailbox);
   const drop = useContext(DropContext);
   const dropHere = drop?.key === key;
@@ -674,6 +725,7 @@ function MailboxBranch({
         data-parent-key={parentKey}
         data-account-id={accountId}
         data-mailbox-id={mailbox.id}
+        data-opens={mailbox.role === "inbox" ? inboxOpens : undefined}
         data-selectable={String(mailbox.selectable)}
         data-has-children={String(hasChildren)}
         data-assignable={String(mailbox.assignable)}

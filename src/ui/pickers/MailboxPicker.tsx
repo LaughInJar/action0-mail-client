@@ -2,7 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useAccountHandle } from "../../accounts/context";
 import { messageKey, type MailboxId } from "../../core/ids";
+import { isFocusView } from "../../core/focus";
 import type { Mailbox } from "../../core/model";
+import { findMailbox } from "../../data/hooks";
 import { mailboxPath } from "../../data/mailboxActions";
 import { cachedSummaries, threadMessageIds } from "../../data/mutations";
 import { useRoute, useUi } from "../../state/context";
@@ -46,7 +48,7 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   const actions = useMailActions();
   const { sources } = useCurrentList();
   // The mailbox the messages are listed in (no target for moving).
-  const listed = route?.unified
+  const listedId = route?.unified
     ? sources.get(picker.accountId)?.scope?.id
     : route?.accountId === picker.accountId
       ? route.mailboxId
@@ -63,6 +65,9 @@ function MailboxPicker({ picker }: { picker: PickerState }) {
   );
   const queryClient = useQueryClient();
   const { data: mailboxes = [] } = useMailboxList(picker.accountId);
+  // Focused and Other are the Inbox.
+  const listedBox = findMailbox(mailboxes, listedId);
+  const listed = isFocusView(listedBox) ? listedBox?.parentId : listedId;
   const [filter, setFilter] = useState("");
   const [active, setActive] = useState(0);
   const [choices, setChoices] = useState<ReadonlyMap<MailboxId, boolean>>(

@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { useAccounts } from "../../accounts/context";
+import { focusViews, inboxListOf, isSplit } from "../../core/focus";
 import type { MailboxRole } from "../../core/model";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
-import { useRoute, useRouter, useUiStore } from "../../state/context";
+import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
 import { ALL_CONTACTS, listRoute } from "../../state/router";
 import { focusWhenReady } from "../common/focusWhenReady";
 import { FOLDER_FILTER_ID } from "../mailboxes/FolderFilter";
@@ -44,6 +45,11 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
   const openAllInboxes = useOpenAllInboxes();
   const openCombined = useOpenCombined();
   const severalAccounts = accounts.length >= ALL_INBOXES_FROM;
+  const focusSetting = useUi((state) =>
+    accountId === undefined
+      ? undefined
+      : state.settings.focusedInbox[accountId],
+  );
 
   const commands = useMemo((): Command[] => {
     const reader = () => document.getElementById(READER_SCROLL_ID);
@@ -56,7 +62,11 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
     };
 
     const goTo = GO_TO.flatMap(([keys, role, text]): Command[] => {
-      const mailbox = mailboxes?.find((candidate) => candidate.role === role);
+      // A split Inbox (Outlook's Focused Inbox) opens on Focused.
+      const mailbox =
+        role === "inbox"
+          ? inboxListOf(mailboxes ?? [], focusSetting)
+          : mailboxes?.find((candidate) => candidate.role === role);
       if (!mailbox || accountId === undefined) return [];
       return [
         {
@@ -76,8 +86,28 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
       ];
     });
 
+    const views =
+      mailboxes && isSplit(mailboxes, focusSetting)
+        ? focusViews(mailboxes)
+        : undefined;
+    const goOther: Command[] =
+      views && accountId !== undefined
+        ? [
+            {
+              id: "go.other",
+              group: "goTo",
+              description: t.shortcuts.goOther,
+              keys: ["g o"],
+              run: () => {
+                router.navigate({ accountId, mailboxId: views.other.id });
+              },
+            },
+          ]
+        : [];
+
     return [
       ...goTo,
+      ...goOther,
       ...(severalAccounts
         ? [
             {
@@ -179,6 +209,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
   }, [
     accountId,
     breakpoint,
+    focusSetting,
     mailboxes,
     openAllInboxes,
     openCombined,

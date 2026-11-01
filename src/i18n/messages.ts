@@ -23,6 +23,7 @@ import { schedule } from "./texts/schedule";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
 import { snooze } from "./texts/snooze";
+import { focus } from "./texts/focus";
 import { templates } from "./texts/templates";
 import { unsubscribe } from "./texts/unsubscribe";
 
@@ -60,6 +61,7 @@ export const messages = {
     settings: settings.en,
     shortcuts: shortcuts.en,
     snooze: snooze.en,
+    focus: focus.en,
     templates: templates.en,
     unsubscribe: unsubscribe.en,
   },
@@ -91,6 +93,7 @@ export const messages = {
     settings: settings.de,
     shortcuts: shortcuts.de,
     snooze: snooze.de,
+    focus: focus.de,
     templates: templates.de,
     unsubscribe: unsubscribe.de,
   },

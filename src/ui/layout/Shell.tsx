@@ -1,5 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useMemo, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
+import { cachedMailboxes } from "../../data/mutations";
+import { inboxArrivals } from "../../data/sync";
 import {
   useAppPart,
   useRoute,
@@ -32,6 +35,7 @@ import { SendLaterHost } from "../schedule/ScheduledBanner";
 import { usePaletteShortcut } from "../palette/usePaletteShortcut";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
+import { useFocusedInbox } from "../messages/useFocusedInbox";
 import { useListController } from "../messages/useListController";
 import { ReaderPane } from "../reader/ReaderPane";
 import { Welcome } from "../welcome/Welcome";
@@ -95,6 +99,7 @@ function MailApp() {
   const drawerOpen = useUi((state) => state.drawerOpen);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   useNavigationDefaults(breakpoint);
+  useFocusedInbox();
   useGlobalCommands(breakpoint);
   usePaletteShortcut();
   const actions = useMailActions();
@@ -106,8 +111,16 @@ function MailApp() {
   const router = useRouter();
   const store = useUiStore();
   const platform = usePlatform();
-  useMailSync((arrivals) => {
-    if (store.getState().settings.notifications)
+  const queryClient = useQueryClient();
+  useMailSync((found) => {
+    const { settings } = store.getState();
+    // Mail in Other doesn't count as new (a split Inbox).
+    const arrivals = inboxArrivals(
+      found,
+      cachedMailboxes(queryClient, found.accountId),
+      settings.focusedInbox[found.accountId],
+    );
+    if (arrivals && settings.notifications)
       notifyArrivals(arrivals, router, t, platform.notifications);
   });
   useDocumentTitle();

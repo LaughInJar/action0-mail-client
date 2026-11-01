@@ -9,6 +9,7 @@ import type {
   GraphCategory,
   GraphContact,
   GraphContactFolder,
+  GraphFocusOverride,
   GraphMailFolder,
   GraphMessage,
 } from "../providers/microsoft/types";
@@ -56,6 +57,8 @@ export class FakeGraph {
   readonly people: { displayName: string; address: string }[] = [];
   /** The user's categories (`me/outlook/masterCategories`). */
   readonly categories: GraphCategory[] = [];
+  /** Focused Inbox sender rules (`me/inferenceClassification/overrides`). */
+  readonly overrides: GraphFocusOverride[] = [];
   /** Inbox rules (`me/mailFolders/inbox/messageRules`), in any order. */
   rules: GraphMessageRule[] = [];
   /** `mailboxSettings.automaticRepliesSetting`. */
@@ -434,6 +437,36 @@ export class FakeGraph {
             })),
         },
       };
+
+    // Focused Inbox sender rules: POST replaces one for the same address.
+    if (path === "me/inferenceClassification/overrides") {
+      if (method === "GET")
+        return { status: 200, body: { value: this.overrides } };
+      if (method === "POST") {
+        const spec = body as Omit<GraphFocusOverride, "id">;
+        const address = spec.senderEmailAddress.address.toLowerCase();
+        const index = this.overrides.findIndex(
+          (rule) => rule.senderEmailAddress.address.toLowerCase() === address,
+        );
+        const rule: GraphFocusOverride = {
+          id: this.overrides[index]?.id ?? `override-${String(this.#nextId++)}`,
+          ...spec,
+        };
+        if (index === -1) this.overrides.push(rule);
+        else this.overrides[index] = rule;
+        return { status: 201, body: rule };
+      }
+    }
+    if (
+      (match = /^me\/inferenceClassification\/overrides\/([^/]+)$/.exec(path))
+    ) {
+      const index = this.overrides.findIndex((rule) => rule.id === match?.[1]);
+      if (index === -1) return notFound;
+      if (method === "DELETE") {
+        this.overrides.splice(index, 1);
+        return { status: 204 };
+      }
+    }
 
     // Categories.
     if (path === "me/outlook/masterCategories") {
@@ -970,6 +1003,11 @@ export class FakeGraph {
       items = items.filter((m) => m.flag?.flagStatus === "flagged");
     if (filter.includes("isRead eq false"))
       items = items.filter((m) => m.isRead === false);
+    const byFocus = /inferenceClassification eq '(focused|other)'/.exec(filter);
+    if (byFocus)
+      items = items.filter(
+        (m) => (m.inferenceClassification ?? "focused") === byFocus[1],
+      );
     const byCategory = /categories\/any\(c:c eq '(.*)'\)/.exec(filter);
     if (byCategory) {
       const name = byCategory[1]?.replace(/''/g, "'") ?? "";

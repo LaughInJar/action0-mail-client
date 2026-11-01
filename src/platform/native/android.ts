@@ -227,8 +227,13 @@ export async function startAndroid(
           () => undefined,
         );
       },
-      configureBackground: async ({ enabled, texts, device }) => {
-        await invoke("mobile_configure_background", { enabled, texts, device });
+      configureBackground: async ({ enabled, texts, device, focused }) => {
+        await invoke("mobile_configure_background", {
+          enabled,
+          texts,
+          device,
+          focused,
+        });
       },
       scheduleSends: async (sends) => {
         await invoke("mobile_schedule_sends", { sends });

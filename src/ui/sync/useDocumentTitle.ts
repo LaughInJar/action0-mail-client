@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAccounts } from "../../accounts/context";
 import { useT } from "../../i18n/context";
 import { usePlatform } from "../../platform/context";
+import { useUi } from "../../state/context";
 import { inboxUnread } from "../mailboxes/allInboxes";
 
 /** The title without unread mail. */
@@ -19,12 +20,15 @@ export function useDocumentTitle(): void {
   const accounts = useAccounts();
   const t = useT();
   const { setUnreadCount } = usePlatform();
+  // Of a split Inbox only Focused counts.
+  const focusedInbox = useUi((state) => state.settings.focusedInbox);
 
   useEffect(() => {
     const update = () => {
       const unread = inboxUnread(
         queryClient,
         accounts.map((handle) => handle.account.id),
+        focusedInbox,
       );
       const expired = accounts.some(({ auth }) => auth.status === "expired");
       const title = expired
@@ -43,5 +47,5 @@ export function useDocumentTitle(): void {
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [accounts, queryClient, t, setUnreadCount]);
+  }, [accounts, queryClient, t, setUnreadCount, focusedInbox]);
 }

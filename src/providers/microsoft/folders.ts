@@ -1,5 +1,10 @@
 import { asMailboxId, type MailboxId } from "../../core/ids";
-import type { Mailbox, MailboxColor, MailboxRole } from "../../core/model";
+import type {
+  Mailbox,
+  MailboxColor,
+  MailboxCounts,
+  MailboxRole,
+} from "../../core/model";
 import type { GraphCategory, GraphMailFolder } from "./types";
 
 /** The Flagged view: flagged messages of every folder (the star is Outlook's flag). */
@@ -16,6 +21,59 @@ export const SCHEDULED_VIEW_ID = asMailboxId("view:scheduled");
 
 /** All mail except Deleted Items and Junk: used to search everywhere. */
 export const ALL_VIEW_ID = asMailboxId("view:all");
+
+/** Outlook's Focused Inbox: the Inbox's Focused and Other sides. */
+export const FOCUSED_VIEW_ID = asMailboxId("view:focused");
+export const OTHER_VIEW_ID = asMailboxId("view:other");
+
+/** The side of the Focused Inbox a view id stands for; undefined for other ids. */
+export function focusOfView(id: string): "focused" | "other" | undefined {
+  return id === FOCUSED_VIEW_ID
+    ? "focused"
+    : id === OTHER_VIEW_ID
+      ? "other"
+      : undefined;
+}
+
+/**
+ * The Inbox's Focused and Other views (hidden, below the Inbox). Focused
+ * counts what the Inbox has beyond Other's (`other`, as Graph counted it).
+ */
+export function focusViewsOf(
+  inbox: Mailbox,
+  other: MailboxCounts | undefined,
+): Mailbox[] {
+  const view = {
+    kind: "view",
+    parentId: inbox.id,
+    selectable: true,
+    hidden: true,
+    assignable: false,
+  } as const;
+  const focused =
+    inbox.counts && other
+      ? {
+          unread: Math.max(0, inbox.counts.unread - other.unread),
+          total: Math.max(0, inbox.counts.total - other.total),
+        }
+      : undefined;
+  return [
+    {
+      id: FOCUSED_VIEW_ID,
+      name: "Focused",
+      standard: "focused",
+      ...view,
+      ...(focused ? { counts: focused } : {}),
+    },
+    {
+      id: OTHER_VIEW_ID,
+      name: "Other",
+      standard: "other",
+      ...view,
+      ...(other ? { counts: other } : {}),
+    },
+  ];
+}
 
 /** Mailbox ids that are views of action0, not Outlook folders. */
 export function isViewId(id: string): boolean {

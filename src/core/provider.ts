@@ -11,6 +11,8 @@ import type {
 } from "./ids";
 import type {
   EmailAddress,
+  Focus,
+  FocusRule,
   Mailbox,
   MailboxColor,
   MailboxKind,
@@ -110,6 +112,12 @@ export interface ProviderCapabilities {
    * use) and keep their return time on the server; see {@link MailProvider.snooze}.
    */
   readonly snooze?: boolean;
+  /**
+   * Outlook's Focused Inbox: messages carry `focus`, `listMailboxes` lists
+   * the Inbox's hidden `focused` and `other` views (with counts), and
+   * {@link MailProvider.setFocus} and the sender rules work.
+   */
+  readonly focusedInbox?: boolean;
 }
 
 /** Date order of a message list. */
@@ -454,6 +462,29 @@ export interface MailProvider {
     ids: readonly MessageId[],
     signal?: AbortSignal,
   ): Promise<MutationResult>;
+
+  /**
+   * Moves messages to one side of the split Inbox (only with
+   * {@link ProviderCapabilities.focusedInbox}); Outlook learns from it.
+   */
+  setFocus(
+    ids: readonly MessageId[],
+    focus: Focus,
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** The senders whose mail always goes to one side (Focused Inbox only). */
+  listFocusRules(signal?: AbortSignal): Promise<readonly FocusRule[]>;
+
+  /**
+   * Sets the side a sender's future mail goes to, or (`null`) removes the
+   * rule (Focused Inbox only). Mail already there stays where it is.
+   */
+  setFocusRule(
+    address: string,
+    focus: Focus | null,
+    signal?: AbortSignal,
+  ): Promise<void>;
 
   /** Sends a calendar mail (only if {@link ProviderCapabilities.calendarMail}). */
   sendCalendarMail(mail: CalendarMail, signal?: AbortSignal): Promise<void>;

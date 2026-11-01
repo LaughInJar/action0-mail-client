@@ -79,6 +79,12 @@ export interface AppSettings {
   readonly lastSendLater: string;
   /** The time last picked for Snooze (ISO; "" for none), offered again. */
   readonly lastSnooze: string;
+  /**
+   * Outlook's Focused Inbox per account id: the Inbox split into Focused
+   * and Other (true) or not. Missing: automatic, until Outlook has put mail
+   * into Other (then it's recorded as true).
+   */
+  readonly focusedInbox: Readonly<Record<string, boolean>>;
 }
 
 /** Where the AI is asked: about mail in the reader, or to write in the composer. */
@@ -115,6 +121,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   deviceId: "",
   lastSendLater: "",
   lastSnooze: "",
+  focusedInbox: {},
 };
 
 /** How many recent AI choices the picker offers. */
@@ -280,6 +287,7 @@ export function parseSettings(value: unknown): AppSettings {
     icsCalendars: parseSubscriptions(raw.icsCalendars),
     templates: parseTemplates(raw.templates),
     calendarChoices: parseChoices(raw.calendarChoices),
+    focusedInbox: parseChoices(raw.focusedInbox),
     calendarView: isCalendarView(raw.calendarView)
       ? raw.calendarView
       : d.calendarView,

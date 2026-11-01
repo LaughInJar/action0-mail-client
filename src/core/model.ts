@@ -75,6 +75,8 @@ export const MAILBOX_ROLE_ORDER: readonly MailboxRole[] = [
  * Well-known mailboxes without a role (Gmail's inbox categories), so the
  * interface can name them in its language. `backFromSnooze` is a hidden
  * view: the Inbox's mail that came back from snooze (pinned atop it).
+ * `focused` and `other` are hidden views of the Inbox (its `parentId`):
+ * Outlook's Focused Inbox, by each message's {@link MessageSummary.focus}.
  */
 export type StandardMailbox =
   | "categories"
@@ -83,7 +85,20 @@ export type StandardMailbox =
   | "promotions"
   | "updates"
   | "forums"
-  | "backFromSnooze";
+  | "backFromSnooze"
+  | "focused"
+  | "other";
+
+/** Which side of a split Inbox a message is on (Outlook's Focused Inbox). */
+export type Focus = "focused" | "other";
+
+/** A sender whose mail always goes to one side of the split Inbox. */
+export interface FocusRule {
+  /** The sender's address (rules are per address). */
+  readonly address: string;
+  readonly name?: string;
+  readonly focus: Focus;
+}
 
 /** Message counters of a mailbox. */
 export interface MailboxCounts {
@@ -169,6 +184,11 @@ export interface MessageSummary {
   readonly snoozedUntil?: string;
   /** It came back from snooze and hasn't been opened since (pinned atop the Inbox). */
   readonly backFromSnooze?: true;
+  /**
+   * Its side of the split Inbox, from providers with Focused Inbox
+   * (`ProviderCapabilities.focusedInbox`); absent: focused.
+   */
+  readonly focus?: Focus;
 }
 
 /** Metadata of an attachment or inline part. */

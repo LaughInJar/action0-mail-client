@@ -25,6 +25,7 @@ import type { ThemeMode } from "../../state/theme";
 import { useMarkAllRead } from "../actions/useMarkAllRead";
 import { dayKey } from "../calendar/dates";
 import type { IconName } from "../common/Icon";
+import { isFocusView, isSplit } from "../../core/focus";
 import { mailboxName, roleNamesOf } from "../common/mailboxNames";
 import { focusWhenReady } from "../common/focusWhenReady";
 import { mailboxTexts } from "../labels/mailboxTexts";
@@ -158,8 +159,16 @@ export function usePaletteItems(query: string): PaletteItem[] {
     const names = roleNamesOf(boxes, handle.provider.capabilities);
     const name = (mailbox: Mailbox) => mailboxName(mailbox, t, names);
     const byId = new Map(boxes.map((mailbox) => [mailbox.id, mailbox]));
+    const split = isSplit(
+      boxes,
+      store.getState().settings.focusedInbox[accountId],
+    );
     for (const mailbox of boxes) {
       if (!mailbox.selectable) continue;
+      // Focused and Other only while the Inbox is split; "back from
+      // snooze" is a part of the Inbox, not a place.
+      if (isFocusView(mailbox) && !split) continue;
+      if (mailbox.standard === "backFromSnooze") continue;
       places.push({
         id: `mailbox:${accountId}:${mailbox.id}`,
         label: pathOf(mailbox, byId, name),

@@ -27,6 +27,16 @@ export interface GraphCategory {
   readonly color?: string;
 }
 
+/** A Focused Inbox rule for a sender (`me/inferenceClassification/overrides`). */
+export interface GraphFocusOverride {
+  readonly id: string;
+  readonly classifyAs: "focused" | "other";
+  readonly senderEmailAddress: {
+    readonly name?: string | null;
+    readonly address: string;
+  };
+}
+
 export interface GraphMailFolder {
   readonly id: string;
   readonly displayName?: string;
@@ -70,6 +80,8 @@ export interface GraphMessage {
   readonly isDraft?: boolean;
   /** Names of its categories. */
   readonly categories?: readonly string[];
+  /** Its side of the Focused Inbox (Inbox mail; elsewhere `focused`). */
+  readonly inferenceClassification?: "focused" | "other";
   readonly hasAttachments?: boolean;
   readonly flag?: {
     readonly flagStatus?: "notFlagged" | "flagged" | "complete";

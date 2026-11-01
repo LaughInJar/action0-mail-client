@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useAccountRegistry } from "../accounts/context";
 import type { AccountRegistry } from "../accounts/AccountRegistry";
+import { focusViews, inboxListOf } from "../core/focus";
 import type { AccountId, MailboxId, SyncToken } from "../core/ids";
 import type { Mailbox, Message, MessageSummary, Thread } from "../core/model";
 import type { ChangeSet } from "../core/provider";
@@ -20,6 +21,26 @@ export interface Arrivals {
   readonly accountId: AccountId;
   readonly inboxId: MailboxId;
   readonly messages: readonly MessageSummary[];
+}
+
+/**
+ * The arrivals that count as new mail: with the Inbox split (Outlook's
+ * Focused Inbox; `focusSetting` is the account's switch), only Focused's,
+ * leading there; undefined if none are left.
+ */
+export function inboxArrivals(
+  arrivals: Arrivals,
+  mailboxes: readonly Mailbox[],
+  focusSetting: boolean | undefined,
+): Arrivals | undefined {
+  const list = inboxListOf(mailboxes, focusSetting);
+  if (!list || list.id !== focusViews(mailboxes)?.focused.id) return arrivals;
+  const messages = arrivals.messages.filter(
+    (message) => message.focus !== "other",
+  );
+  return messages.length > 0
+    ? { ...arrivals, inboxId: list.id, messages }
+    : undefined;
 }
 
 /** Keeps the cache of each account in step with the provider. */
@@ -135,10 +156,16 @@ export function createMailSync(
 
     for (const change of set.changes) {
       if (change.kind === "removed") continue;
-      const { id, mailboxIds, flags } = change.message;
+      const { id, mailboxIds, flags, focus } = change.message;
       queryClient.setQueryData<Message>(
         queryKeys.message(accountId, id),
-        (message) => message && { ...message, mailboxIds, flags },
+        (message) =>
+          message && {
+            ...message,
+            mailboxIds,
+            flags,
+            ...(focus === undefined ? {} : { focus }),
+          },
       );
     }
     void queryClient.invalidateQueries({
