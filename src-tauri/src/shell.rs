@@ -284,6 +284,15 @@ pub fn shell_info(app: AppHandle, shell: State<'_, Shell>) -> ShellInfo {
     }
 }
 
+/// Opens the print dialog for the page (its `@media print` layout). On
+/// macOS WKWebView ignores `window.print()`, so the UI asks here: the
+/// native print panel, as a sheet on the window (it returns at once).
+/// Elsewhere `window.print()` works and the UI uses it.
+#[tauri::command]
+pub fn shell_print(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.print().map_err(|e| e.to_string())
+}
+
 /// Quits for real (the tray menu and Ctrl/⌘+Q).
 #[tauri::command]
 pub fn shell_quit(app: AppHandle) {

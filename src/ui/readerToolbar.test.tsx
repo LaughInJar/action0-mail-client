@@ -61,7 +61,11 @@ describe("the reader toolbar", () => {
       within(screen.getByRole("menu", { name: "More actions" }))
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Show original (Ctrl+U)", "Filter mail like this"]);
+    ).toEqual([
+      "Show original (Ctrl+U)",
+      "Print (Ctrl+P)",
+      "Filter mail like this",
+    ]);
   });
 
   it("puts what doesn't fit into ⋯, by priority, and runs it from there", async () => {
@@ -91,6 +95,7 @@ describe("the reader toolbar", () => {
       "Report spam (Shift+S)",
       "Labels… (l)",
       "Show original (Ctrl+U)",
+      "Print (Ctrl+P)",
       "Filter mail like this",
     ]);
     // The first item has focus; the arrow keys move it, Esc closes.

@@ -52,3 +52,27 @@
     overscroll-behavior: none;
   }
 }
+
+/*
+ * Printing (src/ui/print/): only the print layout, on white paper; the app
+ * stays as it is on screen, where the layout is never shown.
+ */
+@media screen {
+  #print-root {
+    display: none;
+  }
+}
+@media print {
+  body:has(> #print-root) > :not(#print-root) {
+    display: none !important;
+  }
+  body:has(> #print-root) {
+    height: auto;
+    background: #fff;
+    color-scheme: light;
+  }
+  #print-root {
+    display: block;
+    padding: 0;
+  }
+}

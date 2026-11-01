@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 import {
   messageKey,
   messageRef,
@@ -40,6 +40,12 @@ import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
 import { usePersonMenu } from "../contacts/usePersonMenu";
+import {
+  printItems,
+  printJob,
+  usePrint,
+  usePrintCommand,
+} from "../print/printing";
 import { useMarkReadOnView } from "./useMarkReadOnView";
 import { useUnsubscribe } from "./useUnsubscribe";
 import { useMessageMenu } from "./useMessageMenu";
@@ -209,6 +215,13 @@ function MessageView({
   const inInbox = !!message && !!inbox && message.mailboxIds.includes(inbox.id);
   const compose = useComposeActions();
   const original = useOriginalActions();
+  const print = usePrint();
+  const printTarget = useMemo(
+    () =>
+      message ? printJob(accountId, [message.id], message.subject) : undefined,
+    [accountId, message],
+  );
+  usePrintCommand(printTarget);
   const filterLink = useFilterLinkActions();
   const canWrite = compose.canWriteFrom(accountId);
   const drafts = mailboxes?.find((mailbox) => mailbox.role === "drafts");
@@ -339,6 +352,7 @@ function MessageView({
                   { accountId, messageId: message.id },
                   t,
                 ),
+                ...(printTarget ? printItems(print, printTarget, t) : []),
                 ...filterItems(
                   filterLink,
                   {

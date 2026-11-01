@@ -1,4 +1,5 @@
 import { useContactLink } from "../contacts/contactLink";
+import { printItems, printJob, usePrint } from "../print/printing";
 import type { MessageKey } from "../../core/ids";
 import type { MessageSummary } from "../../core/model";
 import type { ListRow } from "../../data/listRows";
@@ -61,6 +62,7 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
   const router = useRouter();
   const selectedIds = useUi((state) => state.selectedIds);
   const original = useOriginalActions();
+  const print = usePrint();
   const filterLink = useFilterLinkActions();
   const contactLink = useContactLink();
   const ai = useAiReaderActions();
@@ -210,6 +212,18 @@ export function RowMenu({ keys, at, onClose }: RowMenuProps) {
         ...originalItems(
           original,
           { accountId: single.accountId, messageId: single.summary.id },
+          t,
+        ),
+        // A conversation row prints the whole conversation.
+        ...printItems(
+          print,
+          printJob(
+            single.accountId,
+            single.thread?.messages.map((message) => message.id) ?? [
+              single.summary.id,
+            ],
+            single.summary.subject,
+          ),
           t,
         ),
         ...filterItems(

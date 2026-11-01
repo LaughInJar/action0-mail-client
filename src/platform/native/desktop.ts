@@ -13,6 +13,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
+import { printNatively, printWindow } from "../print";
 import type { Platform } from "../types";
 import { createAuthBridge, type SignedInPage } from "./authBridge";
 import {
@@ -74,6 +75,22 @@ async function overlayPng(count: number): Promise<number[] | null> {
   return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null;
 }
 
+/**
+ * Printing in the desktop app: WKWebView ignores `window.print()`, so on
+ * macOS the native side opens the print panel (`openPanel`); elsewhere
+ * the web view's own print dialog works.
+ */
+export function desktopPrint(
+  os: string,
+  openPanel: () => Promise<unknown>,
+  win: Window = window,
+): Platform["print"] {
+  return (title) =>
+    os === "macos"
+      ? printNatively(win, title, openPanel)
+      : printWindow(win, title);
+}
+
 /** Starts the desktop side: the platform, networking and kept accounts. */
 export async function startDesktop(
   page: () => SignedInPage,
@@ -118,6 +135,7 @@ export async function startDesktop(
     kind: "desktop",
     openExternal,
     followLink,
+    print: desktopPrint(info.os, () => invoke("shell_print")),
     saveFile: async (blob, name) => {
       const path = await save({ defaultPath: name });
       if (path === null) return;

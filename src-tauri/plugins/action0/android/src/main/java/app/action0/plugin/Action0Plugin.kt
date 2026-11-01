@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.provider.OpenableColumns
 import android.view.View
 import android.util.Base64
@@ -95,6 +97,11 @@ class ScheduleArgs {
 }
 
 @InvokeArg
+class PrintArgs {
+  var title: String = "action0"
+}
+
+@InvokeArg
 class ThemeArgs {
   var dark: Boolean = false
   /** The page's background ("#rrggbb"), shown below it (navigation bar). */
@@ -125,7 +132,11 @@ class Action0Plugin(private val activity: Activity) : Plugin(activity) {
   /** What the navigation bar or the keyboard covers at the bottom, in CSS px. */
   private var bottom = 0f
 
+  /** The app's web view, for printing the page. */
+  private var webView: WebView? = null
+
   override fun load(webView: WebView) {
+    this.webView = webView
     AppState.foreground = true
     // The web view reports the status bar as safe area to the page, but
     // not the navigation bar or the keyboard: those go to the page as an
@@ -534,6 +545,30 @@ class Action0Plugin(private val activity: Activity) : Plugin(activity) {
         isAppearanceLightStatusBars = !args.dark
         isAppearanceLightNavigationBars = !args.dark
       }
+      invoke.resolve()
+    }
+  }
+
+  /**
+   * Hands the page (its print layout) to Android's print service, whose
+   * dialog also saves it as a PDF. Resolves once the job is started; the
+   * print service carries on by itself.
+   */
+  @Command
+  fun print(invoke: Invoke) {
+    val args = invoke.parseArgs(PrintArgs::class.java)
+    activity.runOnUiThread {
+      val view = webView
+      val manager = activity.getSystemService(Activity.PRINT_SERVICE) as? PrintManager
+      if (view == null || manager == null) {
+        invoke.reject("Printing isn't available.", "noApp")
+        return@runOnUiThread
+      }
+      manager.print(
+        args.title,
+        view.createPrintDocumentAdapter(args.title),
+        PrintAttributes.Builder().build()
+      )
       invoke.resolve()
     }
   }

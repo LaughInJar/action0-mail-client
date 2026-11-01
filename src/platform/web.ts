@@ -1,3 +1,4 @@
+import { printWindow } from "./print";
 import type { Pwa } from "./pwa";
 import { clickedTag } from "./pwa";
 import type { Platform, SharedContent } from "./types";
@@ -97,6 +98,7 @@ export function createWebPlatform(pwa?: Pwa, win: Window = window): Platform {
       win.open(url, "_blank", "noopener,noreferrer");
     },
     followLink: () => false,
+    print: (title) => printWindow(win, title),
     saveFile: (blob, name) => {
       downloadBlob(blob, name);
       return Promise.resolve();

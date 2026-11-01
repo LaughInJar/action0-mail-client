@@ -240,7 +240,7 @@ describe("Show original", () => {
       within(screen.getByRole("menu", { name: "More actions" }))
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Filter mail like this"]);
+    ).toEqual(["Print (Ctrl+P)", "Filter mail like this"]);
     await user.keyboard("{Escape}");
     await rightClick(
       user,

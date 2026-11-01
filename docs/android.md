@@ -59,6 +59,7 @@ Commands only the Android app registers:
 | `mobile_notification_permission` | `granted`, `denied` or `prompt`; with `ask`, asks first (Android 13+)                              |
 | `mobile_configure_background`    | Saves the background check's on/off and texts, and schedules or cancels it                         |
 | `mobile_set_theme`               | Status and navigation bar icons, and the window background below the page, follow the theme        |
+| `mobile_print`                   | Prints the page through Android's print service (`print`; its dialog also saves a PDF)             |
 
 ## The Kotlin plugin
 
@@ -73,7 +74,7 @@ Commands only the Android app registers:
 | `Native.kt`        | The JNI functions of `background.rs` (`accounts`, `check`) and loading `libaction0_lib.so`                                                  |
 | `AppState.kt`      | Whether the app is in front (the worker leaves it to the app then)                                                                          |
 
-Commands Rust calls: `googleAuthorize`, `googleClear`, `authTab`, `signatureHash`, `vaultKey`, `saveVaultKey`, `openFile`, `shareFile`, `saveFile`, `notify`, `notificationPermission`, `setTheme`, `scheduleChecks`. Commands the UI calls directly (they're the only ones in the plugin's `permissions/default.toml` and in `capabilities/android.json`): `pending` (links and shares that arrived before the UI listened) and `insets`, plus listening for the `incoming` and `insets` events. Rejections carry a code (`cancelled`, `interaction`, `noPlayServices`, `denied`, `network`, `noApp`) that Rust maps to the UI's error kinds.
+Commands Rust calls: `googleAuthorize`, `googleClear`, `authTab`, `signatureHash`, `vaultKey`, `saveVaultKey`, `openFile`, `shareFile`, `saveFile`, `notify`, `notificationPermission`, `setTheme`, `scheduleChecks`, `print` (`PrintManager` with the web view's `createPrintDocumentAdapter`; the plugin keeps the web view from `load`). Commands the UI calls directly (they're the only ones in the plugin's `permissions/default.toml` and in `capabilities/android.json`): `pending` (links and shares that arrived before the UI listened) and `insets`, plus listening for the `incoming` and `insets` events. Rejections carry a code (`cancelled`, `interaction`, `noPlayServices`, `denied`, `network`, `noApp`) that Rust maps to the UI's error kinds.
 
 ## Sign-in
 
@@ -112,7 +113,7 @@ Commands Rust calls: `googleAuthorize`, `googleClear`, `authTab`, `signatureHash
 
 ## The Platform
 
-`src/platform/native/android.ts` implements `Platform` with `kind: "android"`: `saveFile` (Save to…), `openFileLater` (open with another app), notifications (the permission; `show` does nothing, since the background check notifies and the app itself doesn't, so nothing comes twice), `onCompose`, `onShare`, `onOpen`, and `mobile` (version, package and signature hash for the wizard, `share`, `checkForUpdate` against GitHub's latest release, `setTheme`, `configureBackground`). Shared helpers (`invoke`, link handling, waiting for the first listener, file requests) are in `common.ts`.
+`src/platform/native/android.ts` implements `Platform` with `kind: "android"`: `saveFile` (Save to…), `openFileLater` (open with another app), notifications (the permission; `show` does nothing, since the background check notifies and the app itself doesn't, so nothing comes twice), `print` (`mobile_print`; the print service renders the page while its dialog is open and says nothing when it closes, so `printNatively` in `src/platform/print.ts` resolves once the user is back in the page), `onCompose`, `onShare`, `onOpen`, and `mobile` (version, package and signature hash for the wizard, `share`, `checkForUpdate` against GitHub's latest release, `setTheme`, `configureBackground`). Shared helpers (`invoke`, link handling, waiting for the first listener, file requests) are in `common.ts`.
 
 In the UI, `AndroidIntegration` (`src/ui/android/`), the Settings section `AndroidSettings`, the attachments' Share button, and the Android texts of the Add account wizard (`googleAndroid`, `microsoftAndroid`) use it.
 

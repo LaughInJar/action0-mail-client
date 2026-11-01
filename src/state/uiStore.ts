@@ -238,6 +238,14 @@ export interface AiPanelState {
   readonly entries: readonly AiEntry[];
 }
 
+/** What to print: messages of one account, oldest first. */
+export interface PrintJob {
+  readonly accountId: AccountId;
+  readonly messageIds: readonly MessageId[];
+  /** The job's name (the subject): the print dialog's title and the PDF's name. */
+  readonly title: string;
+}
+
 /** A vCard file read for importing, while its preview is open. */
 export interface ContactImportState {
   readonly fileName: string;
@@ -316,6 +324,8 @@ export interface UiState extends selection.SelectionState {
   readonly contactFormDirty: boolean;
   /** A vCard file being imported (its preview is open). Memory only. */
   readonly contactImport: ContactImportState | null;
+  /** Messages being printed (the print layout is built for them). Memory only. */
+  readonly printJob: PrintJob | null;
   /** The reader's AI panel, while it's open. Memory only. */
   readonly aiPanel: AiPanelState | null;
 }
@@ -423,6 +433,7 @@ export interface UiActions {
   ) => void;
   readonly setContactFormDirty: (dirty: boolean) => void;
   readonly setContactImport: (state: ContactImportState | null) => void;
+  readonly setPrintJob: (job: PrintJob | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -538,6 +549,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           contactSelection: selection.EMPTY_SELECTION,
           contactFormDirty: false,
           contactImport: null,
+          printJob: null,
           aiPanel: null,
           reminderMarks: {},
           accountColors: {},
@@ -807,6 +819,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setContactImport: (contactImport) => {
             set({ contactImport });
+          },
+          setPrintJob: (printJob) => {
+            set({ printJob });
           },
           setAccountColors: (accountColors) => {
             set({ accountColors });

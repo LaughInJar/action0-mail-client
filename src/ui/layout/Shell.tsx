@@ -46,6 +46,7 @@ import { PwaIntegration } from "../pwa/PwaIntegration";
 import { ManageLabelsHost } from "../labels/ManageLabelsDialog";
 import { MailboxPickerHost } from "../pickers/MailboxPicker";
 import { ToastHost } from "./ToastHost";
+import { PrintHost } from "../print/PrintHost";
 import { useApplyTheme } from "./useApplyTheme";
 import { useBreakpoint, type Breakpoint } from "./useBreakpoint";
 import { useCommands } from "../../keyboard/context";
@@ -223,6 +224,7 @@ function MailApp() {
       )}
       <Reminders />
       <ToastHost onUndo={undo.undo} />
+      <PrintHost />
     </div>
   );
 }

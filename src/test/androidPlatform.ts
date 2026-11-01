@@ -34,6 +34,7 @@ export function fakeAndroidPlatform({
     kind: "android",
     openExternal,
     followLink: vi.fn(() => true),
+    print: vi.fn(() => Promise.resolve()),
     saveFile: vi.fn(() => Promise.resolve()),
     openFileLater: vi.fn(() => vi.fn()),
     notifications: {

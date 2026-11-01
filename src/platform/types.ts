@@ -178,6 +178,12 @@ export interface Platform {
   /** Saves a file the user downloads. */
   readonly saveFile: (blob: Blob, name: string) => Promise<void>;
   /**
+   * Opens the print dialog for the page as it prints (its `@media print`
+   * layout); `title` names the job and the PDF it may be saved as.
+   * Resolves once the dialog is closed (or handed to the system).
+   */
+  readonly print: (title: string) => Promise<void>;
+  /**
    * Starts opening a file: call it inside the click (popup blockers), then
    * hand over the file once it's loaded, or `null` if loading failed.
    */

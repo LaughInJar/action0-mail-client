@@ -6,6 +6,7 @@
  */
 import { addPluginListener } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { printNatively } from "../print";
 import type {
   AvailableRelease,
   OpenTarget,
@@ -154,6 +155,9 @@ export async function startAndroid(
     kind: "android",
     openExternal,
     followLink,
+    // The web view can't print by itself: Android's print service does.
+    print: (title) =>
+      printNatively(window, title, () => invoke("mobile_print", { title })),
     saveFile: async (blob, name) => {
       const [bytes, options] = await fileRequest(blob, name);
       await invoke("mobile_save_file", bytes, options);

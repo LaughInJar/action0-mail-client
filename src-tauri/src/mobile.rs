@@ -1,5 +1,5 @@
 //! The Android app's own commands: files for other apps, what other apps
-//! shared, notifications and the background check; and the vault's key,
+//! shared, printing, notifications and the background check; and the vault's key,
 //! kept by the Kotlin side in the Android Keystore.
 
 use std::path::PathBuf;
@@ -196,6 +196,15 @@ pub async fn mobile_configure_background(
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     background::configure(&dir, enabled, texts)?;
     kotlin(&app, move |side| side.schedule_checks(enabled))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Prints the page (its `@media print` layout) through Android's print
+/// service, whose dialog also saves a PDF; resolves once the job started.
+#[tauri::command]
+pub async fn mobile_print(app: AppHandle, title: String) -> Result<(), String> {
+    kotlin(&app, move |side| side.print(&title))
         .await
         .map_err(|e| e.to_string())
 }
