@@ -6,6 +6,7 @@ import {
 } from "../providers/fake/FakeMailProvider";
 import { WORK_MAILBOX } from "../providers/fake/demoWork";
 import { DEMO_WORK_ACCOUNT } from "../providers/fake/module";
+import { UI_STATE_KEY } from "../state/uiStore";
 import { renderApp } from "../test/renderApp";
 
 vi.setConfig({ testTimeout: 15_000 });
@@ -46,8 +47,15 @@ const sendersIn = async (rendered: Rendered, side: string) =>
     })
   ).items.map((message) => message.from?.address);
 
-/** The work account's Inbox: it opens on Focused. */
+/**
+ * The work account's Inbox: it opens on Focused. Mail is marked read only
+ * by hand, so opening the newest one doesn't change the counts meanwhile.
+ */
 async function start() {
+  window.localStorage.setItem(
+    UI_STATE_KEY,
+    JSON.stringify({ state: { settings: { markRead: "manual" } }, version: 1 }),
+  );
   const rendered = renderApp({
     workAccount: true,
     hash: work(WORK_MAILBOX.inbox),
