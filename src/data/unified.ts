@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useAccounts, useSignedIn } from "../accounts/context";
 import type { AccountHandle } from "../accounts/types";
+import { inboxListOf } from "../core/focus";
 import type { AccountId, MailboxId } from "../core/ids";
 import type { Mailbox } from "../core/model";
 import type { MessageOrder } from "../core/provider";
@@ -147,6 +148,11 @@ export interface UnifiedSpec {
   readonly order: MessageOrder;
   /** Conversations where the account has them. */
   readonly conversations: boolean;
+  /**
+   * The Focused Inbox switches, by account id: All inboxes lists a split
+   * Inbox's Focused side (a search still covers the whole Inbox).
+   */
+  readonly focusedInbox?: Readonly<Record<string, boolean>>;
 }
 
 /** The merged list of a combined view. */
@@ -189,9 +195,11 @@ export function useUnifiedList(spec: UnifiedSpec | undefined): UnifiedList {
       handles.map((handle): Planned => {
         const accountId = handle.account.id;
         const boxes = mailboxes.get(accountId);
-        const own = boxes?.data?.find(
-          (mailbox) => mailbox.role === (spec?.role ?? "inbox"),
-        );
+        const role = spec?.role ?? "inbox";
+        const own =
+          role === "inbox" && spec?.search === undefined
+            ? inboxListOf(boxes?.data ?? [], spec?.focusedInbox?.[accountId])
+            : boxes?.data?.find((mailbox) => mailbox.role === role);
         const scope =
           spec?.everywhere && own
             ? (boxes?.data?.find((mailbox) => mailbox.role === "all") ?? own)

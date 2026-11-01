@@ -4,6 +4,7 @@ import {
   type AccountId,
   type MessageKey,
 } from "../../core/ids";
+import { isFocusView } from "../../core/focus";
 import { pinRows, useBackFromSnooze } from "../../data/scheduled";
 import type { Mailbox } from "../../core/model";
 import type { MessageOrder } from "../../core/provider";
@@ -92,9 +93,13 @@ export function listSpecOf(
   if (!route) return undefined;
   const { search } = route;
   if (!search) return { mailboxId: route.mailboxId, order };
+  // Searching Focused or Other searches the whole Inbox.
+  const here = findMailbox(mailboxes, route.mailboxId);
   const scope = search.everywhere
     ? mailboxes && (everywhereMailbox(mailboxes)?.id ?? route.mailboxId)
-    : route.mailboxId;
+    : isFocusView(here)
+      ? (here?.parentId ?? route.mailboxId)
+      : route.mailboxId;
   return scope === undefined
     ? undefined
     : { mailboxId: scope, search: search.text.trim(), order };
@@ -112,6 +117,7 @@ export function useCurrentList() {
   const route = useRoute();
   const order = useUi((state) => state.listOrder);
   const wantsConversations = useUi((state) => state.settings.conversations);
+  const focusedInbox = useUi((state) => state.settings.focusedInbox);
   const unified = route?.unified === true;
   const supportsThreads =
     useAccountHandle(route?.accountId)?.provider.capabilities.threads === true;
@@ -145,10 +151,19 @@ export function useCurrentList() {
             order,
             everywhere,
             conversations: wantsConversations,
+            focusedInbox,
             ...(searchText ? { search: searchText } : {}),
           }
         : undefined,
-    [unified, role, order, everywhere, wantsConversations, searchText],
+    [
+      unified,
+      role,
+      order,
+      everywhere,
+      wantsConversations,
+      searchText,
+      focusedInbox,
+    ],
   );
   const merged = useUnifiedList(unifiedSpec);
   const isolating = useMemo(
@@ -186,7 +201,10 @@ export function useCurrentList() {
       : messageList;
   // The Inbox (and All inboxes) show mail back from snooze first.
   const inInbox =
-    !searchText && (unified ? role === "inbox" : scope?.role === "inbox");
+    !searchText &&
+    (unified
+      ? role === "inbox"
+      : scope?.role === "inbox" || scope?.standard === "focused");
   const listedAccounts = useMemo(
     () => (unified ? [...merged.sources.keys()] : accountId ? [accountId] : []),
     [unified, merged.sources, accountId],

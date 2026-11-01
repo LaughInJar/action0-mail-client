@@ -256,6 +256,15 @@ function apply(
       const { backFromSnooze: _back, ...rest } = message;
       return rest;
     }
+    case "set-focus":
+      // Only the Inbox is split.
+      if (
+        inbox === undefined ||
+        !message.mailboxIds.includes(inbox) ||
+        (message.focus ?? "focused") === intent.focus
+      )
+        return undefined;
+      return { ...message, focus: intent.focus };
   }
 }
 
@@ -281,6 +290,13 @@ export function belongsTo(
   // The Inbox's mail that came back from snooze.
   if (mailbox.standard === "backFromSnooze")
     return message.backFromSnooze === true;
+  // A side of the split Inbox (the view's parent).
+  if (mailbox.standard === "focused" || mailbox.standard === "other")
+    return (
+      mailbox.parentId !== undefined &&
+      message.mailboxIds.includes(mailbox.parentId) &&
+      (message.focus ?? "focused") === mailbox.standard
+    );
   if (mailbox.kind === "view") return true;
   return message.mailboxIds.includes(mailbox.id);
 }
@@ -334,9 +350,14 @@ export function patchList(
   return { ...data, pages };
 }
 
-/** A cached row with what a change sets: memberships, flags and snooze. */
+/** A cached row with what a change sets: memberships, flags, snooze and focus. */
 function patched(item: MessageSummary, after: MessageSummary): MessageSummary {
-  const { snoozedUntil: _until, backFromSnooze: _back, ...rest } = item;
+  const {
+    snoozedUntil: _until,
+    backFromSnooze: _back,
+    focus: _focus,
+    ...rest
+  } = item;
   return {
     ...rest,
     mailboxIds: after.mailboxIds,
@@ -345,6 +366,7 @@ function patched(item: MessageSummary, after: MessageSummary): MessageSummary {
       ? {}
       : { snoozedUntil: after.snoozedUntil }),
     ...(after.backFromSnooze ? { backFromSnooze: true as const } : {}),
+    ...(after.focus === undefined ? {} : { focus: after.focus }),
   };
 }
 
@@ -411,7 +433,12 @@ export function applyServerChanges(
 
 /** Applies a change to a cached full message. */
 export function patchMessage(message: Message, change: MessageChange): Message {
-  const { snoozedUntil: _until, backFromSnooze: _back, ...rest } = message;
+  const {
+    snoozedUntil: _until,
+    backFromSnooze: _back,
+    focus: _focus,
+    ...rest
+  } = message;
   return { ...rest, ...patched(message, change.after) };
 }
 

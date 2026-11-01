@@ -1,5 +1,5 @@
 import type { MailboxId, MessageId } from "./ids";
-import type { MessageFlags, MessageSummary } from "./model";
+import type { Focus, MessageFlags, MessageSummary } from "./model";
 import type { MailProvider, MutationResult } from "./provider";
 
 /**
@@ -46,6 +46,12 @@ export type MailIntent =
       readonly back: boolean;
     }
   | { readonly kind: "clear-back"; readonly ids: readonly MessageId[] }
+  | {
+      /** To one side of the split Inbox (Outlook's Focused Inbox). */
+      readonly kind: "set-focus";
+      readonly ids: readonly MessageId[];
+      readonly focus: Focus;
+    }
   | {
       readonly kind:
         | "trash"
@@ -111,6 +117,8 @@ export function runIntent(
       );
     case "clear-back":
       return provider.clearBackFromSnooze(intent.ids, signal);
+    case "set-focus":
+      return provider.setFocus(intent.ids, intent.focus, signal);
   }
 }
 
@@ -194,6 +202,10 @@ export function inverseOf(
       );
     case "clear-back":
       return [];
+    case "set-focus":
+      return groupBy(changes, (change) => change.before.focus ?? "focused").map(
+        ([focus, ids]): MailIntent => ({ kind: "set-focus", ids, focus }),
+      );
   }
 }
 

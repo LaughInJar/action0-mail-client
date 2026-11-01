@@ -6,6 +6,7 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  Focus,
   Mailbox,
   MailboxRole,
   Message,
@@ -146,7 +147,27 @@ interface Seed {
   readonly flagged?: boolean;
   readonly thread?: string;
   readonly categories?: readonly MailboxId[];
+  /** Its side of the Focused Inbox (Inbox mail; focused if absent). */
+  readonly focus?: Focus;
 }
+
+/** Newsletters and notices Outlook puts into Other. */
+const NEWSLETTER: EmailAddress = {
+  name: "Contoso Weekly",
+  address: "news@contoso.example",
+};
+const CONFERENCE: EmailAddress = {
+  name: "Cloud Summit",
+  address: "tickets@cloudsummit.example",
+};
+const TRAVEL: EmailAddress = {
+  name: "Travel Portal",
+  address: "noreply@travel.example",
+};
+const CANTEEN: EmailAddress = {
+  name: "Facility Services",
+  address: "facility@work.example",
+};
 
 function buildMessage(seed: Seed, now: number): Message {
   return {
@@ -165,6 +186,7 @@ function buildMessage(seed: Seed, now: number): Message {
     receivedAt: new Date(now - seed.minutesAgo * 60_000).toISOString(),
     flags: { seen: seed.seen ?? true, flagged: seed.flagged ?? false },
     hasAttachments: false,
+    ...(seed.focus ? { focus: seed.focus } : {}),
     body: {
       text: `${seed.snippet}.\n\nThis is a message of the second demo account.\n\n${seed.from.name ?? seed.from.address}`,
     },
@@ -231,6 +253,46 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
       seen: false,
       categories: [W.team, W.important],
     },
+    // What Outlook put into Other.
+    {
+      key: "w-news-1",
+      from: NEWSLETTER,
+      subject: "This week at Contoso",
+      snippet:
+        "New office opening, the summer party and five tips for remote work",
+      minutesAgo: 90,
+      mailboxId: W.inbox,
+      seen: false,
+      focus: "other",
+    },
+    {
+      key: "w-news-2",
+      from: CONFERENCE,
+      subject: "Early-bird tickets end on Friday",
+      snippet: "Save 30% on your Cloud Summit pass until Friday",
+      minutesAgo: 400,
+      mailboxId: W.inbox,
+      seen: false,
+      focus: "other",
+    },
+    {
+      key: "w-news-3",
+      from: TRAVEL,
+      subject: "Your monthly travel summary",
+      snippet: "2 trips, 1,240 km and 3 receipts waiting for approval",
+      minutesAgo: 60 * 26,
+      mailboxId: W.inbox,
+      focus: "other",
+    },
+    {
+      key: "w-news-4",
+      from: CANTEEN,
+      subject: "Canteen menu for next week",
+      snippet: "Monday: lentil soup, Tuesday: pasta day",
+      minutesAgo: 60 * 50,
+      mailboxId: W.inbox,
+      focus: "other",
+    },
     {
       key: "w-old",
       from: COLLEAGUES[3] ?? ME,
@@ -251,6 +313,7 @@ export function createWorkDemoData(now = Date.now()): FakeMailData {
     ),
     contacts: COLLEAGUES,
     mailboxColors: OUTLOOK_CATEGORY_COLORS,
+    focusRules: [{ ...NEWSLETTER, focus: "other" }],
   };
 }
 

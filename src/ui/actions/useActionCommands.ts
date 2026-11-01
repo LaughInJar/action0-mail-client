@@ -55,6 +55,31 @@ export function useActionCommands(actions: MailActions, undo: Undo): void {
           actions.requestSnooze();
         },
       },
+      // Outlook's Focused Inbox (the command palette; no keys).
+      ...(["other", "focused"] as const).flatMap((focus): Command[] => [
+        {
+          id: `mail.focus-${focus}`,
+          group,
+          description:
+            focus === "other" ? t.actions.moveToOther : t.actions.moveToFocused,
+          keys: [],
+          when: () => !quarantined && actions.focusTarget() === focus,
+          run: () => {
+            actions.setFocus(focus);
+          },
+        },
+        {
+          id: `mail.always-${focus}`,
+          group,
+          description:
+            focus === "other" ? t.actions.alwaysOther : t.actions.alwaysFocused,
+          keys: [],
+          when: () => !quarantined && actions.focusTarget() === focus,
+          run: () => {
+            actions.alwaysFocus(focus);
+          },
+        },
+      ]),
       {
         id: "mail.move",
         group,

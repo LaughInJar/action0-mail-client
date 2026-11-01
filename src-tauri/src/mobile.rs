@@ -186,16 +186,18 @@ pub async fn mobile_notification_permission(app: AppHandle, ask: bool) -> Result
 }
 
 /// Turns the background check on or off, with the notifications' texts
-/// in the UI's language.
+/// in the UI's language; `focused`: Microsoft accounts whose Inbox is
+/// split (only Focused mail is notified).
 #[tauri::command]
 pub async fn mobile_configure_background(
     app: AppHandle,
     enabled: bool,
     texts: background::Texts,
     device: String,
+    focused: Vec<String>,
 ) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    background::configure(&dir, enabled, texts, device)?;
+    background::configure(&dir, enabled, texts, device, focused)?;
     kotlin(&app, move |side| side.schedule_checks(enabled))
         .await
         .map_err(|e| e.to_string())

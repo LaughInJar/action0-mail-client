@@ -62,6 +62,10 @@ struct State {
     /// When scheduled mail is due (epoch ms), as the app last knew.
     #[serde(default)]
     sends: Vec<u64>,
+    /// Microsoft accounts whose Inbox is split (Focused Inbox): only
+    /// Focused mail counts as new.
+    #[serde(default)]
+    focused: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -89,12 +93,20 @@ fn save(dir: &Path, state: &State) -> Result<(), String> {
     std::fs::write(dir.join(FILE), bytes).map_err(|e| e.to_string())
 }
 
-/// Turns notifying new mail on or off (from the UI's settings).
-pub fn configure(dir: &Path, enabled: bool, texts: Texts, device: String) -> Result<(), String> {
+/// Turns notifying new mail on or off (from the UI's settings), and
+/// which accounts' Inbox is split (`focused`).
+pub fn configure(
+    dir: &Path,
+    enabled: bool,
+    texts: Texts,
+    device: String,
+    focused: Vec<String>,
+) -> Result<(), String> {
     let mut state = load(dir);
     state.enabled = enabled;
     state.texts = texts;
     state.device = device;
+    state.focused = focused;
     save(dir, &state)
 }
 
@@ -218,6 +230,7 @@ pub async fn check(
         if !state.enabled {
             continue;
         }
+        let focused_only = state.focused.contains(key);
         let seen = state.accounts.entry(key.clone()).or_default();
         if seen.checked == 0 {
             seen.checked = now;
@@ -226,7 +239,7 @@ pub async fn check(
         let since = seen.checked.saturating_sub(MARGIN_MS);
         let found = match account.provider {
             Provider::Google => gmail_new(http, apis, &token, since).await,
-            Provider::Microsoft => graph_new(http, apis, &token, since).await,
+            Provider::Microsoft => graph_new(http, apis, &token, since, focused_only).await,
         };
         let Ok(found) = found else { continue };
         let fresh: Vec<NewMail> = found
@@ -610,12 +623,14 @@ async fn microsoft_token(
     Ok(tokens.access_token)
 }
 
-/// Graph: unread Inbox mail received after `since`.
+/// Graph: unread Inbox mail received after `since` (`focused_only`: of a
+/// split Inbox only Focused's).
 async fn graph_new(
     http: &reqwest::Client,
     apis: &Apis,
     token: &str,
     since: u64,
+    focused_only: bool,
 ) -> Result<Vec<NewMail>, String> {
     #[derive(Deserialize)]
     struct List {
@@ -651,7 +666,15 @@ async fn graph_new(
     url.query_pairs_mut()
         .append_pair(
             "$filter",
-            &format!("receivedDateTime gt {} and isRead eq false", iso_utc(since)),
+            &format!(
+                "receivedDateTime gt {} and isRead eq false{}",
+                iso_utc(since),
+                if focused_only {
+                    " and inferenceClassification eq 'focused'"
+                } else {
+                    ""
+                }
+            ),
         )
         .append_pair("$orderby", "receivedDateTime desc")
         .append_pair("$top", &MAX_PER_CHECK.to_string())
@@ -815,7 +838,7 @@ mod jni_entry {
 mod tests {
     use super::*;
     use crate::oauth::providers::Client;
-    use wiremock::matchers::{method, path, query_param};
+    use wiremock::matchers::{method, path, query_param, query_param_contains};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const NOW: u64 = 1_792_000_000_000;
@@ -887,7 +910,7 @@ mod tests {
     #[tokio::test]
     async fn notifies_new_gmail_once_and_starts_counting_for_new_accounts() {
         let dir = temp_dir("gmail");
-        configure(&dir, true, texts(), "phone".into()).unwrap();
+        configure(&dir, true, texts(), "phone".into(), Vec::new()).unwrap();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/gmail/messages"))
@@ -953,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn sends_due_scheduled_mail_with_notifications_off() {
         let dir = temp_dir("send-later");
-        configure(&dir, false, texts(), "phone".into()).unwrap();
+        configure(&dir, false, texts(), "phone".into(), Vec::new()).unwrap();
         // Nothing due: no job, and nothing asked.
         assert_eq!(set_sends(&dir, vec![], NOW).unwrap(), None);
         let server = MockServer::start().await;
@@ -1042,7 +1065,7 @@ mod tests {
     #[tokio::test]
     async fn groups_many_messages_and_reads_graph() {
         let dir = temp_dir("graph");
-        configure(&dir, true, texts(), "phone".into()).unwrap();
+        configure(&dir, true, texts(), "phone".into(), Vec::new()).unwrap();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
@@ -1100,6 +1123,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn counts_only_focused_mail_of_a_split_inbox() {
+        let dir = temp_dir("focused");
+        let key = "microsoft:max@contoso.com";
+        configure(&dir, true, texts(), "phone".into(), vec![key.into()]).unwrap();
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "access_token": "a" })),
+            )
+            .mount(&server)
+            .await;
+        // Only a request for Focused mail gets an answer.
+        Mock::given(method("GET"))
+            .and(path("/graph/mailFolders/inbox/messages"))
+            .and(query_param_contains(
+                "$filter",
+                "and inferenceClassification eq 'focused'",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "value": [{
+                    "id": "f1",
+                    "subject": "Planning",
+                    "from": { "emailAddress": { "name": "Max", "address": "max@contoso.com" } },
+                    "receivedDateTime": iso_utc(NOW + 60_000),
+                }],
+            })))
+            .mount(&server)
+            .await;
+
+        let http = http();
+        let accounts: Accounts = [(
+            key.to_string(),
+            account(Provider::Microsoft, "max@contoso.com"),
+        )]
+        .into();
+        let none = HashMap::new();
+        check(&http, &dir, &accounts, None, &none, NOW, &apis(&server)).await;
+        let notices = check(
+            &http,
+            &dir,
+            &accounts,
+            None,
+            &none,
+            NOW + 900_000,
+            &apis(&server),
+        )
+        .await;
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].body, "Planning");
+    }
+
+    #[tokio::test]
     async fn does_nothing_while_off_or_without_a_token() {
         let dir = temp_dir("off");
         let server = MockServer::start().await;
@@ -1122,7 +1199,7 @@ mod tests {
             .await
             .is_empty()
         );
-        configure(&dir, true, texts(), "phone".into()).unwrap();
+        configure(&dir, true, texts(), "phone".into(), Vec::new()).unwrap();
         check(
             &http,
             &dir,
@@ -1157,7 +1234,7 @@ mod tests {
         use crate::vault::FixedKey;
 
         let dir = temp_dir("imap");
-        configure(&dir, true, texts(), "phone".into()).unwrap();
+        configure(&dir, true, texts(), "phone".into(), Vec::new()).unwrap();
         let certificate = self_signed(&["localhost"]);
         let pin = crate::imap::tls::fingerprint(&certificate.0);
         let tls = acceptor(certificate);

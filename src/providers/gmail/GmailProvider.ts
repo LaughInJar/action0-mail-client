@@ -23,6 +23,7 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  FocusRule,
   Mailbox,
   MailboxColor,
   Message,
@@ -130,6 +131,10 @@ interface SnoozeLabels {
   readonly back?: string;
   /** Return time (ISO) of each time label. */
   readonly times: ReadonlyMap<string, string>;
+}
+
+function noFocusedInbox(provider: string): MailError {
+  return new MailError("unavailable", `${provider} has no Focused Inbox.`);
 }
 
 /** An error if any id is one we invented for the tree (Gmail doesn't know them). */
@@ -742,6 +747,19 @@ export class GmailProvider implements MailProvider {
     return back === undefined
       ? {}
       : this.#modify(ids, { removeLabelIds: [back] }, signal);
+  }
+
+  /** Gmail has no Focused Inbox (its categories are labels). */
+  setFocus(): Promise<MutationResult> {
+    return Promise.reject(noFocusedInbox("Gmail"));
+  }
+
+  listFocusRules(): Promise<readonly FocusRule[]> {
+    return Promise.reject(noFocusedInbox("Gmail"));
+  }
+
+  setFocusRule(): Promise<void> {
+    return Promise.reject(noFocusedInbox("Gmail"));
   }
 
   /** action0's snooze labels, loaded once (`fresh`: again). */

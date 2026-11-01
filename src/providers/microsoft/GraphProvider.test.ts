@@ -20,6 +20,8 @@ import {
   CATEGORIES_GROUP_ID,
   categoryId,
   FLAGGED_VIEW_ID,
+  FOCUSED_VIEW_ID,
+  OTHER_VIEW_ID,
 } from "./folders";
 import {
   GraphProvider,
@@ -92,6 +94,8 @@ describe("GraphProvider mailboxes", () => {
       ["All mail", "all"],
       ["Projects", null],
       ["Clients", null],
+      ["Focused", null],
+      ["Other", null],
     ]);
     const byName = (name: string) => mailboxes.find((m) => m.name === name);
     expect(byName("Clients")?.parentId).toBe("projects-id");
@@ -818,6 +822,55 @@ describe("GraphProvider Send later", () => {
     await provider.sendDraft({ ...draft, id, schedule });
     expect(saved).toMatchObject({ parentFolderId: "sent-id", isDraft: false });
     expect(saved?.singleValueExtendedProperties?.[0]?.value).toBe("");
+  });
+});
+
+describe("GraphProvider Focused Inbox", () => {
+  it("lists Focused and Other with their counts, and moves mail between them", async () => {
+    const { graph, provider } = setup();
+    graph.add({ id: "a", isRead: false });
+    graph.add({ id: "b", isRead: false, inferenceClassification: "other" });
+    graph.add({ id: "c", isRead: true, inferenceClassification: "other" });
+    const mailboxes = await provider.listMailboxes();
+    expect(provider.capabilities.focusedInbox).toBe(true);
+    expect(mailboxes.find((m) => m.standard === "focused")).toMatchObject({
+      id: FOCUSED_VIEW_ID,
+      kind: "view",
+      hidden: true,
+      parentId: "inbox-id",
+      counts: { unread: 1, total: 1 },
+    });
+    expect(mailboxes.find((m) => m.standard === "other")).toMatchObject({
+      id: OTHER_VIEW_ID,
+      counts: { unread: 1, total: 2 },
+    });
+    const listed = async (mailboxId: typeof FOCUSED_VIEW_ID) =>
+      (await provider.listMessages({ mailboxId, limit: 10 })).items
+        .map((m) => `${m.id}:${m.focus ?? "?"}`)
+        .sort();
+    expect(await listed(FOCUSED_VIEW_ID)).toEqual(["a:?"]);
+    expect(await listed(OTHER_VIEW_ID)).toEqual(["b:other", "c:other"]);
+
+    await provider.setFocus([id("a")], "other");
+    expect(graph.messages.find((m) => m.id === "a")).toMatchObject({
+      inferenceClassification: "other",
+    });
+    expect(await listed(OTHER_VIEW_ID)).toEqual([
+      "a:other",
+      "b:other",
+      "c:other",
+    ]);
+  });
+
+  it("keeps one sender rule per address, and removes it by its id", async () => {
+    const { graph, provider } = setup();
+    await provider.setFocusRule("news@contoso.example", "other");
+    await provider.setFocusRule("News@contoso.example", "focused");
+    expect(await provider.listFocusRules()).toEqual([
+      { address: "News@contoso.example", focus: "focused" },
+    ]);
+    await provider.setFocusRule("news@contoso.example", null);
+    expect(graph.overrides).toEqual([]);
   });
 });
 

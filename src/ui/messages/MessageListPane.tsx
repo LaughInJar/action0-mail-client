@@ -15,6 +15,9 @@ import { IconButton } from "../common/IconButton";
 import type { Breakpoint } from "../layout/useBreakpoint";
 import { ListToolbar } from "./ListToolbar";
 import { AutoReplyNotice } from "../filters/AutoReplyNotice";
+import { FocusTabs } from "./FocusTabs";
+import { findMailbox } from "../../data/hooks";
+import { focusViews, isFocusView } from "../../core/focus";
 import { MessageList } from "./MessageList";
 import {
   everywhereMailbox,
@@ -49,8 +52,16 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
   const status = useAuthStatus(handle?.auth);
   const search = route?.search;
   const everywhere = everywhereMailbox(mailboxes);
+  // Focused and Other are tabs of the Inbox.
+  const views =
+    !unified && isFocusView(mailbox) && mailboxes
+      ? focusViews(mailboxes)
+      : undefined;
+  const shown = views
+    ? (findMailbox(mailboxes, mailbox?.parentId) ?? mailbox)
+    : mailbox;
   // What's listed, by name (where a search runs).
-  const here = unified ? l.combined[unifiedRole] : mailbox?.name;
+  const here = unified ? l.combined[unifiedRole] : shown?.name;
   const isolated = scope?.role === "trash" || scope?.role === "junk";
   const selectedCount = useUi((state) => state.selectedIds.size);
   const clearSelection = useUi((state) => state.clearSelection);
@@ -218,7 +229,7 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
       </header>
       {route && (
         <ListToolbar
-          mailbox={mailbox}
+          mailbox={shown}
           everywhere={everywhere}
           unified={unified}
         />
@@ -230,6 +241,14 @@ export function MessageListPane({ breakpoint }: { breakpoint: Breakpoint }) {
               ? accounts.map((candidate) => candidate.account.id)
               : [route.accountId]
           }
+        />
+      )}
+      {route && views && mailbox && !search && (
+        <FocusTabs
+          accountId={route.accountId}
+          views={views}
+          current={mailbox}
+          actions={actions}
         />
       )}
       {unavailable.length > 0 && (

@@ -14,7 +14,9 @@ import {
   type MailIntent,
   type MessageChange,
 } from "../../core/intents";
+import { focusViews, isSplit, type FocusViews } from "../../core/focus";
 import type { ProviderCapabilities } from "../../core/provider";
+import { senderMail, useSetFocusRules } from "../../data/focusRules";
 import { findMailbox } from "../../data/hooks";
 import {
   cachedMailboxes,
@@ -36,7 +38,7 @@ import type {
   PickerState,
   UndoStep,
 } from "../../state/uiStore";
-import type { Mailbox } from "../../core/model";
+import type { Focus, Mailbox, MessageSummary } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
 import { formatSendAt } from "../common/format";
 import { positionNearFocus } from "../common/menuPosition";
@@ -146,6 +148,30 @@ export interface MailActions {
     keys?: readonly MessageKey[],
     options?: ExactOption,
   ) => void;
+  /**
+   * Where Move to Focused/Other sends `keys` (or the targets): Other,
+   * unless all of them are there already; undefined when none of them is
+   * in a split Inbox (Outlook's Focused Inbox).
+   */
+  readonly focusTarget: (
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => Focus | undefined;
+  /** Moves `keys` (or the targets) to one side of the split Inbox. */
+  readonly setFocus: (
+    focus: Focus,
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
+  /**
+   * Like {@link setFocus}, and their senders' mail from now on (Outlook's
+   * sender rules); the senders' mail already in the Inbox moves along.
+   */
+  readonly alwaysFocus: (
+    focus: Focus,
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
 }
 
 interface PerformOptions {
@@ -198,6 +224,7 @@ export function useMailActions(): MailActions {
   // are never lost. Rollback lives in the mutation itself either way.
   const { mutateAsync: apply } = useApplyIntent();
   const { mutateAsync: empty } = useEmptyMailbox();
+  const setFocusRules = useSetFocusRules();
 
   return useMemo((): MailActions => {
     const orderedKeys = (rows ?? []).map((row) => row.key);
@@ -433,6 +460,33 @@ export function useMailActions(): MailActions {
         ...(steps.length > 0 ? { undo: steps } : {}),
       });
     };
+
+    const f = t.focus;
+    const sideName = (focus: Focus) => t.mailboxes.standard[focus];
+    /** An account's Focused and Other, if its Inbox shows split. */
+    const splitOf = (group: Group): FocusViews | undefined => {
+      const mailboxes =
+        group.source.mailboxes ?? cachedMailboxes(queryClient, group.accountId);
+      return isSplit(
+        mailboxes,
+        store.getState().settings.focusedInbox[group.accountId],
+      )
+        ? focusViews(mailboxes)
+        : undefined;
+    };
+    /** Per account, the targets' messages in a split Inbox. */
+    const splitTargets = (keys: readonly MessageKey[], exact: boolean) =>
+      groupsOf(keys).flatMap((group) => {
+        const views = splitOf(group);
+        const inbox = views?.focused.parentId;
+        if (!views || inbox === undefined) return [];
+        const messages = cachedSummaries(
+          queryClient,
+          group.accountId,
+          exact ? group.ids : expand(group, group.ids, "set-focus"),
+        ).filter((message) => message.mailboxIds.includes(inbox));
+        return messages.length > 0 ? [{ group, views, messages }] : [];
+      });
 
     /** The one account of `keys` (moving and labels), or a hint if there are several. */
     const oneAccount = (keys: readonly MessageKey[]): Group | undefined => {
@@ -705,6 +759,160 @@ export function useMailActions(): MailActions {
         );
       },
 
+      focusTarget: (explicit, { exact = false } = {}) => {
+        const found = splitTargets(keysOf(explicit), exact).flatMap(
+          (target) => target.messages,
+        );
+        if (found.length === 0) return undefined;
+        return found.every((message) => message.focus === "other")
+          ? "focused"
+          : "other";
+      },
+
+      setFocus: (focus, explicit, { exact = false } = {}) => {
+        perform(
+          keysOf(explicit),
+          (group) =>
+            splitOf(group)
+              ? { kind: "set-focus", ids: group.ids, focus }
+              : undefined,
+          {
+            done: (what) => a.moved(what, sideName(focus)),
+            failure: f.couldntMove,
+          },
+          exact,
+        );
+      },
+
+      alwaysFocus: (focus, explicit, { exact = false } = {}) => {
+        const targets = splitTargets(keysOf(explicit), exact);
+        const { showToast } = store.getState();
+        // Undo reverts what's done, and what finishes after it.
+        const undos: (() => Promise<unknown>)[] = [];
+        let reverted = false;
+        const done = (undo: () => Promise<unknown>) => {
+          if (reverted) void undo().catch(showError(a.couldntUndo));
+          else undos.push(undo);
+        };
+        /** Applies `intent` to what changes; undefined if nothing does. */
+        const applyNow = (
+          group: Group,
+          intent: MailIntent,
+          known: readonly MessageSummary[],
+        ) => {
+          const { accountId } = group;
+          const { changes } = preview({ accountId, intent, known });
+          if (changes.length === 0) return undefined;
+          const run = apply({
+            accountId,
+            intent: { ...intent, ids: changes.map((change) => change.id) },
+            known,
+          });
+          const after = changes.map((change) => change.after);
+          const inverse = inverseOf(intent, changes);
+          return {
+            changes,
+            run,
+            undo: () =>
+              Promise.all(
+                inverse.map((back) =>
+                  apply({ accountId, intent: back, known: after }),
+                ),
+              ),
+          };
+        };
+
+        const senders = new Map<string, string>();
+        const planned: Planned[] = [];
+        const work = targets.map(({ group, views, messages }) => {
+          const me = handles
+            .find((handle) => handle.account.id === group.accountId)
+            ?.account.email.toLowerCase();
+          const addresses = [
+            ...new Map(
+              messages.flatMap((message) => {
+                const address = message.from?.address;
+                return address && address.toLowerCase() !== me
+                  ? [[address.toLowerCase(), address] as const]
+                  : [];
+              }),
+            ).values(),
+          ];
+          for (const address of addresses)
+            senders.set(address.toLowerCase(), address);
+          // The chosen mail moves at once.
+          const intent: MailIntent = {
+            kind: "set-focus",
+            ids: messages.map((message) => message.id),
+            focus,
+          };
+          const now = applyNow(group, intent, messages);
+          if (now) planned.push({ group, intent, changes: now.changes });
+          return { group, views, addresses, now };
+        });
+        if (senders.size === 0) {
+          // Only your own mail: there's no sender to sort.
+          if (planned.length > 0) {
+            stepAway(planned);
+            for (const { now } of work)
+              if (now) {
+                now.run.catch(showError(f.couldntMove));
+                done(now.undo);
+              }
+          }
+          return;
+        }
+        stepAway(planned);
+        showToast({
+          message: f.always([...senders.values()].join(", "), sideName(focus)),
+          tone: "info",
+          revert: () => {
+            reverted = true;
+            for (const undo of undos.splice(0).reverse())
+              void undo().catch(showError(a.couldntUndo));
+          },
+        });
+        for (const { group, views, addresses, now } of work) {
+          const { accountId } = group;
+          const provider = handles.find(
+            (handle) => handle.account.id === accountId,
+          )?.provider;
+          void (async () => {
+            if (now) {
+              await now.run;
+              done(now.undo);
+            }
+            if (!provider || addresses.length === 0) return;
+            const back = await setFocusRules(
+              accountId,
+              addresses.map((address) => ({ address, focus })),
+            );
+            done(() => setFocusRules(accountId, back));
+            // Their mail on the other side moves along.
+            const from = focus === "other" ? views.focused : views.other;
+            const found = (
+              await Promise.all(
+                addresses.map((address) =>
+                  senderMail(provider, from.id, address),
+                ),
+              )
+            ).flat();
+            const more = applyNow(
+              group,
+              {
+                kind: "set-focus",
+                ids: found.map((message) => message.id),
+                focus,
+              },
+              found,
+            );
+            if (!more) return;
+            await more.run;
+            done(more.undo);
+          })().catch(showError(f.couldntRule));
+        }
+      },
+
       requestSnooze: (at, explicit, { exact = false } = {}) => {
         const keys = keysOf(explicit);
         if (keys.length === 0) return;
@@ -869,6 +1077,7 @@ export function useMailActions(): MailActions {
     route,
     router,
     rows,
+    setFocusRules,
     sources,
     store,
     t,

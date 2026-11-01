@@ -68,6 +68,7 @@ describe("the Android app", () => {
           snoozeBack: "Back from snooze: {subject}",
         },
         device: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown,
+        focused: [],
       });
     });
     const dialog = await settings(user);

@@ -28,6 +28,7 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  FocusRule,
   Mailbox,
   Message,
   MessageSummary,
@@ -91,6 +92,10 @@ const CREATED_NAMES = {
 const SNOOZE_PREFIX = "$A0Snooze-";
 /** The keyword of mail that came back from snooze. */
 const BACK_KEYWORD = "$A0Back";
+
+function noFocusedInbox(): MailError {
+  return new MailError("unavailable", "IMAP accounts have no Focused Inbox.");
+}
 
 /** The keyword for a return time (to the minute). */
 function snoozeKeyword(until: Date): string {
@@ -560,6 +565,19 @@ export class ImapProvider implements MailProvider {
   ): Promise<MutationResult> {
     await this.#call("flags", { ids, remove: [BACK_KEYWORD] }, signal);
     return {};
+  }
+
+  /** IMAP has no Focused Inbox. */
+  setFocus(): Promise<MutationResult> {
+    return Promise.reject(noFocusedInbox());
+  }
+
+  listFocusRules(): Promise<readonly FocusRule[]> {
+    return Promise.reject(noFocusedInbox());
+  }
+
+  setFocusRule(): Promise<void> {
+    return Promise.reject(noFocusedInbox());
   }
 
   /** From the address books of the account's calendar server (CardDAV), if any. */

@@ -3,42 +3,32 @@ import { useCallback, useSyncExternalStore } from "react";
 import { useAccounts } from "../../accounts/context";
 import type { AccountId } from "../../core/ids";
 import { cachedMailboxes } from "../../data/mutations";
-import { useRouter } from "../../state/context";
+import { inboxListOf } from "../../core/focus";
+import { useRouter, useUi } from "../../state/context";
 import type { Route } from "../../state/router";
 import { unifiedRoleOf, type UnifiedRole } from "../../data/unified";
 
 /** All inboxes is offered from this many accounts on. */
 export const ALL_INBOXES_FROM = 2;
 
-/** Unread messages in the Inboxes of `accountIds` (as far as their mailboxes are loaded). */
+/**
+ * Unread messages in the Inboxes of `accountIds` (as far as their
+ * mailboxes are loaded); of a split Inbox only Focused's (`focusedInbox`:
+ * the Focused Inbox switches by account id).
+ */
 export function inboxUnread(
   queryClient: QueryClient,
   accountIds: readonly AccountId[],
+  focusedInbox: Readonly<Record<string, boolean>>,
 ): number {
   return accountIds.reduce(
     (sum, accountId) =>
       sum +
-      (cachedMailboxes(queryClient, accountId).find(
-        (mailbox) => mailbox.role === "inbox",
+      (inboxListOf(
+        cachedMailboxes(queryClient, accountId),
+        focusedInbox[accountId],
       )?.counts?.unread ?? 0),
     0,
-  );
-}
-
-/** The unread count of all inboxes; re-renders when it changes. */
-export function useInboxUnread(): number {
-  const queryClient = useQueryClient();
-  const accounts = useAccounts();
-  return useSyncExternalStore(
-    useCallback(
-      (listener: () => void) => queryClient.getQueryCache().subscribe(listener),
-      [queryClient],
-    ),
-    () =>
-      inboxUnread(
-        queryClient,
-        accounts.map((handle) => handle.account.id),
-      ),
   );
 }
 
@@ -64,6 +54,7 @@ function draftCount(
 export function useCombinedCount(role: UnifiedRole): number {
   const queryClient = useQueryClient();
   const accounts = useAccounts();
+  const focusedInbox = useUi((state) => state.settings.focusedInbox);
   return useSyncExternalStore(
     useCallback(
       (listener: () => void) => queryClient.getQueryCache().subscribe(listener),
@@ -72,7 +63,7 @@ export function useCombinedCount(role: UnifiedRole): number {
     () => {
       const ids = accounts.map((handle) => handle.account.id);
       return role === "inbox"
-        ? inboxUnread(queryClient, ids)
+        ? inboxUnread(queryClient, ids, focusedInbox)
         : role === "drafts"
           ? draftCount(queryClient, ids)
           : 0;

@@ -144,6 +144,14 @@ const PATHS = {
       <polyline points="12 19 5 12 12 5" />
     </>
   ),
+  "arrow-left-right": (
+    <>
+      <polyline points="8 3 4 7 8 11" />
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <polyline points="16 21 20 17 16 13" />
+      <line x1="20" y1="17" x2="4" y2="17" />
+    </>
+  ),
   image: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />

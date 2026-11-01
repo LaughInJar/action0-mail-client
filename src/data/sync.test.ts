@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountRegistry } from "../accounts/AccountRegistry";
-import { asMessageId } from "../core/ids";
+import { asMailboxId, asMessageId } from "../core/ids";
+import type { Mailbox, MessageSummary } from "../core/model";
 import {
   createDemoArrival,
   createDemoData,
@@ -11,7 +12,7 @@ import { createDemoModule, DEMO_ACCOUNT } from "../providers/fake/module";
 import { queryKeys, type ListSpec } from "./keys";
 import type { MessageListData } from "./optimistic";
 import { createQueryClient } from "./queryClient";
-import { createMailSync } from "./sync";
+import { createMailSync, inboxArrivals } from "./sync";
 
 async function setup() {
   let now = Date.parse("2026-10-18T12:00:00Z");
@@ -122,5 +123,64 @@ describe("MailSync", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [...queryKeys.account(DEMO_ACCOUNT.id)],
     });
+  });
+});
+
+describe("inboxArrivals", () => {
+  const inboxId = asMailboxId("inbox");
+  const view = (standard: "focused" | "other", total: number): Mailbox => ({
+    id: asMailboxId(standard),
+    name: standard,
+    kind: "view",
+    standard,
+    parentId: inboxId,
+    selectable: true,
+    hidden: true,
+    assignable: false,
+    counts: { total, unread: 0 },
+  });
+  const inbox: Mailbox = {
+    id: inboxId,
+    name: "Inbox",
+    kind: "folder",
+    role: "inbox",
+    selectable: true,
+    hidden: false,
+    assignable: true,
+  };
+  const mail = (id: string, focus?: "focused" | "other"): MessageSummary => ({
+    id: asMessageId(id),
+    mailboxIds: [inboxId],
+    to: [],
+    subject: id,
+    snippet: "",
+    receivedAt: "2026-10-18T12:00:00.000Z",
+    flags: { seen: false, flagged: false },
+    hasAttachments: false,
+    ...(focus ? { focus } : {}),
+  });
+  const arrivals = {
+    accountId: DEMO_ACCOUNT.id,
+    inboxId,
+    messages: [mail("a", "focused"), mail("b", "other"), mail("c")],
+  };
+
+  it("counts only Focused's mail of a split Inbox, leading there", () => {
+    const split = [inbox, view("focused", 2), view("other", 1)];
+    expect(inboxArrivals(arrivals, split, undefined)).toEqual({
+      ...arrivals,
+      inboxId: asMailboxId("focused"),
+      messages: [mail("a", "focused"), mail("c")],
+    });
+    expect(
+      inboxArrivals(
+        { ...arrivals, messages: [mail("b", "other")] },
+        split,
+        true,
+      ),
+    ).toBeUndefined();
+    // Not split: everything, as before.
+    expect(inboxArrivals(arrivals, split, false)).toBe(arrivals);
+    expect(inboxArrivals(arrivals, [inbox], undefined)).toBe(arrivals);
   });
 });

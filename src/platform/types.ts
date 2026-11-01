@@ -168,6 +168,8 @@ export interface MobileControls {
     readonly enabled: boolean;
     readonly texts: BackgroundTexts;
     readonly device: string;
+    /** Accounts whose Inbox is split (Outlook's Focused Inbox): only Focused mail is new. */
+    readonly focused: readonly string[];
   }) => Promise<void>;
   /**
    * When scheduled mail waiting in Drafts is due, or snoozed mail comes

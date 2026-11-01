@@ -11,6 +11,7 @@ import { WebAppSettings } from "./WebAppSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
 import { TemplateSettings } from "../templates/TemplateSettings";
+import { FocusedInboxSettings } from "./FocusedInboxSettings";
 import { SpellingSettings } from "./SpellingSettings";
 import { AiSettings } from "../ai/AiSettings";
 import { FilterSettings } from "../filters/FilterSettings";
@@ -192,6 +193,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             >
               {settings.remoteImages === "trusted" && <TrustedSenders />}
             </ChoiceGroup>
+            <FocusedInboxSettings />
           </SettingsSection>
 
           <SettingsSection id="settings-writing" title={s.writing}>

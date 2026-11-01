@@ -24,6 +24,15 @@ export function AndroidIntegration({ compose }: { compose: ComposeActions }) {
   const platform = usePlatform();
   const { mobile } = platform;
   const notifications = useUi((state) => state.settings.notifications);
+  // Split Inboxes (an account found split is recorded as such).
+  const focused = useUi((state) =>
+    JSON.stringify(
+      Object.entries(state.settings.focusedInbox)
+        .filter(([, split]) => split)
+        .map(([accountId]) => accountId)
+        .sort(),
+    ),
+  );
   const store = useUiStore();
   const t = useT();
   const router = useRouter();
@@ -41,9 +50,10 @@ export function AndroidIntegration({ compose }: { compose: ComposeActions }) {
           snoozeBack: t.snooze.backNotice("{subject}"),
         },
         device: deviceIdOf(store),
+        focused: JSON.parse(focused) as string[],
       })
       .catch(() => undefined);
-  }, [mobile, notifications, t, store]);
+  }, [mobile, notifications, t, store, focused]);
 
   // Scheduled mail in Drafts goes out, and snoozed mail comes back, from a
   // background job when it's due.

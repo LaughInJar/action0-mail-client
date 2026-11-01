@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAccounts } from "../../accounts/context";
-import { useAppPart, useRoute, useRouter } from "../../state/context";
+import { inboxListOf } from "../../core/focus";
+import { useAppPart, useRoute, useRouter, useUi } from "../../state/context";
 import type { Breakpoint } from "./useBreakpoint";
 import { useMailboxList } from "../common/mailboxNames";
 import { ALL_INBOXES_FROM, combinedRoute } from "../mailboxes/allInboxes";
@@ -27,6 +28,11 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
   const firstAccountId = accounts[0]?.account.id;
   const { data: mailboxes } = useMailboxList(
     route === null ? firstAccountId : undefined,
+  );
+  const focusSetting = useUi((state) =>
+    firstAccountId === undefined
+      ? undefined
+      : state.settings.focusedInbox[firstAccountId],
   );
 
   useEffect(() => {
@@ -59,9 +65,13 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
       mailboxes.find((mailbox) => mailbox.role === "inbox") ??
       mailboxes.find((mailbox) => mailbox.selectable);
     if (!inbox) return;
+    // One account with a split Inbox starts on Focused.
+    const start = several
+      ? inbox
+      : (inboxListOf(mailboxes, focusSetting) ?? inbox);
     const target = {
       accountId: firstAccountId,
-      mailboxId: inbox.id,
+      mailboxId: start.id,
       ...(several && inbox.role === "inbox" ? { unified: true as const } : {}),
     };
     if (breakpoint !== "narrow") {
@@ -80,5 +90,6 @@ export function useNavigationDefaults(breakpoint: Breakpoint): void {
     breakpoint,
     several,
     queryClient,
+    focusSetting,
   ]);
 }

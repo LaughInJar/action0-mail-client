@@ -55,6 +55,8 @@ const en: {
     updates: "Updates",
     forums: "Forums",
     backFromSnooze: "Back from snooze",
+    focused: "Focused",
+    other: "Other",
   },
 };
 
@@ -106,6 +108,8 @@ const de: typeof en = {
     updates: "Benachrichtigungen",
     forums: "Foren",
     backFromSnooze: "Wieder da",
+    focused: "Relevant",
+    other: "Sonstige",
   },
 };
 

@@ -17,6 +17,8 @@ import {
 } from "../../core/ids";
 import type {
   EmailAddress,
+  Focus,
+  FocusRule,
   Mailbox,
   MailboxColor,
   MailboxRole,
@@ -44,6 +46,10 @@ import type { Schedule } from "../../core/schedule";
 import { sleep } from "../../lib/sleep";
 import { foldText } from "../../lib/text";
 import { buildMessage } from "../mime/buildMessage";
+
+function noFocusedInbox(): MailError {
+  return new MailError("unavailable", "Only folder mode has a Focused Inbox.");
+}
 
 /** In-memory content of a fake account. */
 export interface FakeMailData {
@@ -75,6 +81,8 @@ export interface FakeMailData {
    * default).
    */
   readonly scheduling?: "held" | "drafts";
+  /** Focused Inbox sender rules (folder mode, which has a Focused Inbox like Outlook). */
+  readonly focusRules?: readonly FocusRule[];
 }
 
 /** The Scheduled view every fake account has. */
@@ -83,6 +91,9 @@ export const FAKE_SCHEDULED_ID = asMailboxId("scheduled");
 export const FAKE_SNOOZED_ID = asMailboxId("snoozed");
 /** The hidden view of the Inbox's mail that came back from snooze. */
 export const FAKE_BACK_ID = asMailboxId("back-from-snooze");
+/** Focused and Other, the Inbox's sides in folder mode (like Outlook). */
+export const FAKE_FOCUSED_ID = asMailboxId("focused");
+export const FAKE_OTHER_ID = asMailboxId("other");
 
 /** Options of {@link FakeMailProvider}. */
 export interface FakeMailProviderOptions {
@@ -173,6 +184,8 @@ export class FakeMailProvider implements MailProvider {
   #arrived = 0;
   #messages: Message[];
   readonly #folders: boolean;
+  /** Focused Inbox sender rules, by lower-case address. */
+  readonly #focusRules = new Map<string, FocusRule>();
   /** Mail the "server" holds until it's due (`held` scheduling), by message id. */
   readonly #held = new Map<MessageId, DraftInput>();
 
@@ -222,6 +235,24 @@ export class FakeMailProvider implements MailProvider {
     this.#now = options.now ?? Date.now;
     this.#lastArrival = this.#now();
     this.#folders = data.folders ?? false;
+    if (this.#folders) {
+      // Like Outlook: Focused and Other, hidden views of the Inbox.
+      const inbox = this.#roleId("inbox");
+      const view = {
+        kind: "view",
+        selectable: true,
+        hidden: true,
+        assignable: false,
+        ...(inbox === undefined ? {} : { parentId: inbox }),
+      } as const;
+      this.#mailboxes = [
+        ...this.#mailboxes,
+        { id: FAKE_FOCUSED_ID, name: "Focused", standard: "focused", ...view },
+        { id: FAKE_OTHER_ID, name: "Other", standard: "other", ...view },
+      ];
+      for (const rule of data.focusRules ?? [])
+        this.#focusRules.set(rule.address.toLowerCase(), rule);
+    }
     const colors = data.mailboxColors ?? [];
     this.capabilities = {
       ...this.capabilities,
@@ -231,8 +262,9 @@ export class FakeMailProvider implements MailProvider {
       snooze: true,
       ...(this.#folders
         ? {
-            // Like Outlook: folders, and categories as labels.
+            // Like Outlook: folders, categories as labels, Focused Inbox.
             mailboxKinds: ["folder", "label", "view"],
+            focusedInbox: true,
             mailboxEditing: {
               folder: { rename: true, colors: [], nest: true, hide: false },
               label: { rename: false, colors, nest: false, hide: false },
@@ -843,6 +875,39 @@ export class FakeMailProvider implements MailProvider {
     });
   }
 
+  async setFocus(
+    ids: readonly MessageId[],
+    focus: Focus,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    if (!this.#folders) throw noFocusedInbox();
+    return this.#write(ids, signal, (message) => ({ ...message, focus }));
+  }
+
+  async listFocusRules(signal?: AbortSignal): Promise<readonly FocusRule[]> {
+    await this.#delay(signal);
+    if (!this.#folders) throw noFocusedInbox();
+    return [...this.#focusRules.values()];
+  }
+
+  /** Like Outlook: only mail that arrives later follows a new rule. */
+  async setFocusRule(
+    address: string,
+    focus: Focus | null,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#refuseIfFailing(signal);
+    if (!this.#folders) throw noFocusedInbox();
+    const key = address.toLowerCase();
+    if (focus === null) this.#focusRules.delete(key);
+    else
+      this.#focusRules.set(key, {
+        ...this.#focusRules.get(key),
+        address,
+        focus,
+      });
+  }
+
   /** Held mail whose time has come goes out (like Exchange, without the app). */
   #sendHeldDue() {
     const now = this.#now();
@@ -1381,7 +1446,15 @@ export class FakeMailProvider implements MailProvider {
         .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
     }
     let matches: (message: Message) => boolean;
-    if (mailbox?.role === "all") matches = outsideSpamAndTrash;
+    const inbox = this.#roleId("inbox");
+    if (mailbox?.standard === "focused" || mailbox?.standard === "other")
+      // A side of the split Inbox.
+      matches = (message) =>
+        inbox !== undefined &&
+        message.mailboxIds.includes(inbox) &&
+        (message.focus ?? "focused") === mailbox.standard &&
+        outsideSpamAndTrash(message);
+    else if (mailbox?.role === "all") matches = outsideSpamAndTrash;
     else if (mailbox?.role === "flagged")
       matches = (message) =>
         message.flags.flagged && outsideSpamAndTrash(message);
