@@ -22,6 +22,7 @@ import { reader } from "./texts/reader";
 import { schedule } from "./texts/schedule";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
+import { snooze } from "./texts/snooze";
 import { templates } from "./texts/templates";
 import { unsubscribe } from "./texts/unsubscribe";
 
@@ -58,6 +59,7 @@ export const messages = {
     schedule: schedule.en,
     settings: settings.en,
     shortcuts: shortcuts.en,
+    snooze: snooze.en,
     templates: templates.en,
     unsubscribe: unsubscribe.en,
   },
@@ -88,6 +90,7 @@ export const messages = {
     schedule: schedule.de,
     settings: settings.de,
     shortcuts: shortcuts.de,
+    snooze: snooze.de,
     templates: templates.de,
     unsubscribe: unsubscribe.de,
   },

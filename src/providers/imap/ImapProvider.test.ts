@@ -81,6 +81,41 @@ describe("ImapProvider", () => {
     expect(store.get("m1")?.message.mailboxIds).toEqual(["f:INBOX"]);
   });
 
+  it("snoozes into a Snoozed folder with its time as a keyword, and brings it back unread", async () => {
+    const { imap, store, folders } = provider({
+      messages: [
+        imapMessage("m1", "f:INBOX", {
+          flags: { seen: true, flagged: false },
+        }),
+      ],
+    });
+    expect(imap.capabilities.snooze).toBe(true);
+    await imap.snooze([asMessageId("m1")], new Date("2026-11-03T07:00:00Z"));
+    const snoozed = folders.find((folder) => folder.role === "snoozed");
+    expect(snoozed?.name).toBe("Snoozed (action0)");
+    expect(store.get("m1")?.message).toMatchObject({
+      mailboxIds: [snoozed?.id],
+      snoozedUntil: "2026-11-03T07:00:00.000Z",
+    });
+    // A new time replaces the old one.
+    await imap.snooze([asMessageId("m1")], new Date("2026-11-04T07:00:00Z"));
+    expect(store.get("m1")?.keywords).toEqual(
+      new Set(["$A0Snooze-20261104T0700Z"]),
+    );
+    const mailboxes = await imap.listMailboxes();
+    expect(mailboxes.find((m) => m.role === "snoozed")?.kind).toBe("folder");
+
+    await imap.unsnooze([asMessageId("m1")], { to: null, back: true });
+    expect(store.get("m1")?.message).toMatchObject({
+      mailboxIds: ["f:INBOX"],
+      flags: { seen: false },
+      backFromSnooze: true,
+    });
+    expect(store.get("m1")?.message.snoozedUntil).toBeUndefined();
+    await imap.clearBackFromSnooze([asMessageId("m1")]);
+    expect(store.get("m1")?.keywords).toEqual(new Set());
+  });
+
   it("empties only Trash and Junk", async () => {
     const { imap } = provider({
       messages: [imapMessage("m1", "f:Trash"), imapMessage("m2", "f:INBOX")],

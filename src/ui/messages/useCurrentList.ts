@@ -4,6 +4,7 @@ import {
   type AccountId,
   type MessageKey,
 } from "../../core/ids";
+import { pinRows, useBackFromSnooze } from "../../data/scheduled";
 import type { Mailbox } from "../../core/model";
 import type { MessageOrder } from "../../core/provider";
 import { useMemo } from "react";
@@ -123,7 +124,8 @@ export function useCurrentList() {
     wantsConversations &&
     supportsThreads &&
     scope?.role !== "drafts" &&
-    scope?.role !== "scheduled";
+    scope?.role !== "scheduled" &&
+    scope?.role !== "snoozed";
   const messageList = useMessageList(
     route?.accountId,
     conversations ? undefined : spec,
@@ -182,6 +184,19 @@ export function useCurrentList() {
     : conversations
       ? threadList
       : messageList;
+  // The Inbox (and All inboxes) show mail back from snooze first.
+  const inInbox =
+    !searchText && (unified ? role === "inbox" : scope?.role === "inbox");
+  const listedAccounts = useMemo(
+    () => (unified ? [...merged.sources.keys()] : accountId ? [accountId] : []),
+    [unified, merged.sources, accountId],
+  );
+  const pinned = useBackFromSnooze(listedAccounts, inInbox);
+  const listed = unified ? merged.rows : single;
+  const rows = useMemo(
+    () => (listed && pinned.length > 0 ? pinRows(listed, pinned) : listed),
+    [listed, pinned],
+  );
   const context = unified ? merged.sources.get(route.accountId) : undefined;
   return {
     route,
@@ -194,7 +209,7 @@ export function useCurrentList() {
     /** The query behind the rows (loading state, paging). */
     list,
     /** The rows, once loaded. */
-    rows: unified ? merged.rows : single,
+    rows,
     /** Each account in the list: its mailboxes and what's listed of it. */
     sources: unified ? merged.sources : sources,
     /** All inboxes: accounts left out (they need reconnecting, or failed). */

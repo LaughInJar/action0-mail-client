@@ -9,6 +9,7 @@ export const ROLE_ICONS: Readonly<Record<MailboxRole, IconName>> = {
   sent: "send",
   drafts: "file",
   scheduled: "clock",
+  snoozed: "clock",
   all: "archive",
   archive: "archive",
   junk: "alert",

@@ -50,6 +50,7 @@ export type MailboxRole =
   | "sent"
   | "drafts"
   | "scheduled"
+  | "snoozed"
   | "all"
   | "archive"
   | "junk"
@@ -63,6 +64,7 @@ export const MAILBOX_ROLE_ORDER: readonly MailboxRole[] = [
   "sent",
   "drafts",
   "scheduled",
+  "snoozed",
   "all",
   "archive",
   "junk",
@@ -71,10 +73,17 @@ export const MAILBOX_ROLE_ORDER: readonly MailboxRole[] = [
 
 /**
  * Well-known mailboxes without a role (Gmail's inbox categories), so the
- * interface can name them in its language.
+ * interface can name them in its language. `backFromSnooze` is a hidden
+ * view: the Inbox's mail that came back from snooze (pinned atop it).
  */
 export type StandardMailbox =
-  "categories" | "primary" | "social" | "promotions" | "updates" | "forums";
+  | "categories"
+  | "primary"
+  | "social"
+  | "promotions"
+  | "updates"
+  | "forums"
+  | "backFromSnooze";
 
 /** Message counters of a mailbox. */
 export interface MailboxCounts {
@@ -156,6 +165,10 @@ export interface MessageSummary {
    * or app) that scheduled it, which sends it; others wait a moment. Opaque.
    */
   readonly scheduledBy?: string;
+  /** A snoozed message: when it comes back into the Inbox, as an ISO 8601 string. */
+  readonly snoozedUntil?: string;
+  /** It came back from snooze and hasn't been opened since (pinned atop the Inbox). */
+  readonly backFromSnooze?: true;
 }
 
 /** Metadata of an attachment or inline part. */

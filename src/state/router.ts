@@ -18,7 +18,8 @@ export interface RouteSearch {
 }
 
 /** A combined view other than All inboxes: every account's starred mail, sent mail or drafts. */
-export type CombinedView = "flagged" | "sent" | "drafts" | "scheduled";
+export type CombinedView =
+  "flagged" | "sent" | "drafts" | "scheduled" | "snoozed";
 
 /** The combined views besides All inboxes, as they appear in the URL. */
 export const COMBINED_VIEWS: readonly CombinedView[] = [
@@ -26,6 +27,7 @@ export const COMBINED_VIEWS: readonly CombinedView[] = [
   "sent",
   "drafts",
   "scheduled",
+  "snoozed",
 ];
 
 /**

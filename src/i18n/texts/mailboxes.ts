@@ -15,6 +15,7 @@ const en: {
     sent: "Sent",
     drafts: "Drafts",
     scheduled: "Scheduled",
+    snoozed: "Snoozed",
     all: "All Mail",
     archive: "Archive",
     junk: "Spam",
@@ -27,6 +28,7 @@ const en: {
     sent: "Sent Items",
     drafts: "Drafts",
     scheduled: "Scheduled",
+    snoozed: "Snoozed",
     all: "All mail",
     archive: "Archive",
     junk: "Junk Email",
@@ -39,6 +41,7 @@ const en: {
     sent: "Sent",
     drafts: "Drafts",
     scheduled: "Scheduled",
+    snoozed: "Snoozed",
     all: "All mail",
     archive: "Archive",
     junk: "Junk",
@@ -51,6 +54,7 @@ const en: {
     promotions: "Promotions",
     updates: "Updates",
     forums: "Forums",
+    backFromSnooze: "Back from snooze",
   },
 };
 
@@ -62,6 +66,7 @@ const de: typeof en = {
     sent: "Gesendet",
     drafts: "Entwürfe",
     scheduled: "Geplant",
+    snoozed: "Zurückgestellt",
     all: "Alle Nachrichten",
     archive: "Archiv",
     junk: "Spam",
@@ -74,6 +79,7 @@ const de: typeof en = {
     sent: "Gesendete Elemente",
     drafts: "Entwürfe",
     scheduled: "Geplant",
+    snoozed: "Zurückgestellt",
     all: "Alle Nachrichten",
     archive: "Archiv",
     junk: "Junk-E-Mail",
@@ -86,6 +92,7 @@ const de: typeof en = {
     sent: "Gesendet",
     drafts: "Entwürfe",
     scheduled: "Geplant",
+    snoozed: "Zurückgestellt",
     all: "Alle Nachrichten",
     archive: "Archiv",
     junk: "Spam",
@@ -98,6 +105,7 @@ const de: typeof en = {
     promotions: "Werbung",
     updates: "Benachrichtigungen",
     forums: "Foren",
+    backFromSnooze: "Wieder da",
   },
 };
 

@@ -48,6 +48,7 @@ const en = {
     sent: "Sent in all accounts",
     drafts: "Drafts in all accounts",
     scheduled: "Scheduled in all accounts",
+    snoozed: "Snoozed in all accounts",
   },
   needsReconnect: (email: string) =>
     `${email} needs reconnecting, so its messages aren’t shown.`,
@@ -103,6 +104,7 @@ const de: typeof en = {
     sent: "Gesendet in allen Konten",
     drafts: "Entwürfe in allen Konten",
     scheduled: "Geplant in allen Konten",
+    snoozed: "Zurückgestellt in allen Konten",
   },
   needsReconnect: (email) =>
     `${email} muss neu verbunden werden, deshalb fehlen seine Nachrichten.`,

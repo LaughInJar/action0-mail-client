@@ -76,7 +76,7 @@ describe("the reader toolbar", () => {
       "Reply (r)",
       "Archive (a)",
       "Move to Trash (Delete)",
-      "Move to… (v)",
+      "Snooze (h)",
       "Unstar (s)",
       "Mark as read (Shift+I)",
       "More actions",
@@ -93,6 +93,7 @@ describe("the reader toolbar", () => {
       "Reply all (Shift+R)",
       "Forward (f)",
       "Report spam (Shift+S)",
+      "Move to… (v)",
       "Labels… (l)",
       "Show original (Ctrl+U)",
       "Print (Ctrl+P)",
@@ -102,7 +103,7 @@ describe("the reader toolbar", () => {
     await waitFor(() => {
       expect(within(menu).getAllByRole("menuitem")[0]).toHaveFocus();
     });
-    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
     expect(
       await screen.findByRole("dialog", { name: /Labels/ }),
     ).toBeInTheDocument();
@@ -116,6 +117,20 @@ describe("the reader toolbar", () => {
     expect(
       within(toolbar()).getByRole("button", { name: "More actions" }),
     ).toHaveFocus();
+  });
+
+  it("moves Snooze into ⋯ before Reply", async () => {
+    layOut(260);
+    renderApp();
+    await subject("Welcome to the demo");
+    expect(buttons()).toEqual([
+      "Reply (r)",
+      "Archive (a)",
+      "Move to Trash (Delete)",
+      "Unstar (s)",
+      "Mark as read (Shift+I)",
+      "More actions",
+    ]);
   });
 
   it("measures again when the toolbar gets wider", async () => {

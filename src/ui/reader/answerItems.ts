@@ -23,7 +23,7 @@ export function answerItems(
         label: t.reader.editDraft,
         icon: "pencil",
         group: "answer",
-        keep: keep(6),
+        keep: keep(7),
         run: () => {
           compose.editDraft(target());
         },
@@ -35,7 +35,7 @@ export function answerItems(
       label: t.actions.replyButton,
       icon: "reply",
       group: "answer",
-      keep: keep(6),
+      keep: keep(7),
       run: () => {
         compose.reply(target(), "reply");
       },

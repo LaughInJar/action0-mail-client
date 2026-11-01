@@ -46,6 +46,11 @@ export const MessageRow = memo(function MessageRow({
           {l.draft}
         </span>
       )}
+      {view.backFromSnooze && (
+        <span className="ml-1.5 rounded bg-amber-100 px-1 text-xs font-medium text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">
+          {t.snooze.backTag}
+        </span>
+      )}
       {view.count !== undefined && (
         <span className="ml-1 text-xs font-normal text-zinc-500">
           {view.count}
@@ -63,6 +68,15 @@ export const MessageRow = memo(function MessageRow({
       <Icon name="clock" className="size-3.5" />
       <span className="sr-only">{t.schedule.sendLater}: </span>
       {formatSendAt(view.sendAt, { locale: t.locale })}
+    </time>
+  ) : view.snoozedUntil ? (
+    // A snoozed message: when it comes back.
+    <time
+      dateTime={view.snoozedUntil}
+      className="flex shrink-0 items-center gap-1 text-xs text-amber-700 tabular-nums dark:text-amber-300"
+    >
+      <Icon name="clock" className="size-3.5" />
+      {t.snooze.back(formatSendAt(view.snoozedUntil, { locale: t.locale }))}
     </time>
   ) : (
     <time

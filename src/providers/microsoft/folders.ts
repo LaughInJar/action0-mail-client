@@ -5,6 +5,12 @@ import type { GraphCategory, GraphMailFolder } from "./types";
 /** The Flagged view: flagged messages of every folder (the star is Outlook's flag). */
 export const FLAGGED_VIEW_ID = asMailboxId("view:flagged");
 
+/** Snooze's folder, at the top level (made on first use). */
+export const SNOOZED_FOLDER = "Snoozed (action0)";
+
+/** The hidden view of Inbox mail that came back from snooze. */
+export const BACK_VIEW_ID = asMailboxId("view:back");
+
 /** Scheduled mail: held in the Outbox, or drafts marked with a time. */
 export const SCHEDULED_VIEW_ID = asMailboxId("view:scheduled");
 
@@ -178,12 +184,15 @@ export function toMailbox(
   folder: GraphMailFolder,
   wellKnown: WellKnownFolders,
 ): Mailbox {
-  const role = roleOf(folder.id, wellKnown);
   const root = wellKnown.get(ROOT_FOLDER);
   const parent = folder.parentFolderId;
+  const snoozed =
+    folder.displayName === SNOOZED_FOLDER &&
+    (parent === undefined || parent === root);
+  const role = snoozed ? "snoozed" : roleOf(folder.id, wellKnown);
   return {
     id: asMailboxId(folder.id),
-    name: folder.displayName ?? "",
+    name: snoozed ? "Snoozed" : (folder.displayName ?? ""),
     ...(parent === undefined || parent === root || role !== undefined
       ? {}
       : { parentId: asMailboxId(parent) }),
@@ -191,8 +200,8 @@ export function toMailbox(
     ...(role === undefined ? {} : { role }),
     selectable: true,
     hidden: false,
-    // Drafts and Sent fill themselves.
-    assignable: role !== "drafts" && role !== "sent",
+    // Drafts, Sent and Snoozed fill themselves.
+    assignable: role !== "drafts" && role !== "sent" && role !== "snoozed",
     counts: {
       unread: folder.unreadItemCount ?? 0,
       total: folder.totalItemCount ?? 0,
@@ -217,6 +226,15 @@ const VIEWS: readonly Mailbox[] = [
     role: "scheduled",
     selectable: true,
     hidden: false,
+    assignable: false,
+  },
+  {
+    id: BACK_VIEW_ID,
+    name: "Back from snooze",
+    kind: "view",
+    standard: "backFromSnooze",
+    selectable: true,
+    hidden: true,
     assignable: false,
   },
   {

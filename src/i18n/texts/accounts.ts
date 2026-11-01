@@ -25,11 +25,14 @@ const en = {
     sent: "Sent",
     drafts: "Drafts",
     scheduled: "Scheduled",
+    snoozed: "Snoozed",
   },
   /** After a mailbox's count, for screen readers ("3 unread"). */
   drafts: (n: number): string => (n === 1 ? " draft" : " drafts"),
   /** After the Scheduled view's count, for screen readers ("2 scheduled"). */
   scheduled: (n: number): string => (n === 1 ? " scheduled" : " scheduled"),
+  /** After the Snoozed mailbox's count, for screen readers ("2 snoozed"). */
+  snoozed: (n: number): string => (n === 1 ? " snoozed" : " snoozed"),
   unread: " unread",
   actionsFor: (name: string) => `Actions for ${name}`,
   filterFolders: "Filter folders",
@@ -372,9 +375,11 @@ const de: typeof en = {
     sent: "Gesendet",
     drafts: "Entwürfe",
     scheduled: "Geplant",
+    snoozed: "Zurückgestellt",
   },
   drafts: (n) => (n === 1 ? " Entwurf" : " Entwürfe"),
   scheduled: () => " geplant",
+  snoozed: () => " zurückgestellt",
   unread: " ungelesen",
   actionsFor: (name) => `Aktionen für ${name}`,
   filterFolders: "Ordner filtern",

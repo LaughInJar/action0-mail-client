@@ -139,6 +139,8 @@ export interface BackgroundTexts {
   readonly noSubject: string;
   /** A scheduled mail sent while the app wasn't open; `{subject}` is replaced. */
   readonly scheduledSent: string;
+  /** Snoozed mail that came back while the app wasn't open; `{subject}` is replaced. */
+  readonly snoozeBack: string;
 }
 
 /** What only the Android app has. */
@@ -168,8 +170,8 @@ export interface MobileControls {
     readonly device: string;
   }) => Promise<void>;
   /**
-   * When scheduled mail waiting in Drafts is due (epoch ms): a background
-   * job sends it then if the app isn't open.
+   * When scheduled mail waiting in Drafts is due, or snoozed mail comes
+   * back (epoch ms): a background job does it then if the app isn't open.
    */
   readonly scheduleSends: (sends: readonly number[]) => Promise<void>;
 }

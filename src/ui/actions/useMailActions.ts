@@ -32,11 +32,14 @@ import { listRoute } from "../../state/router";
 import { nextAfterRemoval } from "../../state/selection";
 import type {
   MailConfirmAction,
+  MenuPosition,
   PickerState,
   UndoStep,
 } from "../../state/uiStore";
 import type { Mailbox } from "../../core/model";
 import { errorMessage } from "../common/errorMessage";
+import { formatSendAt } from "../common/format";
+import { positionNearFocus } from "../common/menuPosition";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { routeOfRow, useCurrentList } from "../messages/useCurrentList";
 import { useT } from "../../i18n/context";
@@ -122,6 +125,27 @@ export interface MailActions {
   readonly runConfirmed: (action: MailConfirmAction) => void;
   /** Reverts the action of the current toast. */
   readonly undo: () => void;
+  readonly canSnooze: boolean;
+  /**
+   * Snoozes `keys` (or the targets) until `until`, out of where they are;
+   * snoozed ones get the new time.
+   */
+  readonly snooze: (
+    until: Date,
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
+  /** Takes snoozed `keys` (or the targets) back into the Inbox now. */
+  readonly unsnooze: (
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
+  /** Opens Snooze's times for `keys` (or the targets), below `at` (else where the focus is). */
+  readonly requestSnooze: (
+    at?: MenuPosition,
+    keys?: readonly MessageKey[],
+    options?: ExactOption,
+  ) => void;
 }
 
 interface PerformOptions {
@@ -364,6 +388,10 @@ export function useMailActions(): MailActions {
       if (!options.done) return;
       const steps = planned.flatMap(
         ({ group, intent, changes }): UndoStep[] => {
+          const inbox = (
+            sources.get(group.accountId)?.mailboxes ??
+            cachedMailboxes(queryClient, group.accountId)
+          ).find((mailbox) => mailbox.role === "inbox")?.id;
           const inverse = inverseOf(
             intent,
             changes,
@@ -371,8 +399,11 @@ export function useMailActions(): MailActions {
               ? {
                   isFolder: (id) =>
                     mailboxOf(group.accountId, id)?.kind === "folder",
+                  ...(inbox ? { inbox } : {}),
                 }
-              : {},
+              : inbox
+                ? { inbox }
+                : {},
           );
           // Permanent deletion has nothing to undo.
           return inverse.length > 0
@@ -628,6 +659,59 @@ export function useMailActions(): MailActions {
           ids: group.ids,
           conversations: group.source.conversations && !exact,
           ...(exact ? { exact: true } : {}),
+        });
+      },
+
+      canSnooze: anyCan((c) => c.snooze === true),
+
+      snooze: (until, explicit, { exact = false } = {}) => {
+        const when = formatSendAt(until.toISOString(), { locale: t.locale });
+        perform(
+          keysOf(explicit),
+          (group) =>
+            capabilitiesOf(group.accountId)?.snooze
+              ? { kind: "snooze", ids: group.ids, until: until.toISOString() }
+              : undefined,
+          {
+            done: (what) => a.snoozed(what, when),
+            failure: a.couldntSnooze,
+          },
+          exact,
+        );
+      },
+
+      unsnooze: (explicit, { exact = false } = {}) => {
+        perform(
+          keysOf(explicit),
+          (group) => {
+            const inbox = group.source.mailboxes?.find(
+              (mailbox) => mailbox.role === "inbox",
+            )?.id;
+            return capabilitiesOf(group.accountId)?.snooze
+              ? {
+                  kind: "unsnooze",
+                  ids: group.ids,
+                  to: inbox ?? null,
+                  back: false,
+                }
+              : undefined;
+          },
+          {
+            done: (what) => a.unsnoozed(what),
+            failure: a.couldntUnsnooze,
+            nothing: a.notSnoozed,
+          },
+          exact,
+        );
+      },
+
+      requestSnooze: (at, explicit, { exact = false } = {}) => {
+        const keys = keysOf(explicit);
+        if (keys.length === 0) return;
+        store.getState().setSnoozeMenu({
+          keys,
+          exact,
+          at: at ?? positionNearFocus(),
         });
       },
 

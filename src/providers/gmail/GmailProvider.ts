@@ -8,6 +8,7 @@ import {
 import { isMailError, MailError } from "../../core/errors";
 import {
   asCursor,
+  asMailboxId,
   asDraftId,
   asMessageId,
   asSyncToken,
@@ -58,7 +59,13 @@ import {
   leafName,
   mapLabels,
   parentPathOf,
+  BACK_LABEL,
+  BACK_VIEW,
+  BACK_VIEW_ID,
   SCHEDULED_ID,
+  SNOOZED_LABEL,
+  snoozeLabelName,
+  snoozeTimeOf,
   SYNTHETIC_PREFIX,
   toUserMailbox,
 } from "./labels";
@@ -91,7 +98,39 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   ALL_MAIL_ID,
   "STARRED",
   SCHEDULED_ID,
+  BACK_VIEW_ID,
 ]);
+
+/** User labels' ids (Gmail's own are names like `INBOX`). */
+const isUserLabel = (id: string) => id.startsWith("Label_");
+
+/** action0's snooze labels among `labels`. */
+function snoozeLabelsOf(labels: readonly GmailLabel[]): SnoozeLabels {
+  const times = new Map<string, string>();
+  let snoozed: string | undefined;
+  let back: string | undefined;
+  for (const label of labels) {
+    if (label.name === SNOOZED_LABEL) snoozed = label.id;
+    else if (label.name === BACK_LABEL) back = label.id;
+    else {
+      const time = snoozeTimeOf(label.name);
+      if (time !== undefined) times.set(label.id, time);
+    }
+  }
+  return {
+    times,
+    ...(snoozed === undefined ? {} : { snoozed }),
+    ...(back === undefined ? {} : { back }),
+  };
+}
+
+/** action0's snooze labels, by id (see `SNOOZED_LABEL`). */
+interface SnoozeLabels {
+  readonly snoozed?: string;
+  readonly back?: string;
+  /** Return time (ISO) of each time label. */
+  readonly times: ReadonlyMap<string, string>;
+}
 
 /** An error if any id is one we invented for the tree (Gmail doesn't know them). */
 function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
@@ -100,6 +139,7 @@ function inventedIdError(ids: readonly MailboxId[]): MailError | undefined {
       id === ALL_MAIL_ID ||
       id === CATEGORIES_ID ||
       id === SCHEDULED_ID ||
+      id === BACK_VIEW_ID ||
       id.startsWith("synthetic:"),
   );
   return invented === undefined
@@ -285,6 +325,8 @@ export class GmailProvider implements MailProvider {
     signatureStore: "provider",
     // Gmail's API can't schedule: drafts wait with a marker until action0 sends them.
     scheduling: "drafts",
+    // Nor snooze: action0's labels do (see `SNOOZED_LABEL`).
+    snooze: true,
   };
   readonly #http: GmailHttp;
   readonly #people: GmailHttp | undefined;
@@ -301,6 +343,8 @@ export class GmailProvider implements MailProvider {
    * Scheduled view reads each draft's headers once. Ids only change.
    */
   readonly #markers = new Map<string, MessageSummary | null>();
+  /** action0's snooze labels (loaded when needed; they're made here or on another device). */
+  #snoozeLabels: Promise<SnoozeLabels> | undefined;
 
   /**
    * @param http Gmail API client.
@@ -326,6 +370,8 @@ export class GmailProvider implements MailProvider {
       undefined,
       signal,
     );
+    // Snooze's labels come with it.
+    this.#snoozeLabels = Promise.resolve(snoozeLabelsOf(labels));
     // labels.list has no counts; labels.get has.
     const detailed = await Promise.all(
       labels
@@ -338,7 +384,7 @@ export class GmailProvider implements MailProvider {
           ),
         ),
     );
-    return mapLabels(detailed);
+    return [...mapLabels(detailed), BACK_VIEW];
   }
 
   async listMessages(
@@ -347,6 +393,29 @@ export class GmailProvider implements MailProvider {
   ): Promise<Page<MessageSummary>> {
     if (mailboxId === SCHEDULED_ID)
       return pageOf(await this.#scheduled(search, signal), cursor, limit);
+    if (mailboxId === BACK_VIEW_ID) {
+      const { back } = await this.#loadSnoozeLabels(signal);
+      if (back === undefined) return { items: [] };
+      const list = await this.#http.get<GmailListMessagesResponse>(
+        "messages",
+        { labelIds: ["INBOX", back], maxResults: limit, pageToken: cursor },
+        signal,
+      );
+      return {
+        items: await this.#summaries(
+          (list.messages ?? []).map(({ id }) => id),
+          signal,
+        ),
+        ...(list.nextPageToken
+          ? { nextCursor: asCursor(list.nextPageToken) }
+          : {}),
+      };
+    }
+    if (
+      isUserLabel(mailboxId) &&
+      mailboxId === (await this.#loadSnoozeLabels(signal)).snoozed
+    )
+      return pageOf(await this.#snoozedMessages(search, signal), cursor, limit);
     const filter = listFilter(mailboxId, search);
     if (order === "oldest")
       return this.#listOldest(
@@ -422,7 +491,10 @@ export class GmailProvider implements MailProvider {
         return toMessage(message);
       }),
     );
-    return { id: asThreadId(thread.id), messages: oldestFirst(messages) };
+    return {
+      id: asThreadId(thread.id),
+      messages: oldestFirst(await this.#withSnooze(messages, signal)),
+    };
   }
 
   async saveDraft(
@@ -602,6 +674,220 @@ export class GmailProvider implements MailProvider {
     return ids
       .flatMap((id) => this.#markers.get(id) ?? [])
       .sort((a, b) => (a.sendAt ?? "").localeCompare(b.sendAt ?? ""));
+  }
+
+  /**
+   * Into action0's Snoozed label with a label for the return time (made
+   * if needed), out of the Inbox; a snoozed message's old time label goes.
+   */
+  async snooze(
+    ids: readonly MessageId[],
+    until: Date,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const snoozed = await this.#snoozeLabel(SNOOZED_LABEL, signal);
+    const time = await this.#snoozeLabel(snoozeLabelName(until), signal);
+    const labels = await this.#loadSnoozeLabels(signal);
+    const old = [...labels.times.keys()].filter((id) => id !== time);
+    await this.#modify(
+      ids,
+      {
+        addLabelIds: [snoozed, time],
+        removeLabelIds: [
+          "INBOX",
+          ...old,
+          ...(labels.back === undefined ? [] : [labels.back]),
+        ],
+      },
+      signal,
+    );
+    await this.#dropEmptyTimeLabels(old, signal);
+    return {};
+  }
+
+  /** Out of the Snoozed label (and its time label) into `to`; `back`: unread and marked. */
+  async unsnooze(
+    ids: readonly MessageId[],
+    { to, back }: { readonly to: MailboxId | null; readonly back: boolean },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const backLabel = back
+      ? await this.#snoozeLabel(BACK_LABEL, signal)
+      : undefined;
+    const labels = await this.#loadSnoozeLabels(signal);
+    const times = [...labels.times.keys()];
+    await this.#modify(
+      ids,
+      {
+        addLabelIds: [
+          ...(to === null ? [] : [to]),
+          ...(backLabel === undefined ? [] : [backLabel, "UNREAD"]),
+        ],
+        removeLabelIds: [
+          ...(labels.snoozed === undefined ? [] : [labels.snoozed]),
+          ...times,
+        ],
+      },
+      signal,
+    );
+    await this.#dropEmptyTimeLabels(times, signal);
+    return {};
+  }
+
+  async clearBackFromSnooze(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const { back } = await this.#loadSnoozeLabels(signal);
+    return back === undefined
+      ? {}
+      : this.#modify(ids, { removeLabelIds: [back] }, signal);
+  }
+
+  /** action0's snooze labels, loaded once (`fresh`: again). */
+  #loadSnoozeLabels(
+    signal?: AbortSignal,
+    fresh = false,
+  ): Promise<SnoozeLabels> {
+    if (fresh || this.#snoozeLabels === undefined) {
+      const loading = this.#http
+        .get<GmailListLabelsResponse>("labels", undefined, signal)
+        .then(({ labels = [] }) => snoozeLabelsOf(labels));
+      // A failed load is tried again next time.
+      loading.catch(() => {
+        if (this.#snoozeLabels === loading) this.#snoozeLabels = undefined;
+      });
+      this.#snoozeLabels = loading;
+    }
+    return this.#snoozeLabels;
+  }
+
+  /** The id of a snooze label, made if it doesn't exist (hidden unless it's Snoozed itself). */
+  async #snoozeLabel(name: string, signal?: AbortSignal): Promise<string> {
+    const find = (labels: SnoozeLabels) =>
+      name === SNOOZED_LABEL
+        ? labels.snoozed
+        : name === BACK_LABEL
+          ? labels.back
+          : [...labels.times].find(
+              ([, time]) => time === snoozeTimeOf(name),
+            )?.[0];
+    const known = find(await this.#loadSnoozeLabels(signal));
+    if (known !== undefined) return known;
+    const shown = name === SNOOZED_LABEL;
+    try {
+      const label = await this.#http.post<GmailLabel>(
+        "labels",
+        {
+          name,
+          labelListVisibility: shown ? "labelShow" : "labelHide",
+          messageListVisibility: shown ? "show" : "hide",
+        },
+        signal,
+      );
+      await this.#loadSnoozeLabels(signal, true);
+      return label.id;
+    } catch (error) {
+      // Made meanwhile (another device): use that one.
+      const made = find(await this.#loadSnoozeLabels(signal, true));
+      if (made !== undefined) return made;
+      throw error;
+    }
+  }
+
+  /** Deletes time labels no message has any more (best effort). */
+  async #dropEmptyTimeLabels(
+    ids: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let dropped = false;
+    for (const id of ids) {
+      try {
+        const label = await this.#http.get<GmailLabel>(
+          `labels/${encodeURIComponent(id)}`,
+          undefined,
+          signal,
+        );
+        if ((label.messagesTotal ?? 0) > 0) continue;
+        await this.#http.delete(`labels/${encodeURIComponent(id)}`, signal);
+        dropped = true;
+      } catch {
+        // Another try with the next change.
+      }
+    }
+    if (dropped)
+      await this.#loadSnoozeLabels(signal, true).catch(() => undefined);
+  }
+
+  /**
+   * Summaries with their snooze time and Back mark, from their labels
+   * (which then leave `mailboxIds`: they aren't mailboxes). A snoozed
+   * message whose time label is unknown (made on another device) loads the
+   * labels again.
+   */
+  async #withSnooze<T extends MessageSummary>(
+    summaries: readonly T[],
+    signal?: AbortSignal,
+  ): Promise<T[]> {
+    // Snooze's labels are user labels: without any, nothing to look up.
+    if (!summaries.some((summary) => summary.mailboxIds.some(isUserLabel)))
+      return [...summaries];
+    let labels = await this.#loadSnoozeLabels(signal);
+    const unknownTime = (summary: T) =>
+      labels.snoozed !== undefined &&
+      summary.mailboxIds.includes(asMailboxId(labels.snoozed)) &&
+      !summary.mailboxIds.some((id) => labels.times.has(id));
+    if (summaries.some(unknownTime))
+      labels = await this.#loadSnoozeLabels(signal, true);
+    return summaries.map((summary) => {
+      const time = summary.mailboxIds
+        .map((id) => labels.times.get(id))
+        .find((found) => found !== undefined);
+      const back =
+        labels.back !== undefined &&
+        summary.mailboxIds.includes(asMailboxId(labels.back));
+      if (time === undefined && !back) return summary;
+      return {
+        ...summary,
+        mailboxIds: summary.mailboxIds.filter(
+          (id) => !labels.times.has(id) && id !== labels.back,
+        ),
+        ...(time !== undefined &&
+        labels.snoozed !== undefined &&
+        summary.mailboxIds.includes(asMailboxId(labels.snoozed))
+          ? { snoozedUntil: time }
+          : {}),
+        ...(back ? { backFromSnooze: true as const } : {}),
+      };
+    });
+  }
+
+  /** The messages in the Snoozed label, back soonest first. */
+  async #snoozedMessages(
+    search: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<MessageSummary[]> {
+    const { snoozed } = await this.#loadSnoozeLabels(signal);
+    if (snoozed === undefined) return [];
+    const ids: string[] = [];
+    let pageToken: string | undefined;
+    do {
+      const page: GmailListMessagesResponse = await this.#http.get(
+        "messages",
+        {
+          labelIds: [snoozed],
+          maxResults: 500,
+          pageToken,
+          q: search?.trim() || undefined,
+        },
+        signal,
+      );
+      ids.push(...(page.messages ?? []).map(({ id }) => id));
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined && ids.length < MAX_DRAFTS_SCANNED);
+    return (await this.#summaries(ids, signal)).sort((a, b) =>
+      (a.snoozedUntil ?? "").localeCompare(b.snoozedUntil ?? ""),
+    );
   }
 
   /** Sent as it is; Gmail keeps the copy in Sent. */
@@ -1069,12 +1355,19 @@ export class GmailProvider implements MailProvider {
           }),
       ),
     );
-    return threads
-      .filter((thread): thread is GmailThread => thread !== undefined)
-      .map((thread) => ({
-        id: asThreadId(thread.id),
-        messages: oldestFirst((thread.messages ?? []).map(toMessageSummary)),
-      }));
+    return Promise.all(
+      threads
+        .filter((thread): thread is GmailThread => thread !== undefined)
+        .map(async (thread) => ({
+          id: asThreadId(thread.id),
+          messages: oldestFirst(
+            await this.#withSnooze(
+              (thread.messages ?? []).map(toMessageSummary),
+              signal,
+            ),
+          ),
+        })),
+    );
   }
 
   /** Summaries of the given messages, in the same order. */
@@ -1097,16 +1390,20 @@ export class GmailProvider implements MailProvider {
           }),
       ),
     );
-    return messages
-      .filter((message): message is GmailMessage => message !== undefined)
-      .map(toMessageSummary);
+    return this.#withSnooze(
+      messages
+        .filter((message): message is GmailMessage => message !== undefined)
+        .map(toMessageSummary),
+      signal,
+    );
   }
 
   async getMessage(id: MessageId, signal?: AbortSignal): Promise<Message> {
     const message = await this.#fetchFull(id, signal);
     if (message.payload)
       await this.#hydrateLargeTextParts(id, message.payload, signal);
-    return toMessage(message);
+    const [full] = await this.#withSnooze([toMessage(message)], signal);
+    return full ?? toMessage(message);
   }
 
   async getAttachment(

@@ -16,6 +16,7 @@ import {
 import {
   asCursor,
   asDraftId,
+  asMailboxId,
   asMessageId,
   asSyncToken,
   type AttachmentId,
@@ -82,7 +83,31 @@ const CREATED_NAMES = {
   junk: "Junk",
   sent: "Sent",
   drafts: "Drafts",
+  // The Rust side gives it its role by this name.
+  snoozed: "Snoozed (action0)",
 } as const;
+
+/** Snooze's keyword for a return time: `$A0Snooze-20261103T0700Z` (UTC). */
+const SNOOZE_PREFIX = "$A0Snooze-";
+/** The keyword of mail that came back from snooze. */
+const BACK_KEYWORD = "$A0Back";
+
+/** The keyword for a return time (to the minute). */
+function snoozeKeyword(until: Date): string {
+  const iso = until.toISOString();
+  return `${SNOOZE_PREFIX}${iso.slice(0, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}T${iso.slice(11, 13)}${iso.slice(14, 16)}Z`;
+}
+
+/** The hidden view of Inbox mail that came back from snooze. */
+const BACK_VIEW: Mailbox = {
+  id: asMailboxId("v:back"),
+  name: "Back from snooze",
+  kind: "view",
+  standard: "backFromSnooze",
+  selectable: true,
+  hidden: true,
+  assignable: false,
+};
 
 type CreatedRole = keyof typeof CREATED_NAMES;
 
@@ -155,11 +180,16 @@ export class ImapProvider implements MailProvider {
       roleNames: "client",
       // No server scheduling: drafts wait with a marker until action0 sends them.
       scheduling: "drafts",
+      // Nor snoozing: a folder and keywords of action0's do.
+      snooze: true,
     };
   }
 
   async listMailboxes(signal?: AbortSignal): Promise<readonly Mailbox[]> {
-    return (await this.#call("folders", {}, signal)).map(toMailbox);
+    return [
+      ...(await this.#call("folders", {}, signal)).map(toMailbox),
+      BACK_VIEW,
+    ];
   }
 
   async listMessages(
@@ -477,6 +507,59 @@ export class ImapProvider implements MailProvider {
       signal,
     );
     return this.saveDraft(draft, signal);
+  }
+
+  /**
+   * Into the Snoozed folder (made if needed) with a keyword for the return
+   * time; an older time's keyword and the Back mark go. A server that
+   * can't keep keywords loses the time (the mail then waits in Snoozed).
+   */
+  async snooze(
+    ids: readonly MessageId[],
+    until: Date,
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    const folder = await this.#roleFolder("snoozed", signal);
+    await this.#call(
+      "flags",
+      {
+        ids,
+        add: [snoozeKeyword(until)],
+        remove: [BACK_KEYWORD],
+        removePrefix: SNOOZE_PREFIX,
+      },
+      signal,
+    );
+    await this.#call("move", { ids, to: folder.id }, signal);
+    return {};
+  }
+
+  /** Back into `to` (the Inbox by default), the time's keyword cleared; `back`: unread and marked. */
+  async unsnooze(
+    ids: readonly MessageId[],
+    { to, back }: { readonly to: MailboxId | null; readonly back: boolean },
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#call(
+      "flags",
+      {
+        ids,
+        ...(back ? { seen: false, add: [BACK_KEYWORD] } : {}),
+        removePrefix: SNOOZE_PREFIX,
+      },
+      signal,
+    );
+    const target = to ?? (await this.#roleFolder("inbox", signal)).id;
+    await this.#call("move", { ids, to: target }, signal);
+    return {};
+  }
+
+  async clearBackFromSnooze(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult> {
+    await this.#call("flags", { ids, remove: [BACK_KEYWORD] }, signal);
+    return {};
   }
 
   /** From the address books of the account's calendar server (CardDAV), if any. */

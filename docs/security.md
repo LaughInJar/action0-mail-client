@@ -100,6 +100,8 @@ The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include t
 
 Send later keeps scheduled mail where it is anyway, at the provider: held by Exchange, or as a draft whose time is in the `X-Action0-Send-At` header (Gmail, IMAP) or an extended property (personal Outlook). The header holds the time and the device id only, and the mail is built without it when it's sent, so recipients never see it.
 
+Snooze keeps its return times at the provider too, as times only: Gmail label names ("Snoozed (action0)/2026-11-03T07:00Z"), an extended property on Outlook messages, IMAP keywords (`$A0Snooze-20261103T0700Z`, `$A0Back`). None of it goes into the mail's content. The time picked last from **Pick date & time…** is a setting (`lastSnooze`, like `lastSendLater`).
+
 **sessionStorage** (per tab, gone when it closes):
 
 | Key                                | Content                                                             |

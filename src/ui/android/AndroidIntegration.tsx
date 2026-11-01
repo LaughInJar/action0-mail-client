@@ -6,7 +6,7 @@ import { usePlatform } from "../../platform/context";
 import type { AvailableRelease, MobileControls } from "../../platform/types";
 import { useRouter, useUi, useUiStore } from "../../state/context";
 import { deviceIdOf } from "../../state/device";
-import { useScheduledMail } from "../../data/scheduled";
+import { useScheduledMail, useSnoozedMail } from "../../data/scheduled";
 import type { ComposeActions } from "../composer/useComposeActions";
 import { hexColor, shareMailto } from "./helpers";
 
@@ -38,19 +38,23 @@ export function AndroidIntegration({ compose }: { compose: ComposeActions }) {
           newMessages: t.android.newMessages,
           noSubject: t.common.noSubject,
           scheduledSent: t.schedule.sent("{subject}"),
+          snoozeBack: t.snooze.backNotice("{subject}"),
         },
         device: deviceIdOf(store),
       })
       .catch(() => undefined);
   }, [mobile, notifications, t, store]);
 
-  // Scheduled mail in Drafts goes out from a background job when it's due.
+  // Scheduled mail in Drafts goes out, and snoozed mail comes back, from a
+  // background job when it's due.
   const { entries } = useScheduledMail();
-  const sends = JSON.stringify(
-    entries
+  const snoozed = useSnoozedMail().entries;
+  const sends = JSON.stringify([
+    ...entries
       .filter((entry) => entry.scheduling === "drafts")
       .map((entry) => Date.parse(entry.message.sendAt)),
-  );
+    ...snoozed.map((entry) => Date.parse(entry.message.snoozedUntil)),
+  ]);
   useEffect(() => {
     if (!mobile) return;
     const times = JSON.parse(sends) as number[];

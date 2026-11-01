@@ -27,6 +27,8 @@ pub const FLAGGED: &str = "v:flagged";
 pub const ALL: &str = "v:all";
 /// The view of scheduled drafts (Send later).
 pub const SCHEDULED: &str = "v:scheduled";
+/// The hidden view of Inbox mail that came back from snooze.
+pub const BACK: &str = "v:back";
 
 /// How many message locations are kept per account (the oldest half goes beyond).
 const MAX_IDS: usize = 50_000;
@@ -42,6 +44,7 @@ pub enum MailboxRef {
     Flagged,
     All,
     Scheduled,
+    Back,
 }
 
 pub fn mailbox(id: &str) -> Result<MailboxRef, MailServerError> {
@@ -49,6 +52,7 @@ pub fn mailbox(id: &str) -> Result<MailboxRef, MailServerError> {
         FLAGGED => Ok(MailboxRef::Flagged),
         ALL => Ok(MailboxRef::All),
         SCHEDULED => Ok(MailboxRef::Scheduled),
+        BACK => Ok(MailboxRef::Back),
         _ => id
             .strip_prefix("f:")
             .map(|path| MailboxRef::Folder(path.to_string()))

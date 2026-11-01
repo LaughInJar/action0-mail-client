@@ -1,6 +1,8 @@
 import { useId, useRef, useState } from "react";
 import { earliestSendAt, sendLaterPresets } from "../../core/schedule";
+import { snoozePresets } from "../../core/snooze";
 import { useT } from "../../i18n/context";
+import type { AppSettings } from "../../state/settings";
 import { useUi, useUiStore } from "../../state/context";
 import type { MenuPosition } from "../../state/uiStore";
 import { ContextMenu, type MenuEntry } from "../common/ContextMenu";
@@ -8,45 +10,106 @@ import { formatSendAt } from "../common/format";
 import { BUTTON, FIELD, PRIMARY } from "../common/formStyles";
 import { Sheet } from "../common/Sheet";
 
-/** Props of {@link SendLaterMenu}. */
-export interface SendLaterMenuProps {
+/** What a menu of times is for: its title, its presets, and where the custom time is kept. */
+interface TimeChoice {
+  readonly title: string;
+  /** The dialog's button. */
+  readonly confirm: string;
+  readonly presets: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly at: Date;
+  }[];
+  readonly remember: "lastSendLater" | "lastSnooze";
+}
+
+/** Props of {@link SendLaterMenu} and {@link SnoozeMenu}. */
+export interface TimeMenuProps {
   readonly at: MenuPosition;
   /** Entries before the times (Send now, Don't schedule). */
   readonly extra?: readonly MenuEntry[];
-  /** The time the picker starts from (a scheduled mail's), ISO. */
+  /** The time the picker starts from (a scheduled or snoozed mail's), ISO. */
   readonly current?: string;
-  readonly onPick: (sendAt: Date) => void;
+  readonly onPick: (at: Date) => void;
   readonly onClose: () => void;
 }
 
+/** Send later's times: the presets that fit the day, the time picked last, and Pick date & time…. */
+export function SendLaterMenu(props: TimeMenuProps) {
+  const t = useT();
+  const s = t.schedule;
+  const [now] = useState(() => new Date());
+  return (
+    <TimeMenu
+      {...props}
+      choice={{
+        title: s.sendLater,
+        confirm: s.schedule,
+        presets: sendLaterPresets(now).map((preset) => ({
+          id: preset.kind,
+          label: s.presets[preset.kind],
+          at: preset.at,
+        })),
+        remember: "lastSendLater",
+      }}
+    />
+  );
+}
+
+/** Snooze's times: later today, tomorrow, this weekend, next week, the time picked last, and Pick date & time…. */
+export function SnoozeMenu(props: TimeMenuProps) {
+  const t = useT();
+  const z = t.snooze;
+  const [now] = useState(() => new Date());
+  return (
+    <TimeMenu
+      {...props}
+      choice={{
+        title: z.snooze,
+        confirm: z.snooze,
+        presets: snoozePresets(now).map((preset) => ({
+          id: preset.kind,
+          label: z.presets[preset.kind],
+          at: preset.at,
+        })),
+        remember: "lastSnooze",
+      }}
+    />
+  );
+}
+
 /**
- * Send later's times: the presets that fit the day, the time picked last
- * (if it's still ahead), and Pick date & time…, which opens a small dialog.
+ * A menu of times: the presets, the time picked last (if it's still
+ * ahead), and Pick date & time…, which opens a small dialog.
  */
-export function SendLaterMenu({
+function TimeMenu({
   at,
   extra = [],
   current,
   onPick,
   onClose,
-}: SendLaterMenuProps) {
+  choice,
+}: TimeMenuProps & { readonly choice: TimeChoice }) {
   const t = useT();
   const s = t.schedule;
-  const last = useUi((state) => state.settings.lastSendLater);
+  const last = useUi((state) => state.settings[choice.remember]);
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
-  const now = new Date();
+  const [now] = useState(() => new Date());
   const when = (date: Date) =>
     formatSendAt(date.toISOString(), { locale: t.locale, now });
   const lastAt = last ? new Date(last) : undefined;
 
   if (picking)
     return (
-      <SendLaterDialog
+      <TimeDialog
+        title={choice.title}
+        confirm={choice.confirm}
+        remember={choice.remember}
         {...(current ? { current } : {})}
-        onPick={(sendAt) => {
+        onPick={(picked) => {
           onClose();
-          onPick(sendAt);
+          onPick(picked);
         }}
         onCancel={onClose}
       />
@@ -54,9 +117,9 @@ export function SendLaterMenu({
 
   const entries: MenuEntry[] = [
     ...extra,
-    ...sendLaterPresets(now).map((preset, index): MenuEntry => ({
-      id: preset.kind,
-      label: `${s.presets[preset.kind]} · ${when(preset.at)}`,
+    ...choice.presets.map((preset, index): MenuEntry => ({
+      id: preset.id,
+      label: `${preset.label} · ${when(preset.at)}`,
       icon: "clock",
       ...(index === 0 && extra.length > 0 ? { divider: true } : {}),
       run: () => {
@@ -88,8 +151,8 @@ export function SendLaterMenu({
   ];
   return (
     <ContextMenu
-      label={s.sendLater}
-      title={s.sendLater}
+      label={choice.title}
+      title={choice.title}
       at={at}
       entries={entries}
       onClose={() => {
@@ -112,16 +175,23 @@ function fieldsOf(date: Date) {
 }
 
 /**
- * The date and time a mail goes out, in local time: tomorrow at 08:00 to
- * begin with (or the mail's current time). It has to be a minute ahead.
+ * A date and time in local time: tomorrow at 08:00 to begin with (or the
+ * mail's current time). It has to be a minute ahead; the time picked is
+ * kept for next time (`remember`).
  */
-export function SendLaterDialog({
+export function TimeDialog({
+  title,
+  confirm,
+  remember,
   current,
   onPick,
   onCancel,
 }: {
+  title: string;
+  confirm: string;
+  remember: keyof Pick<AppSettings, "lastSendLater" | "lastSnooze">;
   current?: string;
-  onPick: (sendAt: Date) => void;
+  onPick: (at: Date) => void;
   onCancel: () => void;
 }) {
   const t = useT();
@@ -141,16 +211,16 @@ export function SendLaterDialog({
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
-    const sendAt = new Date(`${day}T${time}`);
+    const picked = new Date(`${day}T${time}`);
     if (
-      Number.isNaN(sendAt.getTime()) ||
-      sendAt.getTime() < earliestSendAt(Date.now())
+      Number.isNaN(picked.getTime()) ||
+      picked.getTime() < earliestSendAt(Date.now())
     ) {
       setError(s.mustBeLater);
       return;
     }
-    store.getState().updateSettings({ lastSendLater: sendAt.toISOString() });
-    onPick(sendAt);
+    store.getState().updateSettings({ [remember]: picked.toISOString() });
+    onPick(picked);
   };
 
   return (
@@ -163,7 +233,7 @@ export function SendLaterDialog({
         }}
       >
         <h2 id={`${id}-title`} className="text-base font-semibold">
-          {s.pickTitle}
+          {title}
         </h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -210,7 +280,7 @@ export function SendLaterDialog({
             {s.cancel}
           </button>
           <button type="submit" className={PRIMARY}>
-            {s.schedule}
+            {confirm}
           </button>
         </div>
       </form>

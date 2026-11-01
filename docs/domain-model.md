@@ -72,17 +72,17 @@ A `Mailbox` (`src/core/model.ts`) is anything a message can be in. A message has
 
 The other fields:
 
-| Field        | Meaning                                                                                                                                                                                                                                               |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Leaf name ("Clients" for the Gmail label "Work/Clients"). Interface names of roles and standard mailboxes come from the translations instead (`mailboxName` in `src/ui/common/mailboxNames.ts`).                                                      |
-| `parentId`   | Nesting in the tree; absent at the top level.                                                                                                                                                                                                         |
-| `role`       | Special purpose, from the JMAP / IMAP SPECIAL-USE (RFC 6154) vocabulary: `inbox`, `flagged`, `important`, `sent`, `drafts`, `all`, `archive`, `junk`, `trash`, plus `scheduled` (Send later's view). `MAILBOX_ROLE_ORDER` sorts siblings in the tree. |
-| `standard`   | A well-known mailbox without a role, named by the interface: `categories`, `primary`, `social`, `promotions`, `updates`, `forums`.                                                                                                                    |
-| `selectable` | `false` for grouping nodes that hold no messages themselves: Gmail's "Categories" group and the parents Gmail implies by a path like "Work/Clients" when no "Work" label exists, Outlook's "Categories" group, IMAP `\Noselect`.                      |
-| `hidden`     | The user asked the provider to hide it from the folder list. The tree leaves it and everything below it out (`src/ui/mailboxes/buildTree.ts`); Manage labels still lists it.                                                                          |
-| `assignable` | Users may put messages in and take them out: a target for moving and labelling. `false` for views and for system mailboxes that fill themselves (Sent, Drafts).                                                                                       |
-| `counts`     | `{ unread, total }`, if the provider reports them.                                                                                                                                                                                                    |
-| `color`      | `{ background, text }` CSS colours of a label chip.                                                                                                                                                                                                   |
+| Field        | Meaning                                                                                                                                                                                                                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Leaf name ("Clients" for the Gmail label "Work/Clients"). Interface names of roles and standard mailboxes come from the translations instead (`mailboxName` in `src/ui/common/mailboxNames.ts`).                                                                                       |
+| `parentId`   | Nesting in the tree; absent at the top level.                                                                                                                                                                                                                                          |
+| `role`       | Special purpose, from the JMAP / IMAP SPECIAL-USE (RFC 6154) vocabulary: `inbox`, `flagged`, `important`, `sent`, `drafts`, `all`, `archive`, `junk`, `trash`, plus `scheduled` (Send later's view) and `snoozed` (Snooze's mailbox). `MAILBOX_ROLE_ORDER` sorts siblings in the tree. |
+| `standard`   | A well-known mailbox without a role, named by the interface: `categories`, `primary`, `social`, `promotions`, `updates`, `forums`, and the hidden `backFromSnooze` view (Inbox mail that came back from snooze).                                                                       |
+| `selectable` | `false` for grouping nodes that hold no messages themselves: Gmail's "Categories" group and the parents Gmail implies by a path like "Work/Clients" when no "Work" label exists, Outlook's "Categories" group, IMAP `\Noselect`.                                                       |
+| `hidden`     | The user asked the provider to hide it from the folder list. The tree leaves it and everything below it out (`src/ui/mailboxes/buildTree.ts`); Manage labels still lists it.                                                                                                           |
+| `assignable` | Users may put messages in and take them out: a target for moving and labelling. `false` for views and for system mailboxes that fill themselves (Sent, Drafts).                                                                                                                        |
+| `counts`     | `{ unread, total }`, if the provider reports them.                                                                                                                                                                                                                                     |
+| `color`      | `{ background, text }` CSS colours of a label chip.                                                                                                                                                                                                                                    |
 
 Rules built on these fields (`src/data/mailboxActions.ts`, `src/ui/pickers/MailboxPicker.tsx`):
 
@@ -113,7 +113,7 @@ Outlook categories are listed by name because Outlook can't rename a category, s
 
 `src/core/model.ts` has three levels of message data:
 
-- **`MessageSummary`**: what a list row needs. `id`, `threadId?`, `mailboxIds`, `from?`, `to`, `subject`, `snippet` (plain text), `receivedAt` (ISO 8601), `flags` and `hasAttachments` (which may be a guess in lists; Gmail's list format has no parts).
+- **`MessageSummary`**: what a list row needs. `id`, `threadId?`, `mailboxIds`, `from?`, `to`, `subject`, `snippet` (plain text), `receivedAt` (ISO 8601), `flags` and `hasAttachments` (which may be a guess in lists; Gmail's list format has no parts). Scheduled drafts add `sendAt` and `scheduledBy`; snoozed mail adds `snoozedUntil` (ISO 8601), and mail that came back from snooze `backFromSnooze` until it's opened.
 - **`Message`**: a summary plus `cc`, `bcc`, `replyTo`, `internetMessageId` (the `Message-ID` with angle brackets), `references` (oldest first), `unsubscribe?` (from `List-Unsubscribe`, parsed in `src/core/unsubscribe.ts`), `invitation?` (see [Calendar model](#calendar-model)), `body` (`html?` and `text?`, raw and **unsanitized**) and `attachments` (`AttachmentInfo`; inline parts carry the `contentId` the HTML references as `cid:`).
 - **`ThreadSummary`** and **`Thread`**: a conversation with all its messages, in every mailbox (Trash and Spam included), oldest first; as summaries for list rows, as full messages for the reader.
 
@@ -177,6 +177,9 @@ Every change to mail is an intent: plain data that can be predicted, applied opt
 | `report-spam`    | `ids`                  | Into the junk mailbox                                                               |
 | `not-spam`       | `ids`                  | Out of the junk mailbox, into the Inbox                                             |
 | `delete-forever` | `ids`                  | Permanent; has no inverse, so the UI asks for confirmation instead of offering undo |
+| `snooze`         | `ids`, `until`         | Into the snoozed mailbox until `until`; a new time for mail that's snoozed already  |
+| `unsnooze`       | `ids`, `to`, `back`    | Out of the snoozed mailbox into `to`; `back`: unread and marked "back from snooze"  |
+| `clear-back`     | `ids`                  | Takes the "back from snooze" mark off (opening, archiving or moving such mail)      |
 
 `runIntent(provider, intent, signal)` maps each kind to one `MailProvider` method (`archive`, `setFlags`, `move`, `setLabels`, `trash`, …). How a provider carries it out is its own business: Gmail archives by removing the `INBOX` label, Graph moves the message to the Archive folder.
 
@@ -196,23 +199,29 @@ Every change to mail is an intent: plain data that can be predicted, applied opt
 | `not-spam`       | Drops Spam and adds the Inbox                           | Drops Junk and adds the Inbox                                                                                    |
 | `set-flags`      | Changes the flags, if they differ                       | The same                                                                                                         |
 | `delete-forever` | Marks the message `deleted`                             | The same                                                                                                         |
+| `snooze`         | Drops the Inbox, adds Snoozed, sets `snoozedUntil`      | Drops every folder (categories stay), adds Snoozed                                                               |
+| `unsnooze`       | Drops Snoozed, clears the time, adds `to` if given      | Drops Snoozed, adds `to` (the Inbox when `null`)                                                                 |
+| `clear-back`     | Clears `backFromSnooze`, if set                         | The same                                                                                                         |
 
 The UI then sends the intent with only the ids that change (`src/ui/actions/useMailActions.ts`): a folder provider would otherwise also move messages that an archive doesn't apply to. In conversation view an action on a row stands for the conversation's messages: flags and labels go on all of them; in a folder of a folder account, actions that move mail take only the conversation's messages in that folder, like Outlook. `useApplyIntent` (`src/data/mutations.ts`) applies the predicted changes to every cached list, conversation, message and count of the account, runs the intent, and restores the snapshot if the provider rejects it. [architecture.md](architecture.md) follows that flow end to end.
 
 ### Undoing: `inverseOf`
 
-`inverseOf(intent, changes, { isFolder })` builds the intents that undo an intent from what actually changed, so undo never removes something a message already had before. Messages with the same change are grouped into one intent.
+`inverseOf(intent, changes, { isFolder, inbox })` builds the intents that undo an intent from what actually changed, so undo never removes something a message already had before. Messages with the same change are grouped into one intent.
 
-| Intent                     | Inverse without `isFolder` (label accounts)                  | Inverse with `isFolder` (folder accounts)                   |
-| -------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- |
-| `archive` / `unarchive`    | `unarchive` / `archive`                                      | The same                                                    |
-| `set-flags`                | Per flag, the messages whose flag changed get it back        | The same                                                    |
-| `set-labels`               | The exact membership diff, reversed                          | The same                                                    |
-| `move`                     | The exact membership diff, reversed                          | `move` from the current folder back to the one it came from |
-| `trash`                    | `untrash`                                                    | `move` back to the folder it came from (not just the Inbox) |
-| `untrash`                  | `trash`                                                      | `trash`                                                     |
-| `report-spam` / `not-spam` | The exact membership diff, reversed (e.g. back into a label) | `move` back to the folder it came from                      |
-| `delete-forever`           | none                                                         | none                                                        |
+| Intent                     | Inverse without `isFolder` (label accounts)                                                         | Inverse with `isFolder` (folder accounts)                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `archive` / `unarchive`    | `unarchive` / `archive`                                                                             | The same                                                    |
+| `set-flags`                | Per flag, the messages whose flag changed get it back                                               | The same                                                    |
+| `set-labels`               | The exact membership diff, reversed                                                                 | The same                                                    |
+| `move`                     | The exact membership diff, reversed                                                                 | `move` from the current folder back to the one it came from |
+| `trash`                    | `untrash`                                                                                           | `move` back to the folder it came from (not just the Inbox) |
+| `untrash`                  | `trash`                                                                                             | `trash`                                                     |
+| `report-spam` / `not-spam` | The exact membership diff, reversed (e.g. back into a label)                                        | `move` back to the folder it came from                      |
+| `delete-forever`           | none                                                                                                | none                                                        |
+| `snooze`                   | Snoozed ones `snooze` until their old time; the others `unsnooze` into the Inbox if they were in it | `unsnooze` into the folder it came from                     |
+| `unsnooze`                 | `snooze` until the old time                                                                         | The same                                                    |
+| `clear-back`               | none                                                                                                | none                                                        |
 
 `isFolder` tells which memberships are folders; the UI passes it for accounts whose `mailboxKinds` include `folder` (`useMailActions`). Moving back keeps a message's other memberships, such as Outlook categories. Undo steps also carry the changed summaries (`known`), so a message that has left every cached list can come back on undo.
 
@@ -245,6 +254,8 @@ The UI asks what a provider can do instead of which provider it is. `ProviderCap
 | `threads`            | `boolean`                                      | `listThreads` and `getThread` work: the conversation switch applies                                                                                                                                   | yes               | yes                                  |
 | `senders`            | `boolean`                                      | `listSenders` works (From field, signatures)                                                                                                                                                          | yes               | yes                                  |
 | `editSenders`        | `boolean`                                      | The user manages the From addresses in action0 (`saveSenders`, `catchAllDomains`): replies to `+tag` and catch-all addresses are offered too                                                          | no (send-as)      | yes                                  |
+| `scheduling`         | `"held" \| "drafts"` (optional)                | Send later works: the server holds the mail, or it waits in Drafts (see [Send later](#send-later))                                                                                                    |
+| `snooze`             | `boolean` (optional)                           | `snooze`, `unsnooze` and `clearBackFromSnooze` work (see [Snooze](#snooze))                                                                                                                           |
 | `rawSource`          | `boolean`                                      | `getRawMessage` works: "Show original" (headers and source)                                                                                                                                           | yes               | yes                                  |
 | `signatureStore`     | `"provider" \| "browser"`                      | Where `updateSignature` keeps signatures: with the provider, or only in this browser                                                                                                                  | `provider`        | `browser`                            |
 | `roleNames`          | `"gmail" \| "outlook" \| "client"` (optional)  | Whose words name mailboxes with a role: Gmail's (Spam, Starred), Outlook's (Junk Email, Deleted Items) or a mail program's (Junk, Trash, Flagged). Unset: Outlook's for folder accounts, else Gmail's | unset (Gmail's)   | unset (Outlook's)                    |
@@ -307,6 +318,12 @@ A `Draft` is a saved `DraftInput` with its `id` and the `messageId` of its curre
 - `drafts`: the mail waits in Drafts marked with its time (`DraftInput.schedule`, which `saveDraft` keeps and `sendDraft` ignores), and whichever action0 runs then sends it: the one that scheduled it at its time, others two minutes later (`isDue`). Gmail's send uses up the draft, and `DraftSync.sendScheduled` checks the draft is still the scheduled one right before sending, so it goes out once. Mail more than 30 minutes late isn't sent unasked (`isMissed`).
 
 `scheduleDraft(draft, schedule)` and `unscheduleDraft(messageId)` are the contract's two calls; each provider lists its scheduled mail in a view with role `scheduled`, whose rows carry `sendAt` (and `scheduledBy`). `useScheduledMail` (`src/data/scheduled.ts`) reads the first page of each account's view; `ScheduledSender` (`src/ui/schedule/`) sends what's due every 15 seconds while the app runs and shows the bar for missed mail; the tree shows Scheduled only while it lists mail.
+
+### Snooze
+
+None of the providers' APIs can snooze, so action0 does it with what they have: `snooze(ids, until)` moves mail into a mailbox with role `snoozed` (created on first use) and keeps the return time on each message, `unsnooze(ids, { to, back })` takes it out again (`back`: unread and marked), and `clearBackFromSnooze(ids)` removes the mark. Where the time and the mark live is each provider's business (see [providers.md](providers.md)); they come back as `snoozedUntil` and `backFromSnooze`, so every action0 on every device knows them. `src/core/snooze.ts` has the presets (`snoozePresets`) and `isDueBack`.
+
+`useSnoozedMail` (`src/data/scheduled.ts`) reads the first page of each account's snoozed mailbox; `SnoozeWaker` (`src/ui/schedule/`) brings due mail back every 15 seconds while the app runs, as `unsnooze` with `back: true` (no undo), and says so with a notification or a toast. `useBackFromSnooze` lists each account's hidden `backFromSnooze` view, and the Inbox list pins those rows at the top (`pinRows`); opening one sends `clear-back` (`useClearBackOnOpen`). Mail that leaves the Inbox (archived, moved, deleted) is no longer pinned, since only Inbox mail with the mark counts; snoozing it again clears the mark.
 
 `createDraftSync` (`src/data/drafts.ts`) queues the saves, sends and discards of one composer one after another, and later calls reuse the draft an earlier one created, so a composer never ends up with two drafts. Before each upload it loads the bytes of attachments that are parts of other messages, because a draft's own parts vanish when the draft is replaced. The undo-send wait happens in the UI before `send` is called (`src/ui/composer/useComposeActions.ts`).
 

@@ -105,6 +105,11 @@ export interface ProviderCapabilities {
    * sends it (`drafts`). Unset: no scheduling.
    */
   readonly scheduling?: "held" | "drafts";
+  /**
+   * Snooze: messages move into a mailbox with role `snoozed` (made on first
+   * use) and keep their return time on the server; see {@link MailProvider.snooze}.
+   */
+  readonly snooze?: boolean;
 }
 
 /** Date order of a message list. */
@@ -419,6 +424,36 @@ export interface MailProvider {
     messageId: MessageId,
     signal?: AbortSignal,
   ): Promise<{ readonly id: DraftId; readonly messageId: MessageId }>;
+
+  /**
+   * Snoozes messages until `until` (only with {@link ProviderCapabilities.snooze}):
+   * out of where they are into the `snoozed` mailbox (created if needed),
+   * with the time kept on each message (`snoozedUntil`). Snoozed messages
+   * get a new time.
+   */
+  snooze(
+    ids: readonly MessageId[],
+    until: Date,
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /**
+   * Takes messages out of the `snoozed` mailbox, their time cleared, into
+   * `to` (folder accounts: always a folder, the Inbox by default; label
+   * accounts: `null` adds nothing). `back`: they came back on their own:
+   * unread, and marked `backFromSnooze`.
+   */
+  unsnooze(
+    ids: readonly MessageId[],
+    options: { readonly to: MailboxId | null; readonly back: boolean },
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
+
+  /** Clears the `backFromSnooze` mark (the message was opened). */
+  clearBackFromSnooze(
+    ids: readonly MessageId[],
+    signal?: AbortSignal,
+  ): Promise<MutationResult>;
 
   /** Sends a calendar mail (only if {@link ProviderCapabilities.calendarMail}). */
   sendCalendarMail(mail: CalendarMail, signal?: AbortSignal): Promise<void>;

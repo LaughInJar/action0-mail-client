@@ -52,6 +52,8 @@ pub struct Row {
     pub flagged: bool,
     pub deleted: bool,
     pub draft: bool,
+    /// Keywords (flags without a backslash).
+    pub keywords: Vec<String>,
     /// INTERNALDATE, ms since 1970.
     pub date: i64,
     pub modseq: Option<u64>,
@@ -79,6 +81,7 @@ impl Row {
                             "\\flagged" => row.flagged = true,
                             "\\deleted" => row.deleted = true,
                             "\\draft" => row.draft = true,
+                            _ if !flag.starts_with('\\') => row.keywords.push(flag.to_string()),
                             _ => {}
                         }
                     }
@@ -118,6 +121,7 @@ impl Row {
             self.flagged = later.flagged;
             self.deleted = later.deleted;
             self.draft = later.draft;
+            self.keywords = later.keywords;
         }
         if later.date != 0 {
             self.date = later.date;
@@ -453,6 +457,8 @@ pub fn summary_of(row: &Row, id: String, path: &str, snippet: String) -> Summary
             None => info.content_type.as_deref() == Some("multipart/mixed"),
         },
         send_at: info.send_at,
+        snoozed_until: parse::snoozed_until(&row.keywords),
+        back_from_snooze: parse::is_back(&row.keywords),
     }
 }
 
@@ -638,12 +644,17 @@ async fn take<S: Transport>(
                 }
                 uids
             };
-            snapshot.entries = uids.into_iter().map(|uid| (0, uid)).collect();
+            snapshot.entries = if folder.role == Some(Role::Snoozed) {
+                by_snooze_time(session, uids).await?
+            } else {
+                uids.into_iter().map(|uid| (0, uid)).collect()
+            };
             return Ok(snapshot);
         }
         MailboxRef::Flagged => (tree.searched(), "UNDELETED FLAGGED"),
         MailboxRef::All => (tree.searched(), "UNDELETED"),
         MailboxRef::Scheduled => return scheduled(session, tree, &query, snapshot).await,
+        MailboxRef::Back => return back_from_snooze(session, tree, &query, snapshot).await,
     };
     let utf8 = session.enabled.has("UTF8=ACCEPT");
     let mut dated: Vec<(i64, usize, u32)> = Vec::new();
@@ -717,6 +728,56 @@ async fn scheduled<S: Transport>(
         .collect();
     timed.sort_unstable();
     snapshot.entries = timed.into_iter().map(|(_, uid)| (0, uid)).collect();
+    Ok(snapshot)
+}
+
+/// Snoozed messages, back soonest first (by their snooze keyword).
+async fn by_snooze_time<S: Transport>(
+    session: &mut ImapSession<S>,
+    uids: Vec<u32>,
+) -> Result<Vec<(usize, u32)>, MailServerError> {
+    if uids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = fetch(session, &uids, "UID FLAGS").await?;
+    let mut timed: Vec<(String, u32)> = uids
+        .into_iter()
+        .map(|uid| {
+            let time = rows
+                .get(&uid)
+                .and_then(|row| parse::snoozed_until(&row.keywords))
+                .unwrap_or_default();
+            (time, uid)
+        })
+        .collect();
+    timed.sort();
+    Ok(timed.into_iter().map(|(_, uid)| (0, uid)).collect())
+}
+
+/// Inbox mail that came back from snooze (the Back keyword), newest first.
+async fn back_from_snooze<S: Transport>(
+    session: &mut ImapSession<S>,
+    tree: &FolderTree,
+    query: &Query,
+    mut snapshot: Snapshot,
+) -> Result<Snapshot, MailServerError> {
+    let Some(inbox) = tree.role(Role::Inbox).cloned() else {
+        return Ok(snapshot);
+    };
+    let selected = session.reopen_folder(&inbox.raw, Access::ReadOnly).await?;
+    snapshot.folders.push(SnapFolder {
+        path: inbox.path.clone(),
+        raw: inbox.raw.clone(),
+        validity: selected.mailbox.uid_validity.unwrap_or_default(),
+    });
+    if selected.mailbox.exists == 0 {
+        return Ok(snapshot);
+    }
+    let utf8 = session.enabled.has("UTF8=ACCEPT");
+    let keys = format!("UNDELETED KEYWORD {}", parse::BACK_KEYWORD);
+    let mut uids = uids_of(proto::search(session, &query.search(&keys, utf8)).await?)?;
+    uids.sort_unstable_by(|a, b| b.cmp(a));
+    snapshot.entries = uids.into_iter().map(|uid| (0, uid)).collect();
     Ok(snapshot)
 }
 

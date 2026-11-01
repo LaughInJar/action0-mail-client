@@ -8,7 +8,7 @@ import { useUi } from "../../state/context";
 import { formatSendAt } from "../common/format";
 import { Icon } from "../common/Icon";
 import { belowElement } from "../common/menuPosition";
-import { SendLaterDialog, SendLaterMenu } from "./SendLaterMenu";
+import { SendLaterMenu, TimeDialog } from "./SendLaterMenu";
 import { useScheduleActions, type ScheduleActions } from "./useScheduleActions";
 
 /**
@@ -151,12 +151,16 @@ function useScheduleCommands(actions: ScheduleActions, entry: ScheduledEntry) {
 
 /** Change time from a menu or the command palette: the date and time dialog. */
 export function SendLaterHost() {
+  const t = useT();
   const entry = useUi((state) => state.sendLaterFor);
   const setFor = useUi((state) => state.setSendLaterFor);
   const actions = useScheduleActions();
   if (!entry) return null;
   return (
-    <SendLaterDialog
+    <TimeDialog
+      title={t.schedule.sendLater}
+      confirm={t.schedule.schedule}
+      remember="lastSendLater"
       current={entry.message.sendAt}
       onPick={(sendAt) => {
         setFor(null);

@@ -442,6 +442,87 @@ describe("trash, spam and deletion", () => {
   });
 });
 
+describe("snooze", () => {
+  const snoozed = box("snoozed", {
+    role: "snoozed",
+    assignable: false,
+    counts: { unread: 0, total: 0 },
+  });
+  const back = box("back", {
+    kind: "view",
+    standard: "backFromSnooze",
+    hidden: true,
+  });
+  const boxes = [inbox, work, all, snoozed, back];
+  const until = "2026-11-03T07:00:00.000Z";
+
+  it("takes mail out of the Inbox into Snoozed with its time, and back unread and marked", () => {
+    const [snooze] = planChanges(
+      { kind: "snooze", ids: ids("m1"), until },
+      [m1],
+      boxes,
+      labels,
+    );
+    expect(snooze?.after).toMatchObject({
+      mailboxIds: ["work", "snoozed"],
+      snoozedUntil: until,
+    });
+    expect(rowIds(patchList(list([m1, m2]), inbox, [snooze!]))).toEqual(["m2"]);
+    expect(rowIds(patchList(list([]), snoozed, [snooze!]))).toEqual(["m1"]);
+
+    const [wake] = planChanges(
+      { kind: "unsnooze", ids: ids("m1"), to: inbox.id, back: true },
+      [snooze!.after],
+      boxes,
+      labels,
+    );
+    expect(wake?.after).toMatchObject({
+      mailboxIds: ["work", "inbox"],
+      flags: { seen: false },
+      backFromSnooze: true,
+    });
+    expect(wake?.after.snoozedUntil).toBeUndefined();
+    expect(belongsTo(back, wake!.after)).toBe(true);
+    expect(rowIds(patchList(list([]), back, [wake!]))).toEqual(["m1"]);
+
+    const [opened] = planChanges(
+      { kind: "clear-back", ids: ids("m1") },
+      [wake!.after],
+      boxes,
+      labels,
+    );
+    expect(belongsTo(back, opened!.after)).toBe(false);
+    // Only mail that's marked changes.
+    expect(
+      planChanges({ kind: "clear-back", ids: ids("m2") }, [m2], boxes, labels),
+    ).toEqual([]);
+  });
+
+  it("leaves a folder account's folder, and comes back into the Inbox by default", () => {
+    const folderBoxes = [
+      box("inbox", { kind: "folder", role: "inbox" }),
+      box("snoozed", { kind: "folder", role: "snoozed" }),
+      archiveFolder,
+    ];
+    const archived = message("a1", 1, ["archive"]);
+    const [snooze] = planChanges(
+      { kind: "snooze", ids: ids("a1"), until },
+      [archived],
+      folderBoxes,
+      folders,
+    );
+    expect(snooze?.after.mailboxIds).toEqual(["snoozed"]);
+    const [wake] = planChanges(
+      { kind: "unsnooze", ids: ids("a1"), to: null, back: false },
+      [snooze!.after],
+      folderBoxes,
+      folders,
+    );
+    expect(wake?.after.mailboxIds).toEqual(["inbox"]);
+    expect(wake?.after.backFromSnooze).toBeUndefined();
+  });
+});
+
 describe("applyServerChanges", () => {
   const isolating = isolatingMailboxes(mailboxes);
   const fresh = message("m0", 0, ["inbox"], false);

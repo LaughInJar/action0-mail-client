@@ -37,6 +37,7 @@ pub enum Role {
     Sent,
     Drafts,
     Scheduled,
+    Snoozed,
     All,
     Archive,
     Junk,
@@ -52,10 +53,11 @@ impl Role {
             Self::Sent => 3,
             Self::Drafts => 4,
             Self::Scheduled => 5,
-            Self::All => 6,
-            Self::Archive => 7,
-            Self::Junk => 8,
-            Self::Trash => 9,
+            Self::Snoozed => 6,
+            Self::All => 7,
+            Self::Archive => 8,
+            Self::Junk => 9,
+            Self::Trash => 10,
         }
     }
 
@@ -66,7 +68,7 @@ impl Role {
             Self::Flagged => Some("\\Flagged"),
             Self::Sent => Some("\\Sent"),
             Self::Drafts => Some("\\Drafts"),
-            Self::Scheduled => None,
+            Self::Scheduled | Self::Snoozed => None,
             Self::All => Some("\\All"),
             Self::Archive => Some("\\Archive"),
             Self::Junk => Some("\\Junk"),
@@ -114,6 +116,12 @@ pub struct Summary {
     /// A scheduled draft's Send later marker (`X-Action0-Send-At`), as stored.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub send_at: Option<String>,
+    /// A snoozed message's return time (ISO 8601), from its keyword.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
+    /// It came back from snooze and hasn't been opened since.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub back_from_snooze: bool,
 }
 
 /// A conversation (`ImapThread`): messages oldest first.
@@ -234,6 +242,15 @@ pub struct FlagsRequest {
     pub seen: Option<bool>,
     #[serde(default)]
     pub flagged: Option<bool>,
+    /// Keywords to set (Snooze's).
+    #[serde(default)]
+    pub add: Vec<String>,
+    /// Keywords to clear.
+    #[serde(default)]
+    pub remove: Vec<String>,
+    /// Keywords starting with this are cleared too (an old snooze time).
+    #[serde(default, rename = "removePrefix")]
+    pub remove_prefix: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -323,6 +340,8 @@ mod tests {
             flags: Flags::default(),
             has_attachments: false,
             send_at: None,
+            snoozed_until: None,
+            back_from_snooze: false,
         };
         let json = serde_json::to_value(Change::Updated {
             message: summary.clone(),

@@ -31,6 +31,10 @@ export interface RowView {
   readonly hasAttachments: boolean;
   /** A scheduled mail: when it goes out (shown instead of the date). */
   readonly sendAt?: string;
+  /** A snoozed message: when it comes back (shown instead of the date). */
+  readonly snoozedUntil?: string;
+  /** It came back from snooze (tagged, pinned atop the Inbox). */
+  readonly backFromSnooze?: true;
 }
 
 /** How rows are described in a list. */
@@ -96,6 +100,8 @@ export function rowView(
       flagged: summary.flags.flagged,
       hasAttachments: summary.hasAttachments,
       ...(summary.sendAt ? { sendAt: summary.sendAt } : {}),
+      ...(summary.snoozedUntil ? { snoozedUntil: summary.snoozedUntil } : {}),
+      ...(summary.backFromSnooze ? { backFromSnooze: true as const } : {}),
     };
   }
   const shown = context.mailbox
@@ -118,5 +124,8 @@ export function rowView(
     unread: messages.some((message) => !message.flags.seen),
     flagged: messages.some((message) => message.flags.flagged),
     hasAttachments: messages.some((message) => message.hasAttachments),
+    ...(messages.some((message) => message.backFromSnooze)
+      ? { backFromSnooze: true as const }
+      : {}),
   };
 }

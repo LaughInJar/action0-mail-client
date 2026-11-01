@@ -66,6 +66,8 @@ export function toSummary(summary: ImapSummary): MessageSummary {
           ...(marker.by ? { scheduledBy: marker.by } : {}),
         }
       : {}),
+    ...(summary.snoozedUntil ? { snoozedUntil: summary.snoozedUntil } : {}),
+    ...(summary.backFromSnooze ? { backFromSnooze: true as const } : {}),
   };
 }
 

@@ -215,6 +215,58 @@ describe("inverseOf for trash, spam and deletion", () => {
   });
 });
 
+describe("inverseOf for snooze", () => {
+  const until = "2026-11-03T07:00:00.000Z";
+  const snoozed = (id: string, mailboxIds: string[], at = until) => ({
+    ...summary(id, mailboxIds),
+    snoozedUntil: at,
+  });
+
+  it("unsnoozes into the Inbox only what was there (labels), and restores an earlier time", () => {
+    const a = summary("a", ["inbox", "work"]);
+    const b = summary("b", ["work"]);
+    const c = snoozed("c", ["snoozed"], "2026-11-02T07:00:00.000Z");
+    const later = { snoozedUntil: until };
+    expect(
+      inverseOf(
+        { kind: "snooze", ids: ids("a", "b", "c"), until },
+        [change(a, later), change(b, later), change(c, later)],
+        { inbox: box("inbox") },
+      ),
+    ).toEqual([
+      { kind: "snooze", ids: ["c"], until: "2026-11-02T07:00:00.000Z" },
+      { kind: "unsnooze", ids: ["a"], to: "inbox", back: false },
+      { kind: "unsnooze", ids: ["b"], to: null, back: false },
+    ]);
+  });
+
+  it("unsnoozes into the folder it came from (folders)", () => {
+    const a = summary("a", ["archive"]);
+    expect(
+      inverseOf(
+        { kind: "snooze", ids: ids("a"), until },
+        [change(a, { mailboxIds: [box("snoozed")], snoozedUntil: until })],
+        { ...folders, inbox: box("inbox") },
+      ),
+    ).toEqual([{ kind: "unsnooze", ids: ["a"], to: "archive", back: false }]);
+  });
+
+  it("snoozes again until the old time after unsnoozing; clearing the mark has no undo", () => {
+    const a = snoozed("a", ["snoozed"]);
+    const changes = [change(a, { mailboxIds: [box("inbox")] })];
+    expect(
+      inverseOf(
+        { kind: "unsnooze", ids: ids("a"), to: box("inbox"), back: false },
+        changes,
+        labels,
+      ),
+    ).toEqual([{ kind: "snooze", ids: ["a"], until }]);
+    expect(
+      inverseOf({ kind: "clear-back", ids: ids("a") }, changes, labels),
+    ).toEqual([]);
+  });
+});
+
 describe("runIntent", () => {
   it("dispatches to the provider method", async () => {
     const archive = vi.fn(() => Promise.resolve({}));

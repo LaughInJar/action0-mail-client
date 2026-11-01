@@ -180,6 +180,7 @@ pub async fn fetch_message<S: Transport>(
                 seen: row.seen,
                 flagged: row.flagged,
                 draft: row.draft,
+                keywords: row.keywords.clone(),
                 date: row.date,
                 server: row.server,
             },

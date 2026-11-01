@@ -2,6 +2,13 @@ const en = {
   archived: (what: string) => `Archived ${what}`,
   couldntArchive: "Couldn’t archive",
   notInInbox: "Not in the Inbox, nothing to archive.",
+  snoozed: (what: string, when: string) => `Snoozed ${what} until ${when}`,
+  couldntSnooze: "Couldn’t snooze",
+  unsnoozed: (what: string) => `${what} back in the Inbox`,
+  couldntUnsnooze: "Couldn’t unsnooze",
+  notSnoozed: "Not snoozed.",
+  snoozeButton: "Snooze (h)",
+  unsnoozeButton: "Unsnooze",
   oneAccountOnly:
     "Moving and labels work within one account: select messages of one account.",
   marked: (what: string, read: boolean) =>
@@ -73,6 +80,13 @@ const de: typeof en = {
   archived: (what) => `${what} archiviert`,
   couldntArchive: "Archivieren fehlgeschlagen",
   notInInbox: "Nicht im Posteingang, nichts zu archivieren.",
+  snoozed: (what, when) => `${what} zurückgestellt bis ${when}`,
+  couldntSnooze: "Zurückstellen fehlgeschlagen",
+  unsnoozed: (what) => `${what} wieder im Posteingang`,
+  couldntUnsnooze: "Zurückholen fehlgeschlagen",
+  notSnoozed: "Nicht zurückgestellt.",
+  snoozeButton: "Zurückstellen (h)",
+  unsnoozeButton: "Zurückholen",
   oneAccountOnly:
     "Verschieben und Labels gehen nur innerhalb eines Kontos: Wähle Nachrichten aus einem Konto.",
   marked: (what, read) =>

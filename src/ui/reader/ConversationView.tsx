@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useClearBackOnOpen } from "../schedule/useClearBackOnOpen";
 import { useAccountHandle } from "../../accounts/context";
 import { useSenders } from "../../data/senders";
 import {
@@ -114,6 +115,10 @@ export function ConversationView({
     [accountId, messages],
   );
   usePrintCommand(printTarget);
+  useClearBackOnOpen(
+    accountId,
+    useMemo(() => (messages ?? []).map((message) => message.id), [messages]),
+  );
 
   const inbox = mailboxes?.find((m) => m.role === "inbox");
   const store = useUiStore();
