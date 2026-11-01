@@ -24,6 +24,8 @@ import { Reminders } from "../reminders/Reminders";
 import { useDocumentTitle } from "../sync/useDocumentTitle";
 import { useMailSync } from "../sync/useMailSync";
 import { ShortcutHelp } from "../help/ShortcutHelp";
+import { PaletteHost } from "../palette/CommandPalette";
+import { usePaletteShortcut } from "../palette/usePaletteShortcut";
 import { Sidebar } from "../mailboxes/Sidebar";
 import { MessageListPane } from "../messages/MessageListPane";
 import { useListController } from "../messages/useListController";
@@ -90,6 +92,7 @@ function MailApp() {
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   useNavigationDefaults(breakpoint);
   useGlobalCommands(breakpoint);
+  usePaletteShortcut();
   const actions = useMailActions();
   const compose = useComposeActions();
   useComposerEffects(breakpoint, compose);
@@ -204,6 +207,7 @@ function MailApp() {
         <UndoCommand undo={undo} />
       )}
       <ShortcutHelp />
+      <PaletteHost />
       <MailboxPickerHost />
       <ContextMenuHost />
       <ManageLabelsHost />

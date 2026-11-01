@@ -42,7 +42,10 @@ function ShortcutDialog() {
   useFocusTrap(dialogRef, true, close);
 
   const groups = new Map<CommandGroup, Command[]>();
-  for (const command of registry.list()) {
+  // Commands without a key are the command palette's.
+  for (const command of registry
+    .list()
+    .filter((candidate) => candidate.keys.length > 0)) {
     const group = groups.get(command.group) ?? [];
     group.push(command);
     groups.set(command.group, group);

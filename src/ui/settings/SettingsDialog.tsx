@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { UNDO_SEND_CHOICES, type AppSettings } from "../../state/settings";
 import { useUi } from "../../state/context";
 import type { ThemeMode } from "../../state/theme";
@@ -13,10 +13,8 @@ import { SignatureSettings } from "./SignatureSettings";
 import { TemplateSettings } from "../templates/TemplateSettings";
 import { SpellingSettings } from "./SpellingSettings";
 import { AiSettings } from "../ai/AiSettings";
-import { useAccounts } from "../../accounts/context";
 import { FilterSettings } from "../filters/FilterSettings";
-import { FILTER_SETTINGS_ID } from "../filters/filterLink";
-import { AI_SETTINGS_ID } from "../ai/aiSettingsLink";
+import { takeSectionScroll, useSettingsSections } from "./sections";
 import { useT } from "../../i18n/context";
 import {
   browserLanguages,
@@ -24,14 +22,6 @@ import {
   resolveLanguage,
   type LanguageSetting,
 } from "../../i18n/locale";
-
-/** The sections, by DOM id and text key. */
-const SECTIONS = [
-  ["settings-general", "general"],
-  ["settings-reading", "reading"],
-  ["settings-writing", "writing"],
-  ["settings-notifications", "notifications"],
-] as const;
 
 /**
  * Settings: a large dialog on wider screens, a page of its own on phones.
@@ -47,20 +37,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
   const s = t.settings;
   const { desktop, mobile, pwa } = usePlatform();
-  const named = SECTIONS.map(([id, key]) => [id, s[key]] as const);
-  const filters = useAccounts().some((handle) => handle.filters);
-  const sections: (readonly [string, string])[] = [
-    // Filters and the AI assistant after Writing.
-    ...named.slice(0, 3),
-    ...(filters ? [[FILTER_SETTINGS_ID, t.filters.section] as const] : []),
-    [AI_SETTINGS_ID, t.ai.settings.section],
-    ...named.slice(3),
-    ...(desktop || mobile
-      ? [["settings-app", t.desktop.section] as const]
-      : pwa
-        ? [["settings-app", t.pwa.appTitle] as const]
-        : []),
-  ];
+  const sections = useSettingsSections();
+  useEffect(() => {
+    const requested = takeSectionScroll();
+    if (requested)
+      document.getElementById(requested)?.scrollIntoView({ block: "start" });
+  }, []);
   const set =
     <K extends keyof AppSettings>(key: K) =>
     (value: AppSettings[K]) => {

@@ -9,13 +9,12 @@ import {
 } from "../../data/calendar";
 import { useCalendarServers } from "../../data/calendarServers";
 import { useT } from "../../i18n/context";
-import { useRouter, useUi, useUiStore } from "../../state/context";
+import { useUi, useUiStore } from "../../state/context";
 import { errorMessage } from "../common/errorMessage";
 import { Icon } from "../common/Icon";
 import { IconButton } from "../common/IconButton";
 import { AppSwitch } from "../layout/AppSwitch";
-import { ThemeSwitch } from "../layout/ThemeSwitch";
-import { APP_TITLE } from "../sync/useDocumentTitle";
+import { SidebarHeader } from "../layout/SidebarHeader";
 import { CalendarServerDialog } from "./CalendarServerDialog";
 import { IcsDialog } from "./IcsDialog";
 import { MiniMonth } from "./MiniMonth";
@@ -42,7 +41,6 @@ export function CalendarSidebar({
   onNavigate?: () => void;
 }) {
   const t = useT();
-  const router = useRouter();
   const [dialog, setDialog] = useState<
     | { mode: "add" }
     | { mode: "edit"; subscription: IcsSubscription }
@@ -56,19 +54,7 @@ export function CalendarSidebar({
       aria-label={t.calendar.calendars}
       className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-900"
     >
-      <div className="flex items-center gap-2 pt-2 pr-2 pb-1 pl-4 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-        <Icon name="mail" className="size-5 text-blue-600 dark:text-blue-400" />
-        <span className="flex-1">{APP_TITLE}</span>
-        <ThemeSwitch />
-        <IconButton
-          label={t.layout.settings}
-          icon="settings"
-          onClick={() => {
-            onNavigate?.();
-            router.openSettings();
-          }}
-        />
-      </div>
+      <SidebarHeader {...(onNavigate ? { onNavigate } : {})} />
       <AppSwitch {...(onNavigate ? { onNavigate } : {})} />
       <div className="px-2 pt-1 pb-2">
         <button

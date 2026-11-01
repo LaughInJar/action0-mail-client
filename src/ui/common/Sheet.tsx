@@ -16,9 +16,9 @@ export interface SheetProps {
   readonly focusContainer?: boolean;
   /**
    * Width on larger screens; `page` is a large dialog there and fills the
-   * screen on phones.
+   * screen on phones, as `palette` does (near the top on larger screens).
    */
-  readonly size?: "md" | "lg" | "page";
+  readonly size?: "md" | "lg" | "page" | "palette";
   readonly children: ReactNode;
 }
 
@@ -26,6 +26,8 @@ const SIZES: Readonly<Record<NonNullable<SheetProps["size"]>, string>> = {
   md: "max-h-[85dvh] rounded-t-2xl sm:top-[10vh] sm:max-w-md",
   lg: "max-h-[85dvh] rounded-t-2xl sm:top-[10vh] sm:max-w-lg",
   page: "top-0 pt-[env(safe-area-inset-top)] sm:top-[6vh] sm:h-[88vh] sm:max-w-3xl sm:pt-0",
+  palette:
+    "top-0 pt-[env(safe-area-inset-top)] sm:top-[12vh] sm:max-h-[70vh] sm:max-w-xl sm:pt-0",
 };
 
 /**

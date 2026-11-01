@@ -16,6 +16,7 @@ import { mailboxes } from "./texts/mailboxes";
 import { menus } from "./texts/menus";
 import { filters } from "./texts/filters";
 import { original } from "./texts/original";
+import { palette } from "./texts/palette";
 import { pwa } from "./texts/pwa";
 import { reader } from "./texts/reader";
 import { settings } from "./texts/settings";
@@ -50,6 +51,7 @@ export const messages = {
     menus: menus.en,
     filters: filters.en,
     original: original.en,
+    palette: palette.en,
     pwa: pwa.en,
     reader: reader.en,
     settings: settings.en,
@@ -78,6 +80,7 @@ export const messages = {
     menus: menus.de,
     filters: filters.de,
     original: original.de,
+    palette: palette.de,
     pwa: pwa.de,
     reader: reader.de,
     settings: settings.de,

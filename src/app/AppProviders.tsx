@@ -15,6 +15,7 @@ import { I18nProvider } from "../i18n/I18nProvider";
 import { PlatformContext } from "../platform/context";
 import { CommandRegistryContext } from "../keyboard/context";
 import { RouterContext, UiStoreContext } from "../state/context";
+import { isModalOpen, ownsKeys } from "../keyboard/modal";
 import { COARSE_POINTER_QUERY } from "../ui/layout/useBreakpoint";
 import type { AppServices } from "./services";
 
@@ -90,19 +91,5 @@ export function AppProviders({
     </PersistQueryClientProvider>
   ) : (
     <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
-  );
-}
-
-/** Inside an element with `data-own-keys` (the composer), single keys are text, not shortcuts. */
-function ownsKeys(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element && target.closest("[data-own-keys]") !== null
-  );
-}
-
-/** True while a modal dialog is shown (closed drawers are `inert`). */
-function isModalOpen(): boolean {
-  return Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
-    (dialog) => dialog.closest("[inert]") === null,
   );
 }

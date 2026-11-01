@@ -19,7 +19,11 @@ import { mailActionItems } from "../actions/mailActionItems";
 import { OverflowToolbar } from "../common/OverflowToolbar";
 import { useBreakpoint } from "../layout/useBreakpoint";
 import { originalItems, useOriginalActions } from "../original/originalActions";
-import { filterItems, useFilterLinkActions } from "../filters/filterLink";
+import {
+  filterItems,
+  useFilterLikeCommand,
+  useFilterLinkActions,
+} from "../filters/filterLink";
 import { answerItems } from "./answerItems";
 import { useMailActions, type MailActions } from "../actions/useMailActions";
 import { errorMessage } from "../common/errorMessage";
@@ -117,6 +121,10 @@ export function ConversationView({
   const answering = () => ({
     accountId,
     messageId: store.getState().readerCursor ?? messages?.at(-1)?.id ?? rowId,
+  });
+  useFilterLikeCommand(thread ? accountId : undefined, () => {
+    const { messageId } = answering();
+    return messages?.find((message) => message.id === messageId)?.from;
   });
   const canWrite = compose.canWriteFrom(accountId);
   const ai = useAiReaderActions();

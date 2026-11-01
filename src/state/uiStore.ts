@@ -287,6 +287,8 @@ export interface UiState extends selection.SelectionState {
   readonly toggledNodes: ReadonlySet<string>;
   readonly drawerOpen: boolean;
   readonly helpOpen: boolean;
+  /** The command palette is open. */
+  readonly paletteOpen: boolean;
   /** The current toast. Session only. */
   readonly toast: Toast | null;
   readonly dragging: DragState | null;
@@ -369,6 +371,7 @@ export interface UiActions {
   readonly toggleNode: (key: string) => void;
   readonly setDrawerOpen: (open: boolean) => void;
   readonly setHelpOpen: (open: boolean) => void;
+  readonly setPaletteOpen: (open: boolean) => void;
   /** Shows a toast, replacing the current one. */
   readonly showToast: (toast: Omit<Toast, "id" | "createdAt">) => void;
   /** Hides the toast with this id (if it is still the current one). */
@@ -443,7 +446,7 @@ export const UI_STATE_KEY = "a0.ui";
 
 /** Allowed widths of the tree (index 0) and list (index 1) columns. */
 export const COLUMN_LIMITS = [
-  { min: 180, max: 480, initial: 248 },
+  { min: 180, max: 480, initial: 280 },
   { min: 280, max: 720, initial: 400 },
 ] as const;
 
@@ -533,6 +536,7 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           folderFilter: "",
           drawerOpen: false,
           helpOpen: false,
+          paletteOpen: false,
           toast: null,
           dragging: null,
           picker: null,
@@ -649,6 +653,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setHelpOpen: (helpOpen) => {
             set({ helpOpen });
+          },
+          setPaletteOpen: (paletteOpen) => {
+            set({ paletteOpen });
           },
           showToast: (toast) => {
             set((s) => ({

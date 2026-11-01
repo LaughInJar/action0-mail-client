@@ -227,13 +227,13 @@ Shortcuts are commands in a central registry (`src/keyboard/registry.ts`). Compo
 
 2. **Fill in the `Command`:**
    - `id`: unique, `area.action`.
-   - `group`: the section of the shortcut help (`list`, `actions`, `reading`, `goTo`, `search`, `writing`, `calendar`, `general`).
+   - `group`: the section of the shortcut help (`list`, `actions`, `reading`, `goTo`, `search`, `writing`, `calendar`, `contacts`, `general`).
    - `description`: a text from `t.shortcuts` ([Adding UI text](#adding-ui-text)).
    - `keys`: one or more bindings in the notation of `src/keyboard/keys.ts`. Printable characters match the character they type, so Shift is implied (`"shift+i"` normalizes to `"I"`, and `"?"` works on any layout); named keys spell modifiers out (`"shift+Delete"`, `"ctrl+q"`, `"meta+q"`). A space separates the strokes of a sequence: `"g i"`.
    - `when` (optional): the command only runs while this returns true.
    - `run`: the action.
 3. **Know how keys are dispatched.** `src/app/AppProviders.tsx` installs one `keydown` listener for the whole app, and mail iframes forward their key presses to the registry (`src/ui/reader/SafeHtmlFrame.tsx`). Keys are ignored while a modal dialog is open (`aria-modal="true"` outside an `inert` region), inside an element marked `data-own-keys` (such as the composer), in text fields and rich-text editors, and Space and Enter stay with a focused button or link. When bindings collide, the most recently registered command whose `when` is true wins. A started sequence waits `SEQUENCE_TIMEOUT_MS` (one second) for its next stroke; if the next stroke doesn't continue it, that stroke is handled on its own.
-4. **The help dialog** (<kbd>?</kbd>, `src/ui/help/ShortcutHelp.tsx`) is generated from the registry: every registered command, grouped in the order of `GROUP_ORDER`, with key names from `t.shortcuts.keys`. A new group needs an entry in `CommandGroup`, in `GROUP_ORDER` and in `t.shortcuts.groups`.
+4. **The help dialog** (<kbd>?</kbd>, `src/ui/help/ShortcutHelp.tsx`) is generated from the registry: every registered command with keys, grouped in the order of `GROUP_ORDER`, with key names from `t.shortcuts.keys`. The command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>, `src/ui/palette/usePaletteItems.ts`) lists the commands whose `when` holds, with their first binding; it leaves out cursor moves and go-to commands (`LEFT_OUT`, it lists the places itself) and takes icons from `COMMAND_ICONS`. A command with `keys: []` is palette-only. A new group needs an entry in `CommandGroup`, in `GROUP_ORDER` and in `t.shortcuts.groups`.
 5. **Follow the existing scheme**: go-to shortcuts are `g` then a letter (`g i`, `g c`), and `a` on its own is reserved for archive. Every shortcut also needs a way to do the same by mouse and touch.
 6. **Update the README's [Keyboard shortcuts](../README.md#keyboard-shortcuts) table.** Registry behaviour is unit-tested in `src/keyboard/registry.test.ts`; in UI tests, press keys with `await user.keyboard("a")` or `"{Shift>}u{/Shift}"`.
 

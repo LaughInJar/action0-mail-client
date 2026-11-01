@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAccounts } from "../../accounts/context";
 import type { AccountId } from "../../core/ids";
 import type { EmailAddress } from "../../core/model";
-import type { I18n } from "../../i18n/context";
+import { useT, type I18n } from "../../i18n/context";
+import { useCommands } from "../../keyboard/context";
+import type { Command } from "../../keyboard/registry";
 import { useRouter } from "../../state/context";
 import type { HashRouter } from "../../state/router";
 import type { ToolbarItem } from "../actions/mailActionItems";
@@ -110,4 +112,41 @@ export function filterItems(
       },
     },
   ];
+}
+
+/**
+ * "Filter mail like this" as a command without a key while a message of
+ * `accountId` is open, so the command palette offers it. `from` names the
+ * sender when it's chosen.
+ */
+export function useFilterLikeCommand(
+  accountId: AccountId | undefined,
+  from: () => EmailAddress | undefined,
+): void {
+  const actions = useFilterLinkActions();
+  const t = useT();
+  const sender = useRef(from);
+  useEffect(() => {
+    sender.current = from;
+  });
+  const filters = accountId !== undefined && actions.canFilter(accountId);
+  useCommands(
+    useMemo(
+      (): Command[] =>
+        filters
+          ? [
+              {
+                id: "mail.filter-like",
+                group: "actions",
+                description: t.filters.filterLikeThis,
+                keys: [],
+                run: () => {
+                  actions.filterLike(accountId, sender.current());
+                },
+              },
+            ]
+          : [],
+      [filters, accountId, actions, t],
+    ),
+  );
 }

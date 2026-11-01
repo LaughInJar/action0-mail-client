@@ -16,7 +16,6 @@ import {
   messageRef,
   type AccountId,
 } from "../../core/ids";
-import type { Mailbox, MailboxRole } from "../../core/model";
 import type { ProviderCapabilities } from "../../core/provider";
 import { usePlatform } from "../../platform/context";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
@@ -35,7 +34,8 @@ import {
   useCombinedCount,
   useOpenCombined,
 } from "./allInboxes";
-import { Icon, type IconName } from "../common/Icon";
+import { Icon } from "../common/Icon";
+import { mailboxIcon, ROLE_ICONS } from "./mailboxIcon";
 import { wantsAppMenu } from "../common/menuPosition";
 import { useLongPress } from "../messages/useLongPress";
 import {
@@ -66,24 +66,6 @@ const DropContext = createContext<DropHighlight | null>(null);
 
 /** The folder filter's text (blank when not filtering). */
 const FilterContext = createContext("");
-
-const ROLE_ICONS: Readonly<Record<MailboxRole, IconName>> = {
-  inbox: "inbox",
-  flagged: "star",
-  important: "bookmark",
-  sent: "send",
-  drafts: "file",
-  all: "archive",
-  archive: "archive",
-  junk: "alert",
-  trash: "trash",
-};
-
-function mailboxIcon(mailbox: Mailbox): IconName {
-  if (mailbox.role) return ROLE_ICONS[mailbox.role];
-  if (mailbox.kind === "label") return "tag";
-  return "folder";
-}
 
 /** Props of {@link MailboxTree}. */
 export interface MailboxTreeProps {
