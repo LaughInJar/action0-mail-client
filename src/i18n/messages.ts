@@ -20,6 +20,7 @@ import { pwa } from "./texts/pwa";
 import { reader } from "./texts/reader";
 import { settings } from "./texts/settings";
 import { shortcuts } from "./texts/shortcuts";
+import { templates } from "./texts/templates";
 import { unsubscribe } from "./texts/unsubscribe";
 
 /**
@@ -53,6 +54,7 @@ export const messages = {
     reader: reader.en,
     settings: settings.en,
     shortcuts: shortcuts.en,
+    templates: templates.en,
     unsubscribe: unsubscribe.en,
   },
   de: {
@@ -80,6 +82,7 @@ export const messages = {
     reader: reader.de,
     settings: settings.de,
     shortcuts: shortcuts.de,
+    templates: templates.de,
     unsubscribe: unsubscribe.de,
   },
 };

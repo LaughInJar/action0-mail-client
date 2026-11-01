@@ -109,3 +109,28 @@ describe("setting helpers", () => {
     expect(load("ask", "anna@example.org")).toBe(false);
   });
 });
+
+describe("templates in the settings", () => {
+  it("keeps valid templates and drops broken ones", () => {
+    const settings = parseSettings({
+      templates: [
+        { id: "1", name: "Thanks", subject: "", html: "<p>Thanks</p>" },
+        {
+          id: "2",
+          name: "Offer",
+          subject: "Offer",
+          html: "<p>Offer</p>",
+          accountId: "demo:demo@work.example",
+        },
+        { id: "3", name: "Broken" },
+        "nonsense",
+      ],
+    });
+    expect(settings.templates.map((template) => template.id)).toEqual([
+      "1",
+      "2",
+    ]);
+    expect(settings.templates[1]?.accountId).toBe("demo:demo@work.example");
+    expect(parseSettings({ templates: "x" }).templates).toEqual([]);
+  });
+});

@@ -116,7 +116,10 @@ function AccountFilters({ handle }: { readonly handle: AccountHandle }) {
   const mailboxes = useMailboxList(accountId).data ?? [];
   const actions = useFilterActions();
   const router = useRouter();
-  const routerEditor = useSettingsEditor();
+  // Only this section's editors (Settings has others, e.g. templates').
+  const anyEditor = useSettingsEditor();
+  const routerEditor =
+    anyEditor === "filter" || anyEditor === "auto-reply" ? anyEditor : null;
   const ask = useAsk();
   // "Filter mail like this" and the notice's Edit open an editor here.
   const [editing, setEditing] = useState<Editing | null>(() => {

@@ -165,6 +165,8 @@ export interface RichTextEditorProps {
   readonly onEditor?: (editor: Editor | null) => void;
   /** Shows the ✨ button, which opens the AI field. */
   readonly onAi?: () => void;
+  /** Shows the Templates button, which opens the templates. */
+  readonly onTemplates?: () => void;
 }
 
 /**
@@ -183,6 +185,7 @@ export function RichTextEditor({
   placeholder: placeholderProp,
   onEditor,
   onAi,
+  onTemplates,
 }: RichTextEditorProps) {
   const texts = useT().composer.editor;
   const label = labelProp ?? texts.message;
@@ -322,6 +325,7 @@ export function RichTextEditor({
           setLinking(true);
         }}
         {...(onAi ? { onAi } : {})}
+        {...(onTemplates ? { onTemplates } : {})}
       />
       {linking && (
         <LinkField
@@ -373,10 +377,12 @@ function Toolbar({
   editor,
   onLink,
   onAi,
+  onTemplates,
 }: {
   editor: Editor;
   onLink: () => void;
   onAi?: () => void;
+  onTemplates?: () => void;
 }) {
   const state = useEditorState({
     editor,
@@ -447,12 +453,17 @@ function Toolbar({
         icon="clear-format"
         onClick={() => chain().unsetAllMarks().clearNodes().run()}
       />
-      {onAi && (
-        <>
-          <span className="mx-1 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
-          <Tool label={t.ai.writeButton} icon="sparkles" onClick={onAi} />
-        </>
+      {(onAi ?? onTemplates) && (
+        <span className="mx-1 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
       )}
+      {onTemplates && (
+        <Tool
+          label={t.templates.insert}
+          icon="clipboard"
+          onClick={onTemplates}
+        />
+      )}
+      {onAi && <Tool label={t.ai.writeButton} icon="sparkles" onClick={onAi} />}
     </div>
   );
 }

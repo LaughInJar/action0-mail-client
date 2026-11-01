@@ -310,11 +310,12 @@ export function listRoute(route: NonNullable<Route>): NonNullable<Route> {
 }
 
 /** An editor open over Settings (its own screen on phones). */
-export type SettingsEditor = "filter" | "auto-reply";
+export type SettingsEditor = "filter" | "auto-reply" | "template";
 
 const SETTINGS_EDITORS: readonly string[] = [
   "filter",
   "auto-reply",
+  "template",
 ] satisfies SettingsEditor[];
 
 /**

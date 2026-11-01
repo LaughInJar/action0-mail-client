@@ -1,11 +1,13 @@
 /**
  * App settings: how the app behaves in this browser. Saved with the UI
- * state in localStorage; signatures and other account settings live with
- * the provider instead.
+ * state in localStorage, as are the templates; signatures and other
+ * account settings live with the provider instead.
  */
 
 import type { AiChoice, AiKind, AiServiceConfig } from "../ai/types";
+import type { MailTemplate } from "../compose/templates";
 import type { IcsSubscription } from "../core/calendar";
+import { asAccountId } from "../core/ids";
 import type { LanguageSetting } from "../i18n/locale";
 
 /** Undo-send periods the settings offer, in seconds (0: send right away). */
@@ -33,6 +35,8 @@ export interface AppSettings {
   readonly language: LanguageSetting;
   /** iCal subscriptions (their URLs can be secret). */
   readonly icsCalendars: readonly IcsSubscription[];
+  /** Saved texts the composer inserts (templates), in the user's order. */
+  readonly templates: readonly MailTemplate[];
   /** Calendars ticked or unticked by the user, by `<source>|<calendar>`. */
   readonly calendarChoices: Readonly<Record<string, boolean>>;
   /** The calendar view last used on larger screens. */
@@ -81,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   conversations: false,
   language: "auto",
   icsCalendars: [],
+  templates: [],
   calendarChoices: {},
   calendarView: "week",
   lastEventCalendar: "",
@@ -184,6 +189,33 @@ function parseSubscriptions(value: unknown): IcsSubscription[] {
   });
 }
 
+function parseTemplates(value: unknown): MailTemplate[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown): MailTemplate[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { id, name, subject, html, accountId } = entry as Record<
+      string,
+      unknown
+    >;
+    return typeof id === "string" &&
+      typeof name === "string" &&
+      typeof subject === "string" &&
+      typeof html === "string"
+      ? [
+          {
+            id,
+            name,
+            subject,
+            html,
+            ...(typeof accountId === "string"
+              ? { accountId: asAccountId(accountId) }
+              : {}),
+          },
+        ]
+      : [];
+  });
+}
+
 function parseChoices(value: unknown): Record<string, boolean> {
   if (typeof value !== "object" || value === null) return {};
   return Object.fromEntries(
@@ -228,6 +260,7 @@ export function parseSettings(value: unknown): AppSettings {
         : d.conversations,
     language: isLanguage(raw.language) ? raw.language : d.language,
     icsCalendars: parseSubscriptions(raw.icsCalendars),
+    templates: parseTemplates(raw.templates),
     calendarChoices: parseChoices(raw.calendarChoices),
     calendarView: isCalendarView(raw.calendarView)
       ? raw.calendarView

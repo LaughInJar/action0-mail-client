@@ -10,6 +10,7 @@ import { DesktopSettings } from "./DesktopSettings";
 import { WebAppSettings } from "./WebAppSettings";
 import { ChoiceGroup, SettingsSection } from "./controls";
 import { SignatureSettings } from "./SignatureSettings";
+import { TemplateSettings } from "../templates/TemplateSettings";
 import { SpellingSettings } from "./SpellingSettings";
 import { AiSettings } from "../ai/AiSettings";
 import { useAccounts } from "../../accounts/context";
@@ -218,6 +219,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               onChange={set("undoSendSeconds")}
             />
             <SignatureSettings />
+            <TemplateSettings />
           </SettingsSection>
           <FilterSettings />
 
