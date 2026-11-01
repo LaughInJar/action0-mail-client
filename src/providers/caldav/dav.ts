@@ -33,6 +33,7 @@ export const ADDRESSBOOKS_PROPFIND = `${XML_HEAD}
   <d:prop>
     <d:resourcetype/>
     <d:displayname/>
+    <d:current-user-privilege-set/>
     <d:sync-token/>
   </d:prop>
 </d:propfind>`;
@@ -160,6 +161,15 @@ export function propHas(
   return (
     element !== undefined &&
     element.getElementsByTagNameNS(childNamespace, child).length > 0
+  );
+}
+
+/** Write rights from `current-user-privilege-set` (absent: assumed). */
+export function writable(resource: DavResource): boolean {
+  const set = resource.props.get(propKey(DAV, "current-user-privilege-set"));
+  if (!set) return true;
+  return ["write", "write-content", "all"].some(
+    (name) => set.getElementsByTagNameNS(DAV, name).length > 0,
   );
 }
 

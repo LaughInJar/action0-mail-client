@@ -39,6 +39,8 @@ export interface AppSettings {
   readonly calendarView: "week" | "month" | "agenda";
   /** The calendar the last new event went into, as `<source>|<calendar>` ("" for none yet). */
   readonly lastEventCalendar: string;
+  /** The address book the last new contact went into (a contacts list token; "" for none yet). */
+  readonly lastAddressBook: string;
   /** The account the last mail went out from ("" for none yet): mailto: links write from it. */
   readonly lastSendAccount: string;
   /** Desktop app: closing the window keeps it running in the tray. */
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   calendarChoices: {},
   calendarView: "week",
   lastEventCalendar: "",
+  lastAddressBook: "",
   lastSendAccount: "",
   closeToTray: true,
   installOffered: false,
@@ -233,6 +236,10 @@ export function parseSettings(value: unknown): AppSettings {
       typeof raw.lastEventCalendar === "string"
         ? raw.lastEventCalendar
         : d.lastEventCalendar,
+    lastAddressBook:
+      typeof raw.lastAddressBook === "string"
+        ? raw.lastAddressBook
+        : d.lastAddressBook,
     lastSendAccount:
       typeof raw.lastSendAccount === "string"
         ? raw.lastSendAccount

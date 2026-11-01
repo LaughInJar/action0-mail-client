@@ -25,6 +25,9 @@ export const GRAPH_SCOPES: readonly string[] = [
 /** Calendar access: asked for when connecting, or later with "Allow calendar". */
 export const CALENDAR_SCOPES: readonly string[] = ["Calendars.ReadWrite"];
 
+/** Outlook contacts: asked for when connecting, or later with "Allow contacts". */
+export const CONTACTS_SCOPES: readonly string[] = ["Contacts.ReadWrite"];
+
 /** Signs in work/school and personal Microsoft accounts. */
 export const MICROSOFT_AUTHORITY = "https://login.microsoftonline.com/common";
 

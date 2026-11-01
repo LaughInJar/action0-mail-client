@@ -24,7 +24,7 @@ import {
 import type { Draft } from "../../core/compose";
 import { parseMailto } from "../../core/mailto";
 import type { AccountId, DraftId, MessageRef } from "../../core/ids";
-import type { Message, Sender } from "../../core/model";
+import type { EmailAddress, Message, Sender } from "../../core/model";
 import { referencedInlineImages } from "../../data/hooks";
 import { useDraftSync, type DraftSync } from "../../data/drafts";
 import { useRoute, useRouter, useUi, useUiStore } from "../../state/context";
@@ -54,6 +54,14 @@ export interface ComposeActions {
    * empty one (like {@link compose}).
    */
   readonly composeFrom: (mailto: string) => void;
+  /**
+   * A new mail to these people, from `accountId` if it can send (a
+   * contact's account), else from the account the last mail went out from.
+   */
+  readonly composeTo: (
+    accountId: AccountId | undefined,
+    to: readonly EmailAddress[],
+  ) => void;
   /** Answers a message, from its account. */
   /** Answers a message; `ai` opens the composer with its AI field (Reply with AI). */
   readonly reply: (
@@ -344,6 +352,17 @@ export function useComposeActions(): ComposeActions {
 
       compose: () => {
         startNew(currentAccount());
+      },
+
+      composeTo: (accountId, to) => {
+        const last = store.getState().settings.lastSendAccount as AccountId;
+        const from =
+          accountId !== undefined && canComposeIn(accountId)
+            ? accountId
+            : canComposeIn(last)
+              ? last
+              : currentAccount();
+        startNew(from, { to, focus: "body" });
       },
 
       composeFrom: (mailto) => {

@@ -14,6 +14,7 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 - [A desktop app with Tauri, and no proxy](#a-desktop-app-with-tauri-and-no-proxy)
 - [All inboxes: per-account lists, merged; a context account](#all-inboxes-per-account-lists-merged-a-context-account)
 - [What can be edited is described per mailbox kind](#what-can-be-edited-is-described-per-mailbox-kind)
+- [Contacts: in memory, permissions when needed, undo by recreating](#contacts-in-memory-permissions-when-needed-undo-by-recreating)
 - [A fixed way of working](#a-fixed-way-of-working)
 
 ## A static app without a backend
@@ -171,6 +172,23 @@ Why action0 is built the way it is. Each entry gives the context, the decision, 
 **Decision.** Capabilities describe editing per mailbox kind (`mailboxEditing: { folder?, label? }`), and undo in folder accounts finds a message's folder by kind instead of assuming the first mailbox is the folder.
 
 **Why.** An Outlook account has two kinds of own mailboxes with different rules; one set of flags per provider couldn't express that.
+
+## Contacts: in memory, permissions when needed, undo by recreating
+
+**Context.** Contacts live with each provider (Google's People API, Outlook contacts, CardDAV address books), each with its own fields, limits and ways of tracking changes, and they're personal data of other people.
+
+**Decision.**
+
+- One `ContactsProvider` contract with the fields action0 shows; everything else stays as the provider has it, and each provider writes only what changed (Google sends unchanged entries back as it had them, CardDAV edits the card in place).
+- Contacts are kept in memory only, loaded when the contacts open and refreshed with the providers' sync tokens: the provider gets its last snapshot back on each load instead of caching it.
+- Google's write scope is asked for on the first change; Outlook's `Contacts.ReadWrite` has its own consent, like the calendar. Nobody reconnects.
+- Deleting is undone by creating the contacts again: CardDAV puts the same card back; Google and Outlook create new contacts with every field they had, read before deleting.
+- Duplicates are merged within one account only.
+- New CardDAV cards and exported files are vCard 3.0.
+
+**Why.** Contacts are as personal as mail, so the rule against keeping mail content applies, and a few thousand contacts load quickly. Handing the snapshot back keeps providers free of caches while still fetching only changes. Asking for the write permission when it's first needed keeps reading working for everyone without a wave of reconnects. Recreating is the only undo Google and Outlook allow, and asking before every delete would go against "undo wherever possible". Merging across accounts would move data between providers, and the same person in two accounts is often intended. vCard 3.0 is what every server and phone reads (iCloud wants it).
+
+**Trade-offs.** Every start loads the address books again; a contact brought back on Google or Outlook has a new id; Outlook keeps pictures for undo only when 20 contacts or fewer are deleted; Google's lists lag behind its writes, so refreshes wait while a change is on its way; pictures can't be changed yet.
 
 ## A fixed way of working
 

@@ -10,7 +10,8 @@ const en = {
   // The Mail | Calendar switch.
   mail: "Mail",
   calendar: "Calendar",
-  switchLabel: "Mail or calendar",
+  contacts: "Contacts",
+  switchLabel: "Mail, calendar or contacts",
 
   // The toolbar.
   today: "Today",
@@ -312,7 +313,8 @@ const en = {
 const de: typeof en = {
   mail: "Mail",
   calendar: "Kalender",
-  switchLabel: "Mail oder Kalender",
+  contacts: "Kontakte",
+  switchLabel: "Mail, Kalender oder Kontakte",
 
   today: "Heute",
   previous: "Zurück",

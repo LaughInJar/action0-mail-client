@@ -104,3 +104,52 @@ export interface GraphPerson {
 export interface GraphUploadSession {
   readonly uploadUrl: string;
 }
+
+/** A postal address of a contact. */
+export interface GraphPhysicalAddress {
+  readonly street?: string | null;
+  readonly city?: string | null;
+  readonly state?: string | null;
+  readonly countryOrRegion?: string | null;
+  readonly postalCode?: string | null;
+}
+
+/** An Outlook contact (`me/contacts`, `me/contactFolders/{id}/contacts`). */
+export interface GraphContact {
+  readonly id: string;
+  readonly "@odata.etag"?: string;
+  /** Delta: the contact is gone from the folder. */
+  readonly "@removed"?: { readonly reason?: string };
+  readonly changeKey?: string;
+  readonly parentFolderId?: string;
+  readonly displayName?: string | null;
+  readonly givenName?: string | null;
+  readonly middleName?: string | null;
+  readonly surname?: string | null;
+  readonly nickName?: string | null;
+  readonly emailAddresses?: readonly {
+    readonly name?: string | null;
+    readonly address?: string | null;
+  }[];
+  readonly businessPhones?: readonly string[];
+  readonly homePhones?: readonly string[];
+  readonly mobilePhone?: string | null;
+  readonly companyName?: string | null;
+  readonly jobTitle?: string | null;
+  readonly department?: string | null;
+  readonly homeAddress?: GraphPhysicalAddress | null;
+  readonly businessAddress?: GraphPhysicalAddress | null;
+  readonly otherAddress?: GraphPhysicalAddress | null;
+  /** A DateTimeOffset; Outlook keeps it near midnight or noon. */
+  readonly birthday?: string | null;
+  readonly businessHomePage?: string | null;
+  readonly personalNotes?: string | null;
+  readonly categories?: readonly string[];
+}
+
+/** A contact folder (`me/contactFolders`, `…/childFolders`). */
+export interface GraphContactFolder {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly parentFolderId?: string;
+}

@@ -10,6 +10,7 @@ export type CommandGroup =
   | "search"
   | "writing"
   | "calendar"
+  | "contacts"
   | "general";
 
 /** A keyboard command. */

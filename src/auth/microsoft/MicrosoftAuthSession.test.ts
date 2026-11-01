@@ -202,4 +202,30 @@ describe("MicrosoftAuthSession extra scopes", () => {
     expect(session.hasScopes(CALENDAR)).toBe(true);
     expect(await session.tokenFor(CALENDAR)).toBe("token-x");
   });
+
+  it("names what's missing: contacts access for contact scopes", async () => {
+    const max = account("max@contoso.com");
+    const { session } = setup({
+      getAllAccounts: () => [max],
+      acquireTokenSilent: vi.fn((request: { scopes: string[] }) =>
+        request.scopes.includes("Contacts.ReadWrite")
+          ? Promise.reject(
+              msalError(
+                "invalid_grant",
+                "AADSTS65001",
+                "InteractionRequiredAuthError",
+              ),
+            )
+          : Promise.resolve(result(max, "token-x")),
+      ),
+    });
+    const error = await failure(
+      session.tokenFor(["Contacts.ReadWrite"], "contactsAccessNeeded"),
+    );
+    expect(isMailError(error, "unavailable") && error.reason).toBe(
+      "contactsAccessNeeded",
+    );
+    expect(session.hasScopes(["Contacts.ReadWrite"])).toBe(false);
+    expect(session.hasScopes(CALENDAR)).toBe(true);
+  });
 });

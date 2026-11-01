@@ -107,6 +107,14 @@ export const queryKeys = {
   /** An event read fresh for the editor (not persisted). */
   eventForEdit: (source: string, eventId: string) =>
     [...queryKeys.calendarSource(source), "edit", eventId] as const,
+  /**
+   * Everything of a contacts source (an account, or a calendar-only
+   * CardDAV server's key): memory only.
+   */
+  contacts: (source: string) => ["acct", source, "address-book"] as const,
+  /** A contact's picture as an object URL (memory only). */
+  contactPhoto: (source: string, contactId: string) =>
+    ["acct", source, "contact-photo", contactId] as const,
 };
 
 /**

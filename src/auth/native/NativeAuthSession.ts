@@ -68,9 +68,15 @@ export class NativeAuthSession implements AuthSession, ScopedSession {
     return (await this.#token([])).accessToken;
   }
 
-  /** A token for scopes asked for on demand (calendar access). */
-  async tokenFor(scopes: readonly string[]): Promise<string> {
-    return (await this.#token(scopes)).accessToken;
+  /**
+   * A token for scopes asked for on demand (calendar or contacts access);
+   * without them it rejects as `unavailable` with `reason`.
+   */
+  async tokenFor(
+    scopes: readonly string[],
+    reason: MailErrorReason = "calendarAccessNeeded",
+  ): Promise<string> {
+    return (await this.#token(scopes, reason)).accessToken;
   }
 
   hasScopes(scopes: readonly string[]): boolean {
@@ -102,13 +108,13 @@ export class NativeAuthSession implements AuthSession, ScopedSession {
     this.#setStatus("expired");
   }
 
-  async #token(scopes: readonly string[]) {
+  async #token(scopes: readonly string[], reason?: MailErrorReason) {
     try {
       const token = await this.#options.bridge.token(this.#options.key, scopes);
       if (this.#status === "expired") this.#setStatus("signed-in");
       return token;
     } catch (error) {
-      throw this.#failure(error);
+      throw this.#failure(error, reason);
     }
   }
 
@@ -142,13 +148,14 @@ export class NativeAuthSession implements AuthSession, ScopedSession {
   }
 
   /** A native refusal as the {@link MailError} the app expects. */
-  #failure(error: unknown): MailError {
+  #failure(error: unknown, scopesReason?: MailErrorReason): MailError {
     if (error instanceof NativeAuthError && error.kind === "reauth")
       this.#setStatus("expired");
     return nativeAuthError(
       error,
       this.#options.providerName,
       this.#options.loginHint,
+      scopesReason,
     );
   }
 
@@ -172,11 +179,15 @@ export async function connectNative(
   }
 }
 
-/** What a native refusal means, as the {@link MailError} the app expects. */
+/**
+ * What a native refusal means, as the {@link MailError} the app expects.
+ * Missing scopes get `scopesReason` (calendar access unless said otherwise).
+ */
 export function nativeAuthError(
   error: unknown,
   provider: string,
   expected: string,
+  scopesReason: MailErrorReason = "calendarAccessNeeded",
 ): MailError {
   if (!(error instanceof NativeAuthError))
     return new MailError("provider", String(error), { cause: error });
@@ -197,11 +208,7 @@ export function nativeAuthError(
       );
     case "scopes":
       // Mail goes on; only what needs these scopes is unavailable.
-      return new MailError(
-        "unavailable",
-        error.message,
-        options("calendarAccessNeeded"),
-      );
+      return new MailError("unavailable", error.message, options(scopesReason));
     case "cancelled":
       return new MailError(
         "auth-required",

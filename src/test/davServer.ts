@@ -68,6 +68,8 @@ export interface FakeDavOptions {
   >;
   /** Connected servers looked for address books already. Default: yes. */
   readonly contactsChecked?: boolean;
+  /** Address books the login may only read. */
+  readonly readOnlyBooks?: readonly string[];
 }
 
 /** The address book home of the fake server. */
@@ -105,7 +107,7 @@ export function fakeDavServer(options: FakeDavOptions = {}) {
     })),
     ...Object.keys(options.addressBooks ?? {}).map((book) => ({
       path: bookPath(book),
-      readOnly: false,
+      readOnly: options.readOnlyBooks?.includes(book) === true,
       kind: "addressbook" as const,
     })),
   ];
@@ -214,7 +216,7 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
         ...Object.keys(options.addressBooks).map((book) =>
           ok(
             bookPath(book),
-            `<d:resourcetype><d:collection/><card:addressbook/></d:resourcetype><d:displayname>${xmlEscape(book)}</d:displayname>${syncable ? `<d:sync-token>v:${String(version)}</d:sync-token>` : ""}`,
+            `<d:resourcetype><d:collection/><card:addressbook/></d:resourcetype><d:displayname>${xmlEscape(book)}</d:displayname><d:current-user-privilege-set><d:privilege><d:read/></d:privilege>${options.readOnlyBooks?.includes(book) ? "" : "<d:privilege><d:write/></d:privilege>"}</d:current-user-privilege-set>${syncable ? `<d:sync-token>v:${String(version)}</d:sync-token>` : ""}`,
           ),
         ),
       ]);
@@ -308,6 +310,8 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
       };
     }
     if (request.method === "DELETE" && calendar) {
+      if (calendar.kind === "addressbook" && calendar.readOnly)
+        return { status: 403, headers: {}, body: "" };
       const existing = objects.get(path);
       if (!existing) return { status: 404, headers: {}, body: "" };
       const ifMatch = header("if-match");
@@ -388,6 +392,23 @@ ${token === undefined ? "" : `<d:sync-token>${token}</d:sync-token>`}
       objects.set(path, { text, etag: nextEtag() });
       record(path, false);
     },
+    /** Another client deletes a contact. */
+    removeCard: (book: string, file: string) => {
+      const path = `${bookPath(book)}${file}`;
+      objects.delete(path);
+      record(path, true);
+    },
+    /** The text of a contact by file name. */
+    cardText: (book: string, file: string) =>
+      objects.get(`${bookPath(book)}${file}`)?.text,
+    /** The contacts of an address book: file name → text. */
+    cards: (book: string) =>
+      Object.fromEntries(
+        inCollection(bookPath(book)).map((path) => [
+          path.slice(bookPath(book).length),
+          objects.get(path)?.text ?? "",
+        ]),
+      ),
     /** Another client deletes an object. */
     remove: (calendar: string, file: string) => {
       const path = `${pathOf(calendar)}${file}`;

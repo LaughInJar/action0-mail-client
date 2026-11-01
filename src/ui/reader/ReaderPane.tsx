@@ -39,6 +39,7 @@ import { AttachmentList } from "./AttachmentList";
 import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
+import { usePersonMenu } from "../contacts/usePersonMenu";
 import { useMarkReadOnView } from "./useMarkReadOnView";
 import { useUnsubscribe } from "./useUnsubscribe";
 import { useMessageMenu } from "./useMessageMenu";
@@ -216,6 +217,7 @@ function MessageView({
   const unsubscribe = useUnsubscribe();
   const unsubscribed = useUi((state) => state.unsubscribed.has(messageId));
   const handlers = useMessageMenu(accountId);
+  const people = usePersonMenu(accountId);
   const ai = useAiReaderActions();
   const target = aiTarget.message(accountId, messageId);
   useAiCommands(ai, message ? target : undefined);
@@ -237,6 +239,7 @@ function MessageView({
             message={message}
             mailboxes={mailboxes}
             subjectId={subjectId}
+            onPerson={people.onPerson}
             {...(message.unsubscribe
               ? {
                   unsubscribe: {
@@ -270,6 +273,7 @@ function MessageView({
             isDraft={isDraft}
           />
         )}
+        {people.menu}
       </article>
     );
   } else if (error) {

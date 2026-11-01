@@ -7,6 +7,8 @@ import { GRAPH_BASE } from "../providers/microsoft/http";
 import type {
   GraphAttachment,
   GraphCategory,
+  GraphContact,
+  GraphContactFolder,
   GraphMailFolder,
   GraphMessage,
 } from "../providers/microsoft/types";
@@ -21,6 +23,11 @@ export interface FakeGraphMessage extends GraphMessage {
   mime?: string;
 }
 
+/** A contact of the fake mailbox, with its photo. */
+export type FakeGraphContact = {
+  -readonly [K in keyof GraphContact]: GraphContact[K];
+} & { photo?: Blob };
+
 /** One request the fake answered (batched ones too), for assertions. */
 export interface SeenRequest {
   readonly method: string;
@@ -30,6 +37,8 @@ export interface SeenRequest {
   readonly body: unknown;
   readonly batched: boolean;
   readonly prefer: string | null;
+  /** Request headers, lower-case names. */
+  readonly headers: Readonly<Record<string, string>>;
 }
 
 /**
@@ -56,6 +65,18 @@ export class FakeGraph {
     internalReplyMessage: "",
     externalReplyMessage: "",
   };
+  /** Contact folders: the default one (`contacts-id`) and those below it. */
+  readonly contactFolders: GraphContactFolder[] = [
+    { id: "contacts-id", displayName: "Contacts", parentFolderId: "root" },
+  ];
+  /** The default contact folder's id. */
+  readonly defaultContactFolder = "contacts-id";
+  /** Contacts of every contact folder. */
+  readonly contacts: FakeGraphContact[] = [];
+  /** Contact delta queries fail (as if Graph refused them). */
+  contactDeltaFails = false;
+  /** The next contact delta round with a token answers 410 (an expired link). */
+  expireContactDelta = false;
   me = {
     displayName: "Max Muster",
     mail: "max@contoso.com",
@@ -81,6 +102,13 @@ export class FakeGraph {
     to?: string;
   }[] = [];
   readonly #folderLog: { version: number; id: string; removed?: true }[] = [];
+  /** Contact changes, for contact delta queries. */
+  readonly #contactLog: {
+    version: number;
+    id: string;
+    folder: string;
+    removed?: true;
+  }[] = [];
   readonly #uploads = new Map<
     string,
     { messageId: string; attachment: GraphAttachment; received: number }
@@ -196,6 +224,70 @@ export class FakeGraph {
     this.#folderLog.push({ version: ++this.#version, id });
   }
 
+  /** Adds a contact to a contact folder (logged for delta). */
+  addContact(
+    contact: Partial<FakeGraphContact>,
+    folder = this.defaultContactFolder,
+  ): FakeGraphContact {
+    const id = contact.id ?? `contact-${String(this.#nextId++)}`;
+    const changeKey = `ck-${String(this.#nextId++)}`;
+    const full: FakeGraphContact = {
+      displayName: [contact.givenName, contact.surname]
+        .filter(Boolean)
+        .join(" "),
+      emailAddresses: [],
+      businessPhones: [],
+      homePhones: [],
+      categories: [],
+      ...contact,
+      id,
+      changeKey,
+      "@odata.etag": `W/"${changeKey}"`,
+      parentFolderId: folder,
+    };
+    this.contacts.push(full);
+    this.#contactLog.push({ version: ++this.#version, id, folder });
+    return full;
+  }
+
+  /** Changes a contact as if from another device (logged for delta). */
+  changeContact(id: string, change: Partial<FakeGraphContact>) {
+    const contact = this.contacts.find((c) => c.id === id);
+    if (!contact) throw new Error(`no contact ${id}`);
+    Object.assign(contact, change);
+    const changeKey = `ck-${String(this.#nextId++)}`;
+    contact.changeKey = changeKey;
+    contact["@odata.etag"] = `W/"${changeKey}"`;
+    this.#contactLog.push({
+      version: ++this.#version,
+      id,
+      folder: contact.parentFolderId ?? "",
+    });
+  }
+
+  /** Deletes a contact (logged for delta). */
+  removeContact(id: string) {
+    const index = this.contacts.findIndex((c) => c.id === id);
+    const contact = this.contacts[index];
+    if (!contact) return;
+    this.contacts.splice(index, 1);
+    this.#contactLog.push({
+      version: ++this.#version,
+      id,
+      folder: contact.parentFolderId ?? "",
+      removed: true,
+    });
+  }
+
+  /** Adds a contact folder (below the default one unless said otherwise). */
+  addContactFolder(
+    id: string,
+    name: string,
+    parent = this.defaultContactFolder,
+  ) {
+    this.contactFolders.push({ id, displayName: name, parentFolderId: parent });
+  }
+
   /** Requests answered so far for a method and path pattern. */
   requests(method: string, path: RegExp): SeenRequest[] {
     return this.seen.filter(
@@ -218,12 +310,19 @@ export class FakeGraph {
         return HttpResponse.json({
           responses: requests.map((inner) => {
             const url = new URL(inner.url.replace(/^\//, ""), GRAPH_BASE);
+            const headers = Object.fromEntries(
+              Object.entries(inner.headers ?? {}).map(([name, value]) => [
+                name.toLowerCase(),
+                value,
+              ]),
+            );
             const answer = this.#answer(
               inner.method,
               url,
               inner.body,
               true,
-              inner.headers?.Prefer ?? null,
+              headers.prefer ?? null,
+              headers,
             );
             return { id: inner.id, status: answer.status, body: answer.body };
           }),
@@ -231,13 +330,30 @@ export class FakeGraph {
       }),
       http.all(`${GRAPH_BASE}*`, async ({ request }) => {
         const url = new URL(request.url);
-        const text = request.method === "GET" ? "" : await request.text();
+        const headers = Object.fromEntries(
+          [...request.headers].map(([name, value]) => [
+            name.toLowerCase(),
+            value,
+          ]),
+        );
+        // Photos are bytes; everything else is JSON.
+        const body: unknown =
+          request.method === "PUT"
+            ? new Blob([await request.arrayBuffer()], {
+                type: request.headers.get("Content-Type") ?? "",
+              })
+            : await request
+                .text()
+                .then((text): unknown =>
+                  text === "" ? undefined : JSON.parse(text),
+                );
         const answer = this.#answer(
           request.method,
           url,
-          text === "" ? undefined : JSON.parse(text),
+          body,
           false,
           request.headers.get("Prefer"),
+          headers,
         );
         if (answer.blob !== undefined)
           return new HttpResponse(answer.blob, { status: answer.status });
@@ -277,10 +393,11 @@ export class FakeGraph {
     body: unknown,
     batched: boolean,
     prefer: string | null,
+    headers: Readonly<Record<string, string>> = {},
   ): { status: number; body?: unknown; blob?: Blob } {
     const path = decodeURIComponent(url.pathname).replace(/^\/v1\.0\//, "");
     const query = url.searchParams;
-    this.seen.push({ method, path, query, body, batched, prefer });
+    this.seen.push({ method, path, query, body, batched, prefer, headers });
     const failure = this.failures.get(`${method} ${path}`);
     if (failure !== undefined) {
       this.failures.delete(`${method} ${path}`);
@@ -362,6 +479,17 @@ export class FakeGraph {
         return { status: 204 };
       }
     }
+
+    // Contacts.
+    const contacts = this.#contactAnswer(
+      method,
+      path,
+      url,
+      body,
+      prefer,
+      headers,
+    );
+    if (contacts) return contacts;
 
     // Inbox rules: PATCH replaces conditions, exceptions and actions as a whole.
     if (path === "me/mailFolders/inbox/messageRules") {
@@ -640,6 +768,186 @@ export class FakeGraph {
     };
   }
 
+  /** Answers the contact requests; undefined for any other. */
+  #contactAnswer(
+    method: string,
+    path: string,
+    url: URL,
+    body: unknown,
+    prefer: string | null,
+    headers: Readonly<Record<string, string>>,
+  ): { status: number; body?: unknown; blob?: Blob } | undefined {
+    const notFound = {
+      status: 404,
+      body: { error: { code: "ErrorItemNotFound", message: "Not found." } },
+    };
+    const fields = url.searchParams.get("$select");
+    let match: RegExpExecArray | null;
+    if (method === "GET" && path === "me/contactFolders")
+      return {
+        status: 200,
+        body: { value: this.#contactFoldersIn(this.defaultContactFolder) },
+      };
+    if ((match = /^me\/contactFolders\/([^/]+)\/childFolders$/.exec(path)))
+      return { status: 200, body: { value: this.#contactFoldersIn(match[1]) } };
+    if ((match = /^me\/contactFolders\/([^/]+)\/contacts\/delta$/.exec(path)))
+      return this.#contactDelta(match[1] ?? "", url, prefer);
+    if ((match = /^me\/contactFolders\/([^/]+)\/contacts$/.exec(path))) {
+      const folder = match[1] ?? "";
+      if (!this.contactFolders.some((f) => f.id === folder)) return notFound;
+      return method === "POST"
+        ? this.#createContact(body, folder)
+        : this.#contactList(folder, url);
+    }
+    if ((match = /^me\/contactFolders\/([^/]+)$/.exec(path))) {
+      const folder = this.contactFolders.find((f) => f.id === match?.[1]);
+      return folder ? { status: 200, body: folder } : notFound;
+    }
+    if (path === "me/contacts")
+      return method === "POST"
+        ? this.#createContact(body, this.defaultContactFolder)
+        : this.#contactList(this.defaultContactFolder, url);
+    if ((match = /^me\/contacts\/([^/]+)\/photo\/\$value$/.exec(path))) {
+      const contact = this.contacts.find((c) => c.id === match?.[1]);
+      if (!contact) return notFound;
+      if (method === "PUT") {
+        contact.photo = body as Blob;
+        return { status: 200 };
+      }
+      return contact.photo
+        ? { status: 200, blob: contact.photo }
+        : {
+            status: 404,
+            body: {
+              error: {
+                code: "ErrorItemNotFound",
+                message: "The photo wasn't found.",
+              },
+            },
+          };
+    }
+    if ((match = /^me\/contacts\/([^/]+)$/.exec(path))) {
+      const contact = this.contacts.find((c) => c.id === match?.[1]);
+      if (!contact) return notFound;
+      if (method === "GET")
+        return { status: 200, body: selectContact(contact, fields) };
+      if (method === "PATCH") {
+        const expected = headers["if-match"];
+        if (expected !== undefined && expected !== contact["@odata.etag"])
+          return {
+            status: 412,
+            body: {
+              error: {
+                code: "ErrorIrresolvableConflict",
+                message: "The change key doesn't match.",
+              },
+            },
+          };
+        this.changeContact(contact.id, body as Partial<FakeGraphContact>);
+        return { status: 200, body: selectContact(contact, null) };
+      }
+      if (method === "DELETE") {
+        this.removeContact(contact.id);
+        return { status: 204 };
+      }
+    }
+    return undefined;
+  }
+
+  #contactFoldersIn(parent: string | undefined): GraphContactFolder[] {
+    return this.contactFolders.filter(
+      (folder) => folder.parentFolderId === parent,
+    );
+  }
+
+  #createContact(body: unknown, folder: string) {
+    const created = this.addContact(body as Partial<FakeGraphContact>, folder);
+    return { status: 201, body: selectContact(created, null) };
+  }
+
+  #contactList(folder: string, url: URL) {
+    const query = url.searchParams;
+    const items = this.contacts.filter((c) => c.parentFolderId === folder);
+    const top = Number(query.get("$top") ?? 10);
+    const skip = Number(query.get("$skip") ?? 0);
+    const next = new URL(url);
+    next.searchParams.set("$skip", String(skip + top));
+    return {
+      status: 200,
+      body: {
+        value: items
+          .slice(skip, skip + top)
+          .map((c) => selectContact(c, query.get("$select"))),
+        ...(skip + top < items.length ? { "@odata.nextLink": next.href } : {}),
+      },
+    };
+  }
+
+  /**
+   * Contact delta: the first round lists the folder (in pages of the
+   * `odata.maxpagesize` asked for), later rounds what changed since.
+   */
+  #contactDelta(folder: string, url: URL, prefer: string | null) {
+    if (this.contactDeltaFails)
+      return {
+        status: 400,
+        body: { error: { code: "ErrorInvalidRequest", message: "No delta." } },
+      };
+    if (!this.contactFolders.some((f) => f.id === folder))
+      return {
+        status: 404,
+        body: { error: { code: "ErrorItemNotFound", message: "Not found." } },
+      };
+    const query = url.searchParams;
+    const fields = query.get("$select");
+    const link = `${GRAPH_BASE}me/contactFolders/${folder}/contacts/delta?$deltatoken=${String(this.#version)}`;
+    const token = query.get("$deltatoken");
+    if (token === null) {
+      const size = Number(
+        /odata\.maxpagesize=(\d+)/.exec(prefer ?? "")?.[1] ?? 1000,
+      );
+      const skip = Number(query.get("$skiptoken") ?? 0);
+      const items = this.contacts.filter((c) => c.parentFolderId === folder);
+      const next = new URL(url);
+      next.searchParams.set("$skiptoken", String(skip + size));
+      return {
+        status: 200,
+        body: {
+          value: items
+            .slice(skip, skip + size)
+            .map((c) => selectContact(c, fields)),
+          ...(skip + size < items.length
+            ? { "@odata.nextLink": next.href }
+            : { "@odata.deltaLink": link }),
+        },
+      };
+    }
+    if (this.expireContactDelta) {
+      this.expireContactDelta = false;
+      return {
+        status: 410,
+        body: { error: { code: "SyncStateNotFound", message: "Expired." } },
+      };
+    }
+    const since = Number(token);
+    const changed = new Map<string, boolean>();
+    for (const entry of this.#contactLog)
+      if (entry.version > since && entry.folder === folder)
+        changed.set(entry.id, entry.removed === true);
+    return {
+      status: 200,
+      body: {
+        value: [...changed].map(([id, removed]) => {
+          const contact = this.contacts.find((c) => c.id === id);
+          return removed || !contact
+            ? { id, "@removed": { reason: "deleted" } }
+            : selectContact(contact, fields);
+        }),
+        "@odata.deltaLink": link,
+      },
+    };
+  }
+
   #list(
     all: readonly FakeGraphMessage[],
     url: URL,
@@ -824,6 +1132,21 @@ export class FakeGraph {
 
 function stripQuotes(value: string | null): string {
   return (value ?? "").replace(/^"|"$/g, "").replace(/\\"/g, '"');
+}
+
+/** The `$select`ed fields of a contact (all without `$select`), without its photo. */
+function selectContact(
+  contact: FakeGraphContact,
+  fields: string | null,
+): unknown {
+  const { photo: _photo, ...rest } = contact;
+  if (fields === null) return rest;
+  const wanted = new Set(fields.split(","));
+  return Object.fromEntries(
+    Object.entries(rest).filter(
+      ([key]) => key === "id" || key.startsWith("@") || wanted.has(key),
+    ),
+  );
 }
 
 /** The `$select`ed fields of a message (all without `$select`). */

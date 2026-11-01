@@ -35,6 +35,7 @@ import { AttachmentList } from "./AttachmentList";
 import { InvitationBar } from "./InvitationBar";
 import { MessageBody } from "./MessageBody";
 import { MessageHeader } from "./MessageHeader";
+import { usePersonMenu } from "../contacts/usePersonMenu";
 import { useUnsubscribe } from "./useUnsubscribe";
 import { AccountLine } from "./AccountLine";
 import { useMessageMenu } from "./useMessageMenu";
@@ -573,6 +574,7 @@ function OpenMessage({
     onKeyDown: _keys,
     ...headerMenu
   } = useMessageMenu(accountId)(message.id);
+  const people = usePersonMenu(accountId);
   const button =
     "flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 pointer-coarse:min-h-11";
   return (
@@ -582,6 +584,7 @@ function OpenMessage({
         <MessageHeader
           message={message}
           mailboxes={mailboxes}
+          onPerson={people.onPerson}
           trailing={
             <>
               {actions.canStar && !draft && (
@@ -681,6 +684,7 @@ function OpenMessage({
           )}
         </div>
       )}
+      {people.menu}
     </div>
   );
 }

@@ -175,15 +175,42 @@ export class GraphHttp {
     );
   }
 
-  /** PATCHes a resource with the changed fields and returns it. */
+  /**
+   * PATCHes a resource with the changed fields and returns it. `headers`
+   * adds request headers (e.g. `If-Match`).
+   */
   patch<T>(
     path: string,
     body: unknown,
     signal?: AbortSignal,
     prefer?: string,
+    headers?: Readonly<Record<string, string>>,
   ): Promise<T> {
     return this.#limit(() =>
-      this.#json<T>(this.url(path), "PATCH", body, signal, true, prefer),
+      this.#json<T>(
+        this.url(path),
+        "PATCH",
+        body,
+        signal,
+        true,
+        prefer,
+        headers,
+      ),
+    );
+  }
+
+  /** PUTs raw bytes (a contact's photo `$value`). */
+  async putBlob(path: string, blob: Blob, signal?: AbortSignal): Promise<void> {
+    await this.#limit(() =>
+      this.#exchange(
+        this.url(path),
+        "PUT",
+        blob,
+        signal,
+        true,
+        undefined,
+        blob.type || "image/jpeg",
+      ),
     );
   }
 
@@ -332,6 +359,7 @@ export class GraphHttp {
     signal: AbortSignal | undefined,
     retry: boolean,
     prefer?: string,
+    headers?: Readonly<Record<string, string>>,
   ): Promise<T> {
     const response = await this.#exchange(
       url,
@@ -340,6 +368,8 @@ export class GraphHttp {
       signal,
       retry,
       prefer,
+      undefined,
+      headers,
     );
     const text = await response.text();
     return (text === "" ? undefined : JSON.parse(text)) as T;
@@ -348,12 +378,13 @@ export class GraphHttp {
   /** Sends a request (with retries) and returns the successful response. */
   async #exchange(
     url: URL,
-    method: "GET" | "POST" | "PATCH" | "DELETE",
-    payload: string | undefined,
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+    payload: string | Blob | undefined,
     signal: AbortSignal | undefined,
     retry: boolean,
     prefer?: string,
     contentType = "application/json",
+    headers?: Readonly<Record<string, string>>,
   ): Promise<Response> {
     const maxAttempts = retry ? this.#maxAttempts : 1;
     for (let attempt = 1; ; attempt++) {
@@ -366,6 +397,7 @@ export class GraphHttp {
             Authorization: `Bearer ${token}`,
             Prefer: prefer ? `${IMMUTABLE_IDS}, ${prefer}` : IMMUTABLE_IDS,
             ...(payload === undefined ? {} : { "Content-Type": contentType }),
+            ...headers,
           },
           ...(payload === undefined ? {} : { body: payload }),
           ...(signal ? { signal } : {}),

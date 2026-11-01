@@ -4,6 +4,7 @@ action0 holds access to whole mailboxes and calendars, and it renders HTML writt
 
 - [Threat model and goals](#threat-model-and-goals)
 - [Tokens and where they live](#tokens-and-where-they-live)
+- [Contacts](#contacts)
 - [What is stored where](#what-is-stored-where)
 - [HTML mail](#html-mail)
 - [App CSP](#app-csp)
@@ -68,6 +69,16 @@ IMAP/SMTP accounts ([imap.md](imap.md)) exist only in the apps, where the native
 - **SMTP** gets the message without its Bcc header; the copy kept in Sent has it, as other clients do. Addresses that would inject SMTP commands are refused.
 - **Filters (ManageSieve)** log in with the mail account's own login (SASL PLAIN, or OAUTHBEARER/XOAUTH2 for Yahoo/AOL tokens), always after STARTTLS (data sent before TLS is refused, the capabilities are read again after it), with the account's pinned certificate besides the system's checks. The filter server's host, port and Sieve extensions are kept in the account's `imap.vault` entry and go with it. Scripts pass through byte for byte, capped at 4 MB, and a write happens only if the server still has the script it was made from.
 
+## Contacts
+
+Contacts are personal data of the user's and of other people, so they're handled like mail ([architecture.md](architecture.md#contacts)):
+
+- **Memory only.** Every source's contacts, groups and address books, fetched pictures and a vCard file being imported live in memory (the query cache without `persist`, the UI store's `contactImport`); nothing of them goes to localStorage or sessionStorage. The only trace in browser storage is the setting naming the address book new contacts go into (a source key and an address book id).
+- **Pictures** are only ever the provider's own: Google's photo URLs (shown as `<img>` with `referrerPolicy="no-referrer"`), Outlook's fetched through Graph with the account's token into object URLs, and pictures embedded in a CardDAV card as `data:` URLs. A card's `PHOTO` that points elsewhere on the web is ignored, so opening a contact never contacts a third party.
+- **Permissions** are asked for when needed: Google's write scope on the first change (until then contacts are read-only), Outlook's `Contacts.ReadWrite` at connect or with **Allow contacts** ([Scopes per provider](#scopes-per-provider)). CardDAV uses the calendar server's login, kept by the native side.
+- **vCard files** are read in the page (`src/providers/vcard/`, ical.js) and go nowhere but into the address book the user picked in the preview; exports are written by the platform (download, the save dialog, or Android's share sheet).
+- **Writes don't overwrite** changes made elsewhere: Google's etag, Graph's `If-Match` and CardDAV's `If-Match` / `If-None-Match` make a stale write fail (`contactChanged`) and reload instead.
+
 ## What is stored where
 
 The README has the summary table. In detail, by key:
@@ -85,7 +96,7 @@ The README has the summary table. In detail, by key:
 | `a0.settings.notificationsAsked`, `a0.settings.trayNoticeShown`                                  | One-time flags                                                                                                                               | `src/ui/sync/NotificationsBar.tsx`, `src/ui/desktop/DesktopIntegration.tsx` |
 | `a0.ai.key.<serviceId>`                                                                          | An AI service's key, only if the user ticked **Remember in this browser** for it ([AI keys](#ai-keys))                                       | `src/ai/webBackend.ts`                                                      |
 
-The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include two things worth knowing: the **trusted senders** for remote images (addresses the user chose, at most 500, oldest dropped first) and the **iCal subscriptions**, whose URLs can be secret (whoever has one can read the calendar). Reminder marks are snooze/dismiss times by reminder key, no content, dropped once the event is over (`liveMarks()` in `src/core/reminders.ts`). The AI services set up are kept there too (kind, address, name; never their keys). Nothing in `a0.ui` contains mail.
+The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include two things worth knowing: the **trusted senders** for remote images (addresses the user chose, at most 500, oldest dropped first) and the **iCal subscriptions**, whose URLs can be secret (whoever has one can read the calendar). Reminder marks are snooze/dismiss times by reminder key, no content, dropped once the event is over (`liveMarks()` in `src/core/reminders.ts`). The AI services set up are kept there too (kind, address, name; never their keys), and the address book new contacts go into (`lastAddressBook`). Nothing in `a0.ui` contains mail or contacts.
 
 **sessionStorage** (per tab, gone when it closes):
 
@@ -99,7 +110,7 @@ The settings inside `a0.ui` (`AppSettings` in `src/state/settings.ts`) include t
 
 The query cache (`src/data/queryClient.ts`) persists only queries marked `meta: { persist: true }` that succeeded: mailbox lists, message and conversation list pages (not search results), calendar lists and events (`src/data/hooks.ts`, `src/data/calendar.ts`). List pages hold message summaries (sender, recipients, subject, a short snippet, date, flags), not bodies. Restored entries older than `PERSIST_MAX_AGE_MS` (10 minutes) are discarded, and so is everything when the app version (the `buster`) changes; writes are throttled to one per second, and when storage is full the oldest query is dropped (`removeOldestQuery`). Complete messages and conversations are memory only.
 
-**Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, the event editor's values, the AI assistant's answers and the models services offer, and an account's filters and automatic reply (they live on the server and are loaded when Settings → Filters or the list's notice needs them).
+**Memory only:** message bodies, inline images, attachments, a message's original while "Show original" shows it (its query has no `persist` and is dropped when the view closes), the mail being written (it saves to the provider's Drafts, never to browser storage), which messages may load remote images in this session (`remoteContentAllowed`), search results, contact suggestions, contacts and their pictures, a vCard file being imported, the event editor's values, the AI assistant's answers and the models services offer, and an account's filters and automatic reply (they live on the server and are loaded when Settings → Filters or the list's notice needs them).
 
 **Desktop app, on disk:** the encrypted vaults (`accounts.vault`, `imap.vault` for IMAP accounts' settings and passwords or Yahoo/AOL refresh tokens, `caldav.vault` for calendar servers' addresses and separate logins, and `ai.vault` for the AI assistant's keys and sign-ins), PDFs opened with another app (emptied at every start), the window-state plugin's window geometry, and the web view's own localStorage and sessionStorage with the keys above. See [Desktop specifics](#desktop-specifics).
 
@@ -211,12 +222,13 @@ Defined in `src/providers/gmail/module.ts` and `src/providers/gmail/calendar.ts`
 | Scope                                                                                 | Kind      | Why                                                                                                                                                                                                         |
 | ------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `https://mail.google.com/` (`GMAIL_SCOPE`)                                            | Required  | Full mailbox access. Needed for permanent deletion ("Delete forever", "Empty Trash"); everything else would work with `gmail.modify`. Tokens with a narrower scope count as expired and ask for a reconnect |
-| `…/auth/contacts.readonly`, `…/auth/contacts.other.readonly` (`CONTACTS_SCOPES`)      | Optional  | Address suggestions from contacts and "other contacts" (People API)                                                                                                                                         |
+| `…/auth/contacts.readonly`, `…/auth/contacts.other.readonly` (`CONTACTS_SCOPES`)      | Optional  | Address suggestions from contacts and "other contacts", and reading them in the contacts (People API)                                                                                                       |
+| `…/auth/contacts` (`CONTACTS_WRITE_SCOPE`)                                            | On demand | Creating, changing and deleting contacts; asked for on the first change, declined they stay read-only                                                                                                       |
 | `…/auth/gmail.settings.basic` (`SETTINGS_SCOPE`)                                      | Optional  | Editing signatures, filters and the vacation responder; declined, they're read-only and Settings offers **Allow editing**                                                                                   |
 | `…/auth/calendar.calendarlist.readonly`, `…/auth/calendar.events` (`CALENDAR_SCOPES`) | On demand | Listing calendars; reading events, answering invitations, creating and editing events                                                                                                                       |
 | `openid`, `email`                                                                     | Desktop   | The ID token tells the native side who signed in                                                                                                                                                            |
 
-Web app: connecting asks for the mail, optional and calendar scopes at once with only `GMAIL_SCOPE` required, so the user can untick the rest in Google's dialog. Later renewals (`GoogleAuthSession`) don't ask again for optional scopes the user declined, and calendar access can be added with **Allow calendar**. Desktop app: everything is asked for at every sign-in (`NATIVE_SCOPES`), with the same single required scope. `https://mail.google.com/` is a restricted scope, with consequences for publishing the Google app ([README](../README.md#setting-up-google-sign-in)).
+Web app: connecting asks for the mail, optional and calendar scopes at once with only `GMAIL_SCOPE` required, so the user can untick the rest in Google's dialog. Later renewals (`GoogleAuthSession`) don't ask again for optional scopes the user declined, and calendar access can be added with **Allow calendar**; the contacts write scope is an on-demand scope too, asked for by the first change. Desktop app: everything but the contacts write scope is asked for at every sign-in (`NATIVE_SCOPES`), with the same single required scope; the write scope comes with a new sign-in when it's first needed (`requestScopes`). `https://mail.google.com/` is a restricted scope, with consequences for publishing the Google app ([README](../README.md#setting-up-google-sign-in)).
 
 ### Microsoft
 
@@ -231,9 +243,10 @@ Defined in `src/auth/microsoft/msal.ts`:
 | `MailboxSettings.ReadWrite`               | Sign-in           | Outlook's category list (`me/outlook/masterCategories`), inbox rules and automatic replies            |
 | `offline_access`                          | Sign-in           | Refresh tokens (MSAL's silent renewal; the desktop vault)                                             |
 | `Calendars.ReadWrite` (`CALENDAR_SCOPES`) | Sign-in, or later | The calendar: consented to when connecting (`extraScopesToConsent`), or later with **Allow calendar** |
+| `Contacts.ReadWrite` (`CONTACTS_SCOPES`)  | Sign-in, or later | The contacts: consented to when connecting, or later with **Allow contacts**                          |
 | `openid`, `profile`                       | Sign-in           | Added by MSAL on the web; requested explicitly by the desktop app                                     |
 
-`GRAPH_SCOPES` are the first six. The desktop app requires `Mail.ReadWrite` and `Mail.Send` and fails a sign-in without them (`src/providers/microsoft/module.ts`). Adding a scope (as `MailboxSettings.ReadWrite` was for categories) makes existing accounts reconnect once.
+`GRAPH_SCOPES` are the first six. The desktop app requires `Mail.ReadWrite` and `Mail.Send` and fails a sign-in without them (`src/providers/microsoft/module.ts`). Adding a scope to `GRAPH_SCOPES` (as `MailboxSettings.ReadWrite` was for categories) makes existing accounts reconnect once; the calendar and contacts scopes have their own tokens (`tokenFor`), so they're asked for separately instead.
 
 ## Desktop specifics
 

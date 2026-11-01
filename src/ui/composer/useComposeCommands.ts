@@ -19,8 +19,9 @@ export function useComposeCommands(actions: ComposeActions): void {
       const message = current();
       if (message !== undefined) run(message);
     };
-    // In the calendar, `c` makes an event and there's no message to answer.
-    const inMail = () => router.getCalendarRoute() === null;
+    // In the calendar and the contacts, `c` makes an event or a contact
+    // and there's no message to answer.
+    const inMail = () => router.part() === "mail";
     const canAnswer = () => inMail() && current() !== undefined;
     return [
       {

@@ -1,0 +1,408 @@
+import { plural } from "../plural";
+
+const en = {
+  // The column.
+  contacts: "Contacts",
+  allContacts: "All contacts",
+  everyContact: "All address books",
+  otherContacts: "Other contacts",
+  otherHint:
+    "People you’ve written to, saved by Google. Add them to your contacts to keep them.",
+  newContact: "New contact",
+  showAddressBooks: "Show address books",
+  noSources: "None of your accounts has contacts action0 can show.",
+  appsOnly:
+    "Address books on calendar and contacts servers (CardDAV) can be used in the desktop and Android apps.",
+  allowContacts: "Allow contacts",
+  allowHint: "This account hasn’t allowed action0 to see its contacts yet.",
+  setUp: "Set up calendar and contacts",
+  setUpHint:
+    "This account’s contacts are on its calendar and contacts server (CardDAV), which isn’t set up yet.",
+  readOnlyHint:
+    "Read only for now: the first change asks for permission to edit them.",
+  reconnectFirst: "Reconnect this account to see its contacts.",
+  loading: "Loading contacts…",
+  couldntLoad: (reason: string) => `Contacts couldn’t be loaded: ${reason}`,
+  moreFor: (name: string) => `More for ${name}`,
+  importFile: "Import…",
+  exportContacts: "Export as vCard",
+  findDuplicates: "Find duplicates",
+  readOnlyBook: "read only",
+
+  // The list.
+  searchLabel: "Search contacts",
+  searchPlaceholder: "Search",
+  clearSearch: "Clear search",
+  noContacts: "No contacts here yet.",
+  noMatches: "No contacts match.",
+  count: (n: string, count: number) =>
+    plural(count, `${n} contact`, `${n} contacts`),
+  selected: (n: number) => `${String(n)} selected`,
+  done: "Done",
+  select: "Select",
+  unnamed: "No name",
+
+  // The open contact.
+  back: "Back",
+  close: "Close",
+  writeMail: "Write mail",
+  writeTo: (address: string) => `Write to ${address}`,
+  writeToAll: (n: number) => `Write to ${String(n)}`,
+  copy: (what: string) => `Copy ${what}`,
+  call: (number: string) => `Call ${number}`,
+  showMail: "Show mail",
+  copyAddress: "Copy address",
+  edit: "Edit",
+  delete: "Delete",
+  addToContacts: "Add to contacts",
+  showContact: "Show contact",
+  fromOther:
+    "This is one of Google’s “Other contacts”: saved automatically, read only.",
+  email: "Email",
+  phone: "Phone",
+  address: "Address",
+  birthday: "Birthday",
+  website: "Website",
+  notes: "Notes",
+  nickname: "Nickname",
+  company: "Company",
+  jobTitle: "Job title",
+  department: "Department",
+  groups: "Groups",
+  addressBook: "Address book",
+  kinds: {
+    home: "Home",
+    work: "Work",
+    other: "Other",
+    mobile: "Mobile",
+  },
+  menuFor: (name: string) => `Contact ${name}`,
+  menuForSelection: (n: number) => `${String(n)} contacts`,
+  merge: "Merge",
+
+  // The editor.
+  newTitle: "New contact",
+  editTitle: "Edit contact",
+  name: "Name",
+  firstName: "First name",
+  middleName: "Middle name",
+  lastName: "Last name",
+  work: "Work",
+  addEmail: "Add email",
+  addPhone: "Add phone number",
+  addAddress: "Add address",
+  addWebsite: "Add website",
+  remove: (what: string) => `Remove ${what}`,
+  kind: (what: string) => `Kind of ${what}`,
+  street: "Street",
+  postalCode: "Postal code",
+  city: "City",
+  region: "State or region",
+  country: "Country",
+  day: "Day",
+  month: "Month",
+  year: "Year",
+  noBirthday: "None",
+  yearRequired: "Needs a year in this account.",
+  atMost: (n: number) => `This account keeps at most ${String(n)}.`,
+  saveTo: "Save to",
+  newGroup: "New group",
+  newGroupPlaceholder: "Group name",
+  addGroup: "Add",
+  cancel: "Cancel",
+  save: "Save",
+  saving: "Saving…",
+  empty: "Fill in a name, an address or a phone number first.",
+  discardTitle: "Discard your changes?",
+  discardMessage: "The contact keeps what it had.",
+  discard: "Discard",
+
+  // Toasts.
+  created: (name: string) => `Added ${name}`,
+  saved: (name: string) => `Saved ${name}`,
+  deleted: (n: number, name: string) =>
+    n === 1 ? `Deleted ${name}` : `Deleted ${String(n)} contacts`,
+  addedOther: (name: string) => `Added ${name} to your contacts`,
+  merged: (name: string) => `Merged into ${name}`,
+  mergedAll: (n: number) =>
+    plural(
+      n,
+      "Merged 1 set of duplicates",
+      `Merged ${String(n)} sets of duplicates`,
+    ),
+  couldntSave: (reason: string) => `Couldn’t save: ${reason}`,
+  couldntDelete: (reason: string) => `Couldn’t delete: ${reason}`,
+  couldntMerge: (reason: string) => `Couldn’t merge: ${reason}`,
+  mergeOneAccount: "Only contacts of one account can be merged.",
+  readOnlyContacts: "These contacts can’t be changed.",
+
+  // Duplicates.
+  duplicatesTitle: (account: string) => `Duplicates in ${account}`,
+  noDuplicates: "No duplicates found.",
+  reasons: {
+    email: "Same email address",
+    phone: "Same phone number",
+    name: "Same name",
+  },
+  mergeAll: (n: number) => `Merge all (${String(n)})`,
+  mergedPreview: "Becomes",
+  dropsValues:
+    "Not everything fits into one contact of this account; the rest is left out.",
+
+  // Import and export.
+  importTitle: "Import contacts",
+  importSummary: (count: number, file: string) =>
+    plural(
+      count,
+      `1 contact in ${file}`,
+      `${String(count)} contacts in ${file}`,
+    ),
+  andMore: (n: number) => `and ${String(n)} more`,
+  importInto: "Import into",
+  existing: (n: number) =>
+    plural(
+      n,
+      "1 of them is already in this address book (same email or phone number).",
+      `${String(n)} of them are already in this address book (same email or phone number).`,
+    ),
+  existingSkip: "Skip them",
+  existingMerge: "Add what’s new to the existing contacts",
+  existingNew: "Import them as new contacts anyway",
+  lossy: (n: number) =>
+    plural(
+      n,
+      "1 contact has details this address book can’t store; they’re left out.",
+      `${String(n)} contacts have details this address book can’t store; they’re left out.`,
+    ),
+  importButton: (n: number) => `Import ${String(n)}`,
+  importing: (done: number, total: number) =>
+    `Importing… ${String(done)} of ${String(total)}`,
+  imported: (created: number, merged: number, skipped: number) =>
+    [
+      plural(
+        created,
+        "Imported 1 contact",
+        `Imported ${String(created)} contacts`,
+      ),
+      ...(merged > 0 ? [`${String(merged)} merged`] : []),
+      ...(skipped > 0 ? [`${String(skipped)} skipped`] : []),
+    ].join(", "),
+  importFailed: (n: number, reason: string) =>
+    plural(
+      n,
+      `1 contact couldn’t be imported: ${reason}`,
+      `${String(n)} contacts couldn’t be imported: ${reason}`,
+    ),
+  noWritableBook: "None of your address books can take new contacts.",
+  dropToImport: "Drop vCard files to import their contacts",
+  notVcard: "Only vCard files (.vcf) can be imported.",
+  couldntRead: (reason: string) => `The file couldn’t be read: ${reason}`,
+  exported: (n: number) =>
+    plural(n, "Exported 1 contact", `Exported ${String(n)} contacts`),
+  couldntExport: (reason: string) => `Couldn’t export: ${reason}`,
+  exportFileName: "contacts",
+};
+
+const de: typeof en = {
+  contacts: "Kontakte",
+  allContacts: "Alle Kontakte",
+  everyContact: "Alle Adressbücher",
+  otherContacts: "Weitere Kontakte",
+  otherHint:
+    "Personen, denen du geschrieben hast, von Google gespeichert. Füg sie zu deinen Kontakten hinzu, um sie zu behalten.",
+  newContact: "Neuer Kontakt",
+  showAddressBooks: "Adressbücher anzeigen",
+  noSources: "Keines deiner Konten hat Kontakte, die action0 anzeigen kann.",
+  appsOnly:
+    "Adressbücher auf Kalender- und Kontakteservern (CardDAV) gibt es in der Desktop- und Android-App.",
+  allowContacts: "Kontakte erlauben",
+  allowHint:
+    "Dieses Konto hat action0 noch nicht erlaubt, seine Kontakte zu sehen.",
+  setUp: "Kalender und Kontakte einrichten",
+  setUpHint:
+    "Die Kontakte dieses Kontos liegen auf seinem Kalender- und Kontakteserver (CardDAV), der noch nicht eingerichtet ist.",
+  readOnlyHint:
+    "Vorerst nur lesbar: Die erste Änderung fragt nach der Erlaubnis, sie zu bearbeiten.",
+  reconnectFirst: "Verbinde dieses Konto neu, um seine Kontakte zu sehen.",
+  loading: "Kontakte werden geladen …",
+  couldntLoad: (reason: string) =>
+    `Kontakte konnten nicht geladen werden: ${reason}`,
+  moreFor: (name: string) => `Mehr für ${name}`,
+  importFile: "Importieren …",
+  exportContacts: "Als vCard exportieren",
+  findDuplicates: "Duplikate finden",
+  readOnlyBook: "nur lesbar",
+
+  searchLabel: "Kontakte durchsuchen",
+  searchPlaceholder: "Suchen",
+  clearSearch: "Suche löschen",
+  noContacts: "Hier gibt es noch keine Kontakte.",
+  noMatches: "Keine Kontakte gefunden.",
+  count: (n: string, count: number) =>
+    plural(count, `${n} Kontakt`, `${n} Kontakte`),
+  selected: (n: number) => `${String(n)} ausgewählt`,
+  done: "Fertig",
+  select: "Auswählen",
+  unnamed: "Ohne Namen",
+
+  back: "Zurück",
+  close: "Schließen",
+  writeMail: "Mail schreiben",
+  writeTo: (address: string) => `An ${address} schreiben`,
+  writeToAll: (n: number) => `An ${String(n)} schreiben`,
+  copy: (what: string) => `${what} kopieren`,
+  call: (number: string) => `${number} anrufen`,
+  showMail: "Mails anzeigen",
+  copyAddress: "Adresse kopieren",
+  edit: "Bearbeiten",
+  delete: "Löschen",
+  addToContacts: "Zu Kontakten hinzufügen",
+  showContact: "Kontakt anzeigen",
+  fromOther:
+    "Das ist einer von Googles „Weiteren Kontakten“: automatisch gespeichert, nur lesbar.",
+  email: "E-Mail",
+  phone: "Telefon",
+  address: "Adresse",
+  birthday: "Geburtstag",
+  website: "Website",
+  notes: "Notizen",
+  nickname: "Spitzname",
+  company: "Firma",
+  jobTitle: "Position",
+  department: "Abteilung",
+  groups: "Gruppen",
+  addressBook: "Adressbuch",
+  kinds: {
+    home: "Privat",
+    work: "Arbeit",
+    other: "Sonstige",
+    mobile: "Mobil",
+  },
+  menuFor: (name: string) => `Kontakt ${name}`,
+  menuForSelection: (n: number) => `${String(n)} Kontakte`,
+  merge: "Zusammenführen",
+
+  newTitle: "Neuer Kontakt",
+  editTitle: "Kontakt bearbeiten",
+  name: "Name",
+  firstName: "Vorname",
+  middleName: "Zweiter Vorname",
+  lastName: "Nachname",
+  work: "Arbeit",
+  addEmail: "E-Mail-Adresse hinzufügen",
+  addPhone: "Telefonnummer hinzufügen",
+  addAddress: "Adresse hinzufügen",
+  addWebsite: "Website hinzufügen",
+  remove: (what: string) => `${what} entfernen`,
+  kind: (what: string) => `Art: ${what}`,
+  street: "Straße",
+  postalCode: "PLZ",
+  city: "Ort",
+  region: "Bundesland oder Region",
+  country: "Land",
+  day: "Tag",
+  month: "Monat",
+  year: "Jahr",
+  noBirthday: "Keiner",
+  yearRequired: "Braucht bei diesem Konto ein Jahr.",
+  atMost: (n: number) => `Dieses Konto speichert höchstens ${String(n)}.`,
+  saveTo: "Speichern in",
+  newGroup: "Neue Gruppe",
+  newGroupPlaceholder: "Name der Gruppe",
+  addGroup: "Hinzufügen",
+  cancel: "Abbrechen",
+  save: "Speichern",
+  saving: "Wird gespeichert …",
+  empty: "Gib zuerst einen Namen, eine Adresse oder eine Telefonnummer ein.",
+  discardTitle: "Änderungen verwerfen?",
+  discardMessage: "Der Kontakt behält, was er hatte.",
+  discard: "Verwerfen",
+
+  created: (name: string) => `${name} hinzugefügt`,
+  saved: (name: string) => `${name} gespeichert`,
+  deleted: (n: number, name: string) =>
+    n === 1 ? `${name} gelöscht` : `${String(n)} Kontakte gelöscht`,
+  addedOther: (name: string) => `${name} zu deinen Kontakten hinzugefügt`,
+  merged: (name: string) => `In ${name} zusammengeführt`,
+  mergedAll: (n: number) =>
+    plural(
+      n,
+      "1 Gruppe von Duplikaten zusammengeführt",
+      `${String(n)} Gruppen von Duplikaten zusammengeführt`,
+    ),
+  couldntSave: (reason: string) => `Konnte nicht gespeichert werden: ${reason}`,
+  couldntDelete: (reason: string) => `Konnte nicht gelöscht werden: ${reason}`,
+  couldntMerge: (reason: string) =>
+    `Konnte nicht zusammengeführt werden: ${reason}`,
+  mergeOneAccount:
+    "Nur Kontakte desselben Kontos können zusammengeführt werden.",
+  readOnlyContacts: "Diese Kontakte können nicht geändert werden.",
+
+  duplicatesTitle: (account: string) => `Duplikate in ${account}`,
+  noDuplicates: "Keine Duplikate gefunden.",
+  reasons: {
+    email: "Gleiche E-Mail-Adresse",
+    phone: "Gleiche Telefonnummer",
+    name: "Gleicher Name",
+  },
+  mergeAll: (n: number) => `Alle zusammenführen (${String(n)})`,
+  mergedPreview: "Wird zu",
+  dropsValues:
+    "Nicht alles passt in einen Kontakt dieses Kontos; der Rest wird weggelassen.",
+
+  importTitle: "Kontakte importieren",
+  importSummary: (count: number, file: string) =>
+    plural(
+      count,
+      `1 Kontakt in ${file}`,
+      `${String(count)} Kontakte in ${file}`,
+    ),
+  andMore: (n: number) => `und ${String(n)} weitere`,
+  importInto: "Importieren in",
+  existing: (n: number) =>
+    plural(
+      n,
+      "1 davon ist schon in diesem Adressbuch (gleiche E-Mail-Adresse oder Telefonnummer).",
+      `${String(n)} davon sind schon in diesem Adressbuch (gleiche E-Mail-Adresse oder Telefonnummer).`,
+    ),
+  existingSkip: "Überspringen",
+  existingMerge: "Neues zu den vorhandenen Kontakten hinzufügen",
+  existingNew: "Trotzdem als neue Kontakte importieren",
+  lossy: (n: number) =>
+    plural(
+      n,
+      "1 Kontakt hat Angaben, die dieses Adressbuch nicht speichern kann; sie werden weggelassen.",
+      `${String(n)} Kontakte haben Angaben, die dieses Adressbuch nicht speichern kann; sie werden weggelassen.`,
+    ),
+  importButton: (n: number) => `${String(n)} importieren`,
+  importing: (done: number, total: number) =>
+    `Wird importiert … ${String(done)} von ${String(total)}`,
+  imported: (created: number, merged: number, skipped: number) =>
+    [
+      plural(
+        created,
+        "1 Kontakt importiert",
+        `${String(created)} Kontakte importiert`,
+      ),
+      ...(merged > 0 ? [`${String(merged)} zusammengeführt`] : []),
+      ...(skipped > 0 ? [`${String(skipped)} übersprungen`] : []),
+    ].join(", "),
+  importFailed: (n: number, reason: string) =>
+    plural(
+      n,
+      `1 Kontakt konnte nicht importiert werden: ${reason}`,
+      `${String(n)} Kontakte konnten nicht importiert werden: ${reason}`,
+    ),
+  noWritableBook: "Keines deiner Adressbücher kann neue Kontakte aufnehmen.",
+  dropToImport: "vCard-Dateien ablegen, um ihre Kontakte zu importieren",
+  notVcard: "Nur vCard-Dateien (.vcf) können importiert werden.",
+  couldntRead: (reason: string) =>
+    `Die Datei konnte nicht gelesen werden: ${reason}`,
+  exported: (n: number) =>
+    plural(n, "1 Kontakt exportiert", `${String(n)} Kontakte exportiert`),
+  couldntExport: (reason: string) =>
+    `Konnte nicht exportiert werden: ${reason}`,
+  exportFileName: "kontakte",
+};
+
+export const contacts = { en, de };

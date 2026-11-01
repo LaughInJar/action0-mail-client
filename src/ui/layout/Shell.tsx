@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, type ReactNode } from "react";
 import { useAccounts } from "../../accounts/context";
 import {
-  useCalendarRoute,
+  useAppPart,
   useRoute,
   useRouter,
   useUi,
@@ -62,6 +62,13 @@ const CalendarApp = lazy(() =>
   })),
 );
 
+/** The contacts, loaded when they're first opened. */
+const ContactsApp = lazy(() =>
+  import("../contacts/ContactsApp").then((module) => ({
+    default: module.ContactsApp,
+  })),
+);
+
 /** The app's top-level layout: the welcome screen, or the mail UI. */
 export function Shell() {
   const accounts = useAccounts();
@@ -77,7 +84,7 @@ function MailApp() {
   const breakpoint = useBreakpoint();
   const t = useT();
   const route = useRoute();
-  const calendar = useCalendarRoute();
+  const part = useAppPart();
   const drawerOpen = useUi((state) => state.drawerOpen);
   const setDrawerOpen = useUi((state) => state.setDrawerOpen);
   useNavigationDefaults(breakpoint);
@@ -104,10 +111,16 @@ function MailApp() {
   }, [breakpoint, setDrawerOpen]);
 
   let content: ReactNode;
-  if (calendar !== null) {
+  if (part === "calendar") {
     content = (
       <Suspense fallback={null}>
         <CalendarApp breakpoint={breakpoint} />
+      </Suspense>
+    );
+  } else if (part === "contacts") {
+    content = (
+      <Suspense fallback={null}>
+        <ContactsApp breakpoint={breakpoint} />
       </Suspense>
     );
   } else if (breakpoint === "wide") {
@@ -184,7 +197,7 @@ function MailApp() {
       <AndroidIntegration compose={compose} />
       <PwaIntegration />
       <div className="flex min-h-0 flex-1">{content}</div>
-      {calendar === null ? (
+      {part === "mail" ? (
         <MailCommands breakpoint={breakpoint} actions={actions} undo={undo} />
       ) : (
         <UndoCommand undo={undo} />
@@ -203,7 +216,9 @@ function MailApp() {
       <SendQueueBar actions={compose} />
       {fileDrop && (
         <div className="pointer-events-none fixed inset-3 z-[60] grid place-items-center rounded-2xl border-4 border-dashed border-blue-500 bg-blue-50/80 text-lg font-semibold text-blue-900 dark:bg-blue-950/80 dark:text-blue-100">
-          {t.layout.dropToCompose}
+          {part === "contacts"
+            ? t.contacts.dropToImport
+            : t.layout.dropToCompose}
         </div>
       )}
       <Reminders />
@@ -230,7 +245,7 @@ function MailCommands({
   return null;
 }
 
-/** `z` in the calendar: undoes the latest change (e.g. an answer). */
+/** `z` in the calendar and the contacts: undoes the latest change (e.g. an answer). */
 function UndoCommand({ undo }: { undo: Undo }) {
   const t = useT();
   useCommands(

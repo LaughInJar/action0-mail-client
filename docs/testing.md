@@ -40,26 +40,26 @@ jsdom is the default; a file opts into Node with a comment (see [Unit tests](#un
 
 The helpers in `src/test/`:
 
-| File                 | What it gives you                                                                                                                                                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                                          |
-| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                                           |
-| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                                       |
-| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox behind Microsoft Graph, for MSW                                                                                                                                                    |
-| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                                                   |
-| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                                         |
-| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                                                |
-| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                                                    |
-| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                                       |
-| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`                      |
-| `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars and address books, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls) and `icsEvent()` |
-| `sieveBridge.ts`     | `fakeSieveBridge()`: an in-memory ManageSieve server behind the native bridge (one active script, writes recorded and checked against `expected`, no server found until "Use another server", `failNext`)                    |
+| File                 | What it gives you                                                                                                                                                                                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderApp.tsx`      | `renderApp()`, `demoHash()`, `unifiedHash()`, `TEST_NOW` (see [UI tests](#ui-tests-with-renderapp))                                                                                                                                                                                                        |
+| `viewport.ts`        | `mockViewport("wide" \| "medium" \| "narrow")`: stubs `matchMedia` for 1400, 800 or 390 px; `narrow` also reports a coarse pointer                                                                                                                                                                         |
+| `gmailFixtures.ts`   | Gmail API objects: `gmailMessage`, `gmailLabel`, `leafPart`, `multipart`, `base64Url`, `utf8Base64Url`                                                                                                                                                                                                     |
+| `graphServer.ts`     | `FakeGraph`, an in-memory Outlook mailbox (and contacts) behind Microsoft Graph, for MSW                                                                                                                                                                                                                   |
+| `folderData.ts`      | `createFolderData(now)`: a small Outlook-like account for the in-memory provider, with its ids in `FOLDER`                                                                                                                                                                                                 |
+| `desktopPlatform.ts` | `fakeDesktopPlatform()`: a desktop `Platform` made of spies, with the native side's events fired by hand (options: OS, dictionaries)                                                                                                                                                                       |
+| `memoryStorage.ts`   | `MemoryStorage`, an in-memory `Storage`; `dump()` returns everything stored, for "no secrets here" assertions                                                                                                                                                                                              |
+| `aiBackend.ts`       | `fakeAiBackend()`: an AI backend that speaks Anthropic's protocol from memory and records what was asked (options: answers, failures, kept keys, `vault`)                                                                                                                                                  |
+| `aiStreams.ts`       | Streaming answers for AI tests: `sseResponse()` (optionally split mid-line), `streamOf()`, `collect()`                                                                                                                                                                                                     |
+| `imapBridge.ts`      | `fakeImapBridge()`: an in-memory IMAP account behind the native bridge (folders with roles, messages, flags, moves, appends, sends; scripted settings lookups and connect failures) and `imapMessage()`                                                                                                    |
+| `davServer.ts`       | `fakeDavServer()`: an in-memory CalDAV server behind the native bridge (calendars and address books, read-only ones too, objects with ETags, change lists or ETags only, conditional writes, scheduling on or off, setup calls; `cardText`, `cards`, `editCard`, `removeCard` for vCards) and `icsEvent()` |
+| `sieveBridge.ts`     | `fakeSieveBridge()`: an in-memory ManageSieve server behind the native bridge (one active script, writes recorded and checked against `expected`, no server found until "Use another server", `failNext`)                                                                                                  |
 
 Run all tests with `npm test`, keep them running with `npm run test:watch`, or run a single file or test with `npx vitest run src/ui/actions.test.tsx -t "rolls back"`.
 
 ## Unit tests
 
-Pure functions are tested directly, without rendering anything: intents and recurrence rules in `src/core`, optimistic updates and the query cache in `src/data`, selection, settings and the router in `src/state`, and layout helpers such as `src/ui/common/toolbarFit.ts` or `src/ui/mailboxes/buildTree.ts`.
+Pure functions are tested directly, without rendering anything: intents, recurrence rules and the contact helpers (search, duplicates, merging, `fitTo`; `src/core/contacts.test.ts`) in `src/core`, optimistic updates and the query cache in `src/data`, selection, settings and the router in `src/state`, and layout helpers such as `src/ui/common/toolbarFit.ts` or `src/ui/mailboxes/buildTree.ts`.
 
 A test that needs no DOM starts with a comment that switches it to the Node environment, which is faster and proves the code doesn't touch the DOM. From `src/state/selection.test.ts`:
 
@@ -103,7 +103,7 @@ const provider = () =>
   );
 ```
 
-**Gmail.** Each test adds the handlers it needs with `server.use(http.get(url("labels"), …))` and builds Gmail's JSON with the fixtures in `src/test/gmailFixtures.ts`: `gmailMessage(id, { labelIds, headers, payload })` gives a message with sensible defaults, `leafPart` and `multipart` build MIME trees, and `utf8Base64Url` encodes bodies the way Gmail does. Handlers can record what they received (search parameters, bodies) for assertions. The HTTP client's retries, backoff and token handling are tested in `src/providers/gmail/http.test.ts`, the Google Calendar adapter in `src/providers/gmail/calendar.test.ts`.
+**Gmail.** Each test adds the handlers it needs with `server.use(http.get(url("labels"), …))` and builds Gmail's JSON with the fixtures in `src/test/gmailFixtures.ts`: `gmailMessage(id, { labelIds, headers, payload })` gives a message with sensible defaults, `leafPart` and `multipart` build MIME trees, and `utf8Base64Url` encodes bodies the way Gmail does. Handlers can record what they received (search parameters, bodies) for assertions. The HTTP client's retries, backoff and token handling are tested in `src/providers/gmail/http.test.ts`, the Google Calendar adapter in `src/providers/gmail/calendar.test.ts`. Google Contacts (`src/providers/gmail/contacts.test.ts`) runs against a small stateful fake of the People API defined in the test (connections and Other contacts with sync tokens, contact groups, etags, batch create and delete, photos).
 
 **Microsoft Graph.** Graph is stateful enough that a fake mailbox is simpler than handlers per test. `FakeGraph` (`src/test/graphServer.ts`) keeps folders (Inbox, Drafts, Sent Items, Deleted Items, Junk Email, Archive, Outbox, Conversation History, and Projects with a Clients subfolder; the system folders also answer to their well-known names), messages, attachments, drafts, upload sessions, categories, people and `me`, and answers `$batch` and delta queries. It answers what `GraphProvider` asks, not all of Graph.
 
@@ -124,7 +124,11 @@ function setup(options: { personal?: boolean } = {}) {
   graph.failures.set("GET me/people", 403);
   ```
 
+- Contacts: `graph.contactFolders` (the default Contacts folder as `graph.defaultContactFolder`) and `graph.contacts`, changed from elsewhere with `addContact`, `changeContact`, `removeContact` and `addContactFolder`. Contact delta queries page and expire like Graph's (`expireContactDelta`, `contactDeltaFails`), photos answer 404 until one is put, and a stale `If-Match` gets 412. `src/providers/microsoft/contacts.test.ts` uses it.
+
 The Graph calendar adapter (`src/providers/microsoft/calendar.test.ts`) uses handlers per test, like Gmail.
+
+**CardDAV and vCard.** `CardDavContactsProvider` is tested against `fakeDavServer({ addressBooks })` (`src/providers/caldav/CardDavContactsProvider.test.ts`: listing, writes with their conditions, conflicts, read-only books, exact undo, imports), and the vCard reader and writer on their own (`src/providers/vcard/vcard.test.ts`: 2.1, 3.0 and 4.0, editing a card in place without touching unknown lines, new cards, .vcf files).
 
 **Other adapters.** The iCal provider takes a `fetch` option, so its test passes a `vi.fn<typeof fetch>()` instead of using MSW (`src/providers/ical/IcsCalendarProvider.test.ts`). The sign-in sessions are tested against scriptable fakes of `google.accounts.oauth2` and of the MSAL client (`src/auth/google/GoogleAuthSession.test.ts`, `src/auth/microsoft/MicrosoftAuthSession.test.ts`), and the desktop bridge against a fake `invoke` (`src/platform/native/*.test.ts`). The in-memory provider used by the demo and the UI tests has its own tests in `src/providers/fake/`.
 
@@ -160,6 +164,8 @@ It returns Testing Library's render result plus `services` (the `AppServices`: a
 | `imap`            | none                           | Mail server accounts through this bridge (`fakeImapBridge().bridge`), as in the apps                                                    |
 | `caldav`          | none                           | Calendar servers through this bridge (`fakeDavServer().bridge`): calendar-only servers, and with `imap` the accounts' calendars         |
 | `sieve`           | none                           | With `imap`: the mail server accounts' filters through this bridge (`fakeSieveBridge().bridge`)                                         |
+| `contacts`        | `createDemoContacts()`         | The demo account's contacts (`FakeContactsData`)                                                                                        |
+| `contactsAccess`  | `"granted"`                    | The demo contacts' access: `"missing"` (Allow contacts) or `"readOnly"` (Google before the first change)                                |
 
 Some things are fixed: the demo module answers without latency (`latencyMs: 0`) and without new mail arriving (`arrivalEveryMs: false`), and the query cache isn't persisted (`sessionStorage: undefined`), so every test starts cold. When the test finishes, the router is disposed and the query cache cleared.
 
@@ -182,6 +188,8 @@ it("rolls back and reports a failed write", async () => {
 });
 ```
 
+**Contacts.** The demo account's `FakeContactsProvider` is `services.registry.list()[0]?.contacts`; `src/ui/contacts.test.tsx` starts at `#/contacts/all` and covers searching, the editor (Esc and Back with changes ask), undo of each change, groups, Other contacts, **Allow contacts** and the read-only Google case (`contactsAccess`), duplicates, merging a selection, importing (`user.upload` on the hidden `.vcf` file input), exporting (`saveFile` of `fakeDesktopPlatform()`), the reader's sender menu and the phone layout. Dates in it are in the test locale's format ("March 14, 1988").
+
 **The desktop app.** `fakeDesktopPlatform()` (`src/test/desktopPlatform.ts`) returns a desktop `Platform` whose functions are all `vi.fn()` spies, plus `poll()`, `compose(mailto)` and `closeToTray()` to fire what the native side would send. From `src/ui/desktop.test.tsx`:
 
 ```ts
@@ -197,7 +205,7 @@ act(() => {
 
 - The open message's subject is the `heading` of level 1.
 - List rows are `option`s in a `listbox`; the folder tree is a `tree` of `treeitem`s.
-- Dialogs are `dialog`s named after their title; the composer is named after its subject.
+- Dialogs are `dialog`s named after their title; the composer is named after its subject. Questions (`useAsk`: "Discard your changes?") are `alertdialog`s.
 - Buttons are named by their label with the shortcut, for example `"Archive (a)"`.
 - Toasts are found by text: `screen.findByText(text, { selector: "div[aria-live] span" })`.
 

@@ -4,7 +4,7 @@ import type { MailboxRole } from "../../core/model";
 import type { Command } from "../../keyboard/registry";
 import { useCommands } from "../../keyboard/context";
 import { useRoute, useRouter, useUiStore } from "../../state/context";
-import { listRoute } from "../../state/router";
+import { ALL_CONTACTS, listRoute } from "../../state/router";
 import { focusWhenReady } from "../common/focusWhenReady";
 import { FOLDER_FILTER_ID } from "../mailboxes/FolderFilter";
 import { SEARCH_FIELD_ID } from "../messages/ListToolbar";
@@ -86,7 +86,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
         group: "goTo",
         description: t.shortcuts.goCalendar,
         keys: ["g c"],
-        when: () => router.getCalendarRoute() === null,
+        when: () => router.part() !== "calendar",
         run: () => {
           router.openCalendar({
             view:
@@ -94,6 +94,18 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
                 ? "day"
                 : store.getState().settings.calendarView,
             date: dayKey(new Date()),
+          });
+        },
+      },
+      {
+        id: "go.contacts",
+        group: "goTo",
+        description: t.shortcuts.goContacts,
+        keys: ["g p"],
+        when: () => router.part() !== "contacts",
+        run: () => {
+          router.openContacts({
+            list: router.getLastContactsRoute()?.list ?? ALL_CONTACTS,
           });
         },
       },
@@ -116,7 +128,7 @@ export function useGlobalCommands(breakpoint: Breakpoint): void {
         group: "search",
         description: t.shortcuts.filterFolders,
         keys: ["g f"],
-        when: () => router.getCalendarRoute() === null,
+        when: () => router.part() === "mail",
         run: () => {
           if (breakpoint === "medium") store.getState().setDrawerOpen(true);
           else if (breakpoint === "narrow") router.navigate(null);

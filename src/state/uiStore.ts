@@ -1,3 +1,4 @@
+import type { ParsedCard } from "../core/contacts";
 import {
   createJSONStorage,
   persist,
@@ -237,6 +238,14 @@ export interface AiPanelState {
   readonly entries: readonly AiEntry[];
 }
 
+/** A vCard file read for importing, while its preview is open. */
+export interface ContactImportState {
+  readonly fileName: string;
+  readonly cards: readonly ParsedCard[];
+  /** The list it was dropped on or imported from (a contacts list token). */
+  readonly list: string;
+}
+
 /** A sent mail waiting out its undo period. */
 export interface PendingSend {
   readonly id: number;
@@ -301,6 +310,12 @@ export interface UiState extends selection.SelectionState {
   readonly accountColors: Readonly<Record<string, number>>;
   /** The event editor's values, while it's open. Memory only. */
   readonly eventForm: EventFormState | null;
+  /** Focus and selection in the contact list, by contact key. Memory only. */
+  readonly contactSelection: selection.SelectionState<string>;
+  /** The contact editor has changes that would be lost. Memory only. */
+  readonly contactFormDirty: boolean;
+  /** A vCard file being imported (its preview is open). Memory only. */
+  readonly contactImport: ContactImportState | null;
   /** The reader's AI panel, while it's open. Memory only. */
   readonly aiPanel: AiPanelState | null;
 }
@@ -401,6 +416,13 @@ export interface UiActions {
   readonly markReminder: (key: string, mark: ReminderMark | null) => void;
   readonly setAccountColors: (colors: Readonly<Record<string, number>>) => void;
   readonly setEventForm: (form: EventFormState | null) => void;
+  readonly updateContactSelection: (
+    update: (
+      state: selection.SelectionState<string>,
+    ) => selection.SelectionState<string>,
+  ) => void;
+  readonly setContactFormDirty: (dirty: boolean) => void;
+  readonly setContactImport: (state: ContactImportState | null) => void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -513,6 +535,9 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           manageLabels: null,
           question: null,
           eventForm: null,
+          contactSelection: selection.EMPTY_SELECTION,
+          contactFormDirty: false,
+          contactImport: null,
           aiPanel: null,
           reminderMarks: {},
           accountColors: {},
@@ -773,6 +798,15 @@ export function createUiStore(storage: Storage | undefined): UiStore {
           },
           setEventForm: (eventForm) => {
             set({ eventForm });
+          },
+          updateContactSelection: (update) => {
+            set({ contactSelection: update(get().contactSelection) });
+          },
+          setContactFormDirty: (contactFormDirty) => {
+            set({ contactFormDirty });
+          },
+          setContactImport: (contactImport) => {
+            set({ contactImport });
           },
           setAccountColors: (accountColors) => {
             set({ accountColors });

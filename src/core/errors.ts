@@ -83,7 +83,13 @@ export type MailErrorReason =
   | "filtersChanged"
   | "forwardNotAllowed"
   | "filterNeedsCondition"
-  | "filterNeedsAction";
+  | "filterNeedsAction"
+  | "contactsAccessNeeded"
+  | "contactChanged"
+  | "contactGone"
+  | "addressBookReadOnly"
+  | "contactsLoginRefused"
+  | "vcardUnreadable";
 
 /** The only error type that providers and auth sessions reject with. */
 export class MailError extends Error {

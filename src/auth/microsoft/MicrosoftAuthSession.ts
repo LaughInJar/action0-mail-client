@@ -1,5 +1,5 @@
 import type { AccountInfo, AuthenticationResult } from "@azure/msal-browser";
-import { MailError } from "../../core/errors";
+import { MailError, type MailErrorReason } from "../../core/errors";
 import { Emitter } from "../../lib/emitter";
 import type { AuthSession, AuthStatus } from "../types";
 import {
@@ -112,10 +112,13 @@ export class MicrosoftAuthSession implements AuthSession {
 
   /**
    * A token for extra scopes, e.g. calendar access. Without consent it
-   * rejects as `unavailable` (no Reconnect bar: mail keeps working) and
-   * {@link hasScopes} turns false until {@link requestScopes}.
+   * rejects as `unavailable` with `reason` (no Reconnect bar: mail keeps
+   * working) and {@link hasScopes} turns false until {@link requestScopes}.
    */
-  async tokenFor(scopes: readonly string[]): Promise<string> {
+  async tokenFor(
+    scopes: readonly string[],
+    reason: MailErrorReason = "calendarAccessNeeded",
+  ): Promise<string> {
     try {
       const token = await this.#token(scopes, false);
       this.#setMissing(scopes, false);
@@ -125,9 +128,9 @@ export class MicrosoftAuthSession implements AuthSession {
       // Mail still works without a popup: it's the extra consent that's missing.
       await this.getAccessToken();
       this.#setMissing(scopes, true);
-      throw new MailError("unavailable", "Calendar access isn't allowed yet.", {
+      throw new MailError("unavailable", "This access isn't allowed yet.", {
         cause: error,
-        reason: "calendarAccessNeeded",
+        reason,
       });
     }
   }

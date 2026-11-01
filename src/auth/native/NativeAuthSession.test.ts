@@ -93,6 +93,20 @@ describe("NativeAuthSession", () => {
     expect(session.hasScopes(CALENDAR)).toBe(true);
   });
 
+  it("names missing contact scopes as contacts access", async () => {
+    const { session } = setup({
+      token: () =>
+        Promise.reject(new NativeAuthError("scopes", "Contacts.ReadWrite")),
+    });
+    const error = await session
+      .tokenFor(["Contacts.ReadWrite"], "contactsAccessNeeded")
+      .catch((e: unknown) => e);
+    expect(isMailError(error, "unavailable") && error.reason).toBe(
+      "contactsAccessNeeded",
+    );
+    expect(session.status).toBe("signed-in");
+  });
+
   it("shares one browser sign-in between callers", async () => {
     const { session, bridge } = setup();
     await Promise.all([session.signIn(), session.signIn()]);
