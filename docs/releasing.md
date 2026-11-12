@@ -139,7 +139,7 @@ Updates through the updater don't depend on this: they're checked with the updat
 
 ## Release checklist
 
-1. `main` is green: CI's `check` job passed for the commit you release, and `npm run check` passes locally.
+1. `main` is green: CI's `check` job passed for the commit you release, and `npm run check` passes locally (or `npm run container:check`, which also runs the Rust checks).
 2. Bump the version (see [Versioning](#versioning)) on a branch, open a pull request, merge it after CI passes.
 3. Prepare the notes: what changed since the last tag (`git log v<previous>..main --oneline`). There's no changelog file; the notes go into the release description.
 4. Tag the merged commit and push the tag:

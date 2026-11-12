@@ -6,6 +6,7 @@ action0 comes out of one code base in two forms: a static web app (`dist/`, any 
 - [Hosting the static app](#hosting-the-static-app)
 - [Build-time settings](#build-time-settings)
 - [Desktop builds](#desktop-builds)
+- [Building in a container](#building-in-a-container)
 - [Icons](#icons)
 
 ## Web build
@@ -90,12 +91,12 @@ npm run app:build   # tauri build
 
 `npm run app:dev` runs the same app against the Vite dev server (`build.devUrl`, started through `beforeDevCommand`).
 
-Android builds are described in [android.md](android.md#building-running-and-debugging): `scripts/android-setup.sh` installs the toolchain into the home folder, `npm run android:build` builds APKs, and the release workflow builds the signed one.
+Android builds are described in [android.md](android.md#building-running-and-debugging): `scripts/android-setup.sh` installs the toolchain into the home folder, `npm run android:build` builds APKs, and the release workflow builds the signed one. Linux and Android builds also work in a container, without installing anything but Docker ([Building in a container](#building-in-a-container)).
 
 ### Prerequisites
 
 - Node.js 22.12 or newer (`engines` in `package.json`; CI uses `.nvmrc`).
-- Rust 1.90 or newer (`rust-version` in `src-tauri/Cargo.toml`, edition 2024).
+- Rust 1.98 or newer (`rust-version` in `src-tauri/Cargo.toml`, edition 2024).
 - Linux: WebKitGTK 4.1, librsvg and libayatana-appindicator; the README lists the packages ([Running and building](../README.md#running-and-building)). The release workflow additionally installs `libxdo-dev`, `libssl-dev`, `patchelf` and `xdg-utils` on Ubuntu.
 - macOS and Windows: Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/).
 
@@ -135,6 +136,26 @@ Windows never lets an installer make itself the default mail app, so `src-tauri/
 - `NSIS_HOOK_POSTUNINSTALL` removes those keys again.
 
 The `mailto:` link then arrives as a command-line argument; [desktop-app.md](desktop-app.md#single-instance-mailto-and-deep-links) explains how it reaches the composer.
+
+## Building in a container
+
+On Linux, the checks and the Linux and Android builds can run in Docker, so the machine needs neither Rust nor WebKitGTK, the JDK or the Android SDK. Official releases don't need this: they're built by the [release workflow](releasing.md#the-release-workflow).
+
+| Command                     | What it does                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run container:check`   | Everything CI's `check` job runs: `npm run check`, then `cargo fmt --check`, `cargo clippy` and `cargo test`                                  |
+| `npm run container:linux`   | `tauri build`: the AppImage, `.deb` and `.rpm` into `out/linux/`                                                                              |
+| `npm run container:android` | `tauri android build --debug --apk --target aarch64`: a debug-signed APK for phones into `out/android/` (other arguments replace the default) |
+
+`scripts/container.sh` is behind them (`scripts/container.sh linux --verbose` passes arguments on). How it works:
+
+- **Images.** `docker/Dockerfile` has two targets, both holding only toolchains: `linux` (Ubuntu 22.04 like the release workflow, CI's packages, Node from `.nvmrc`, Rust stable with clippy and rustfmt) and `android` (`linux` plus what `scripts/android-setup.sh` installs, so the SDK and NDK versions stay in that script). The image is built on each run and comes from Docker's cache unless the Dockerfile or `android-setup.sh` changed. Its user has your user and group id, so the files in `out/` belong to you.
+- **Source.** The repository is mounted read-only. Each run copies the working tree as it is (uncommitted changes included, ignored files left out, `.env.local` included so the [client IDs](#build-time-settings) are built in) into a volume per image, `action0-linux` and `action0-android`, and builds there (`docker/build.sh`). `node_modules`, `src-tauri/target`, the Gradle output and the caches stay in that volume, so later runs are incremental; `npm ci` runs only when `package-lock.json` changed. The cargo registry is shared in `action0-cargo-registry`. On the machine itself only `out/` is written: your `node_modules`, `target`, `dist/` and `src-tauri/gen/android` stay as they are.
+- **Rust version.** The image keeps the Rust stable it was built with, while CI always takes the newest, so a newer clippy in CI can find what the container didn't. `container:check` prints `cargo --version`; `scripts/container.sh --refresh check` (or `linux`, `android`) rebuilds the image from scratch with the newest Rust, Ubuntu updates and Android packages.
+- **Unsigned.** These are builds for trying things out: the Linux bundles have no update files (as `npm run app:build`), and the APK is signed with a debug key kept in the volume, so later APKs install over earlier ones. The debug APK is large (about 280 MB: unoptimised Rust with its debug symbols). Signed releases come only from the release workflow.
+- **Space.** About 25 GB once everything has run: the Linux image 1.8 GB, the Android image 4.2 GB on top of it (JDK, SDK, NDK), `action0-linux` about 11 GB after a check and a Linux build (debug and release Rust output, `node_modules`), `action0-android` about 7 GB, the cargo registry 0.3 GB. `docker volume rm action0-linux` (or `action0-android`, `action0-cargo-registry`) starts that part over; `docker image rm action0-build:linux action0-build:android` removes the images.
+
+Not covered: the Windows and macOS installers (the release workflow builds them; macOS ones can only be built on a Mac), signed builds, and `npm run app:dev` / `android:dev`, which open windows and talk to devices. The AppImage includes WebKitGTK, so it runs without the libraries installed. Running `docker` needs membership of the `docker` group (or sudo).
 
 ## Icons
 

@@ -127,6 +127,7 @@ In the UI, `AndroidIntegration` (`src/ui/android/`), the Settings section `Andro
 - `scripts/android-env.sh` sets `ANDROID_HOME`, `NDK_HOME`, `JAVA_HOME` and PATH for one shell; `scripts/android.sh` runs `tauri android …` with it (`npm run android:dev`, `npm run android:build`). Gradle calls back into `npm run tauri`, so `package.json` has that script.
 - Debug builds allow web view debugging: `adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof app.action0.mail)` and open `http://localhost:9333` (or chrome://inspect). `adb logcat | grep -iE "action0|Tauri"` shows the plugin calls.
 - Intents can be tried with `adb shell am start`, e.g. a share: `-a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "…" -n app.action0.mail/.MainActivity`.
+- `npm run container:android` builds a debug APK in Docker, without any of the above installed (`out/android/`; [Building in a container](building-and-deploying.md#building-in-a-container)). It can't run `android:dev`, which needs a device.
 - CI's `android` job (not required) runs Clippy for `aarch64-linux-android` and builds a debug APK; the release workflow builds the signed APK and AAB (see [releasing.md](releasing.md)). Both use `.github/actions/android-setup`.
 
 ## Limits
