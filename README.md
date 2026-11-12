@@ -225,7 +225,9 @@ The same app, as a desktop app built with [Tauri](https://tauri.app) (`src-tauri
 | `npm run app:build` | Builds installers for this system into `src-tauri/target/release/bundle/`        |
 | `npm run app:icon`  | Regenerates the app icons from `public/favicon.svg` (only when the icon changes) |
 
-You need Rust (1.90 or newer) and, on Linux, WebKitGTK 4.1, librsvg and libayatana-appindicator (Debian/Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev`, as in CI; Gentoo: `net-libs/webkit-gtk:4.1 dev-libs/libayatana-appindicator`). See Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS and Windows.
+You need Rust (1.98 or newer) and, on Linux, WebKitGTK 4.1, librsvg and libayatana-appindicator (Debian/Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev`, as in CI; Gentoo: `net-libs/webkit-gtk:4.1 dev-libs/libayatana-appindicator`). See Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS and Windows.
+
+On Linux, Docker can do without all of that: `npm run container:linux` builds the AppImage, `.deb` and `.rpm` into `out/linux/`, `npm run container:android` a test APK into `out/android/`, and `npm run container:check` runs everything CI checks ([Building in a container](docs/building-and-deploying.md#building-in-a-container)).
 
 ### Signing in from the desktop app
 
@@ -297,7 +299,7 @@ Google and Microsoft sign-in do not: both only allow plain `http://` for `localh
 | `npm run format`  | Format everything with Prettier (`format:check` only checks)    |
 | `npm run check`   | Everything CI runs: typecheck, lint, format check, tests, build |
 
-The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](#desktop-app). So does the Android app (`android:dev`, `android:build`); see [Android app](#android-app).
+The desktop app has its own scripts (`app:dev`, `app:build`); see [Desktop app](#desktop-app). So does the Android app (`android:dev`, `android:build`); see [Android app](#android-app). `container:check`, `container:linux` and `container:android` run the checks and builds in Docker ([Building in a container](docs/building-and-deploying.md#building-in-a-container)).
 
 ## AI assistant
 

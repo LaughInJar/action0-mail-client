@@ -20,7 +20,7 @@ How the code is organised is explained in [architecture.md](architecture.md), ho
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Node.js                 | 22.12 or newer (`engines` in `package.json`). CI uses the version in `.nvmrc` (24), so that's the safest choice (`nvm use` picks it up).   |
 | npm                     | The one that comes with Node. npm is the project's package manager: the lockfile is `package-lock.json`, and CI installs with `npm ci`.    |
-| Rust (desktop app only) | 1.90 or newer (`rust-version` in `src-tauri/Cargo.toml`, edition 2024). CI uses the latest stable toolchain with `clippy` and `rustfmt`.   |
+| Rust (desktop app only) | 1.98 or newer (`rust-version` in `src-tauri/Cargo.toml`, edition 2024). CI uses the latest stable toolchain with `clippy` and `rustfmt`.   |
 | Chrome or Chromium      | Optional, for the [manual checks in headless Chrome](testing.md#manual-checks-in-headless-chrome). Tests themselves run in jsdom and Node. |
 
 The desktop app also needs the system libraries Tauri builds against. On Debian/Ubuntu, CI installs these (`.github/workflows/ci.yml`):
@@ -30,6 +30,8 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librs
 ```
 
 The README lists the Gentoo packages ([Running and building](../README.md#running-and-building)); for macOS and Windows see Tauri's [prerequisites](https://v2.tauri.app/start/prerequisites/). The web app needs none of this.
+
+On Linux, Docker can stand in for Rust, the libraries and the Android toolchain: `npm run container:check` runs all of CI's checks in a container, and `npm run container:linux` / `container:android` build the app there ([Building in a container](building-and-deploying.md#building-in-a-container)). `npm run dev` still needs Node, and `npm run app:dev` the libraries.
 
 ## First run
 
@@ -97,6 +99,8 @@ cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
+
+`npm run container:check` runs all of the above in a container (`scripts/container.sh`), for a machine without Rust or WebKitGTK.
 
 ## Code conventions
 

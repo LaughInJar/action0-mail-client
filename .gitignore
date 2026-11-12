@@ -9,3 +9,5 @@ coverage
 # Tauri: build output and generated schemas (the Android project in gen/android is ours)
 src-tauri/target
 src-tauri/gen/schemas
+# Builds from scripts/container.sh
+/out
